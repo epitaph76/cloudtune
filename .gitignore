@@ -1,0 +1,60 @@
+# ======================
+# Go
+# ======================
+bin/
+*.exe
+*.out
+*.test
+vendor/
+
+# ======================
+# Docker
+# ======================
+.dockerenv
+.dockerinit
+*.log
+
+# Docker Compose override (для локальных настроек)
+docker-compose.override.yml
+
+# Docker volumes (если создаёте локально)
+volumes/
+
+# ======================
+# Secrets & Environment
+# ======================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+
+# SSL/TLS certificates (не коммитим приватные ключи)
+*.pem
+*.key
+*.crt
+!*.example  # Но коммитим примеры
+
+# ======================
+# Logs
+# ======================
+*.log
+logs/
+
+# ======================
+# OS & IDE
+# ======================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+.cache/
+
+# ======================
+# Testing
+# ======================
+coverage.out
+coverage.txt
+*.coverprofile
