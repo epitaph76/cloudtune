@@ -1,0 +1,35 @@
+# Игнорируем всё, что не нужно в контейнере
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Логи
+*.log
+logs/
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Тесты и документация
+*_test.go
+testdata/
+
+# Зависимости (будут установлены в Dockerfile)
+vendor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
+docker-compose.yml
+docker-compose.override.yml
