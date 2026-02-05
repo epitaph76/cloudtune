@@ -1,0 +1,28 @@
+# Базовый образ с Go
+FROM golang:1.21.6-alpine
+
+# Установка зависимостей
+RUN apk add --no-cache git ca-certificates tzdata
+
+# Установка Air (хот-релоад для Go)
+RUN go install github.com/cosmtrek/air@latest
+
+# Создание пользователя (безопасность)
+RUN adduser -D cloudtune
+USER cloudtune
+
+# Рабочая директория
+WORKDIR /app
+
+# Копирование зависимостей
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Копирование исходного кода
+COPY . .
+
+# Экспозиция порта
+EXPOSE 8080
+
+# Запуск с хот-релоадом
+CMD ["air"]
