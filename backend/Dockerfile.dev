@@ -1,15 +1,8 @@
-# Базовый образ с Go
-FROM golang:1.21.6-alpine
-
-# Установка зависимостей
-RUN apk add --no-cache git ca-certificates tzdata
+# Официальный образ Go на базе Debian (стабильнее для разработки)
+FROM golang:1.25
 
 # Установка Air (хот-релоад для Go)
-RUN go install github.com/cosmtrek/air@latest
-
-# Создание пользователя (безопасность)
-RUN adduser -D cloudtune
-USER cloudtune
+RUN go install github.com/air-verse/air@latest
 
 # Рабочая директория
 WORKDIR /app

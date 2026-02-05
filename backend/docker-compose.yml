@@ -1,18 +1,16 @@
-version: '3.8'
-
 services:
-  # Go API сервер
   api:
     build:
       context: .
       dockerfile: Dockerfile.dev
     container_name: cloudtune-api
     ports:
-      - "8080:8080"  # Локально:8080 → Контейнер:8080
+      - "8080:8080"
     volumes:
-      - .:/app       # Монтируем код для хот-релоада
+      - .:/app
+      - /app/tmp  # Игнорируем временную папку хот-релоада
     environment:
       - PORT=8080
       - ENV=development
-    stdin_open: true
-    tty: true
+    working_dir: /app
+    command: air
