@@ -64,14 +64,70 @@ backend/
    docker run -d -p 8080:8080 --name cloudtune-backend-container cloudtune-backend
    ```
 
+### Через Docker Compose (с PostgreSQL)
+
+1. Убедитесь, что у вас установлен Docker и Docker Compose
+
+2. Запустите сервисы:
+   ```bash
+   docker-compose up -d
+   ```
+
+3. При первом запуске приложение может потребовать время на установку зависимостей
+
+4. Для остановки сервисов:
+   ```bash
+   docker-compose down
+   ```
+
 ## API Эндпоинты
 
 - `GET /health` - проверка состояния сервера
 - `GET /api/status` - получение статуса приложения
+- `POST /auth/register` - регистрация нового пользователя
+- `POST /auth/login` - вход пользователя
+- `GET /api/profile` - получение профиля пользователя (требует авторизации)
+
+### Примеры использования аутентификации
+
+#### Регистрация пользователя
+```bash
+curl -X POST http://localhost:8080/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","username":"username","password":"password"}'
+```
+
+#### Вход пользователя
+```bash
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password"}'
+```
+
+#### Доступ к защищенному ресурсу
+```bash
+curl -X GET http://localhost:8080/api/profile \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN_HERE"
+```
 
 ## Переменные окружения
 
-Создайте файл `.env` на основе `.env.example` и укажите необходимые переменные окружения.
+Создайте файл `.env` на основе `.env.example` и укажите необходимые переменные окружения:
+
+```bash
+# Копируем пример конфигурации
+cp .env.example .env
+
+# Редактируем .env файл и указываем свои значения
+```
+
+Основные переменные:
+- `DB_HOST` - хост базы данных (по умолчанию: localhost)
+- `DB_PORT` - порт базы данных (по умолчанию: 5432)
+- `DB_USER` - имя пользователя базы данных (по умолчанию: postgres)
+- `DB_PASSWORD` - пароль для базы данных (по умолчанию: password)
+- `DB_NAME` - имя базы данных (по умолчанию: cloudtune)
+- `JWT_SECRET` - секретный ключ для JWT токенов (обязательно измените в продакшене!)
 
 ## Разработка
 

@@ -1,16 +1,37 @@
+version: '3.8'
+
 services:
-  api:
+  # Сервис приложения
+  app:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    container_name: cloudtune-api
     ports:
       - "8080:8080"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+      - DB_NAME=cloudtune
+      - JWT_SECRET=your-secret-key-change-this-in-production
+    depends_on:
+      - db
     volumes:
       - .:/app
-      - /app/tmp  # Игнорируем временную папку хот-релоада
-    environment:
-      - PORT=8080
-      - ENV=development
-    working_dir: /app
     command: air
+
+  # Сервис базы данных PostgreSQL
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=cloudtune
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
