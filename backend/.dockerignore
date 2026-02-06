@@ -33,3 +33,6 @@ Thumbs.db
 .dockerignore
 docker-compose.yml
 docker-compose.override.yml
+# Air хот-релоад
+tmp/
+.air.toml

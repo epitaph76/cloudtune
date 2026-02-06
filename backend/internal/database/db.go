@@ -14,13 +14,15 @@ var DB *sql.DB
 // InitDB initializes the database connection
 func InitDB() {
 	var err error
-	
+
 	// Get database connection parameters from environment variables
 	host := getEnvOrDefault("DB_HOST", "localhost")
 	port := getEnvOrDefault("DB_PORT", "5432")
 	user := getEnvOrDefault("DB_USER", "postgres")
 	password := getEnvOrDefault("DB_PASSWORD", "password")
 	dbName := getEnvOrDefault("DB_NAME", "cloudtune")
+
+	fmt.Printf("Attempting to connect to database: host=%s, port=%s, user=%s, dbname=%s\n", host, port, user, dbName)
 
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbName)
@@ -39,9 +41,12 @@ func InitDB() {
 
 // getEnvOrDefault returns the value of an environment variable or a default value
 func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
+	value := os.Getenv(key)
+	if value != "" {
+		fmt.Printf("Environment variable %s=%s\n", key, value)
 		return value
 	}
+	fmt.Printf("Using default value for %s: %s\n", key, defaultValue)
 	return defaultValue
 }
 
