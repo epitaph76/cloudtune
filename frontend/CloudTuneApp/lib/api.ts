@@ -1,11 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = 'http://192.168.1.96:8080'; // URL вашего бэкенда
+// Используем локальный адрес для разработки
+// Для подключения с мобильного устройства используем IP-адрес компьютера
+const BASE_URL = 'http://10.79.180.60:8080'; // URL вашего бэкенда для разработки
 
 // Получение токена из хранилища
 const getToken = async () => {
   try {
-    const token = await AsyncStorage.getItem('token');
+    const token = await AsyncStorage.getItem('cloudtune_token'); // Используем правильный ключ
     return token;
   } catch (error) {
     console.error('Ошибка при получении токена:', error);
@@ -62,7 +64,14 @@ export const registerUser = async (userData: { email: string; username: string; 
       throw new Error(errorData.error || 'Ошибка при регистрации');
     }
 
-    return await response.json();
+    const result = await response.json();
+    
+    // Проверяем, что в ответе есть нужные данные
+    if (!result.token || !result.user) {
+      throw new Error('Неверный формат ответа от сервера');
+    }
+    
+    return result;
   } catch (error) {
     console.error('Ошибка при регистрации пользователя:', error);
     throw error;
@@ -83,7 +92,14 @@ export const loginUser = async (credentials: { email: string; password: string }
       throw new Error(errorData.error || 'Ошибка при входе');
     }
 
-    return await response.json();
+    const result = await response.json();
+    
+    // Проверяем, что в ответе есть нужные данные
+    if (!result.token || !result.user) {
+      throw new Error('Неверный формат ответа от сервера');
+    }
+    
+    return result;
   } catch (error) {
     console.error('Ошибка при входе пользователя:', error);
     throw error;
@@ -91,7 +107,6 @@ export const loginUser = async (credentials: { email: string; password: string }
 };
 
 // Получение профиля пользователя (защищенный маршрут)
-// TODO: Реализовать эндпоинт /api/profile в бэкенде
 export const getUserProfile = async () => {
   try {
     const response = await fetch(`${BASE_URL}/api/profile`, {
@@ -100,37 +115,19 @@ export const getUserProfile = async () => {
     });
 
     if (!response.ok) {
-      // Если эндпоинт не реализован, возвращаем заглушку
-      if (response.status === 404) {
-        console.warn('Эндпоинт /api/profile не реализован в бэкенде');
-        // Возвращаем заглушку с информацией из токена
-        const token = await getToken();
-        return {
-          user: {
-            id: 'mock-id',
-            email: 'mock@example.com',
-            username: 'Mock User'
-          }
-        };
-      }
       const errorData = await response.json();
       throw new Error(errorData.error || 'Ошибка при получении профиля');
     }
 
-    return await response.json();
-  } catch (error: any) {
-    if (error.message.includes('JSON Parse error')) {
-      console.warn('Ошибка парсинга ответа от сервера, возвращаем заглушку');
-      // Возвращаем заглушку с информацией из токена
-      const token = await getToken();
-      return {
-        user: {
-          id: 'mock-id-from-token',
-          email: 'mock@example.com',
-          username: 'Mock User'
-        }
-      };
+    const result = await response.json();
+    
+    // Проверяем, что в ответе есть нужные данные
+    if (!result.user) {
+      throw new Error('Неверный формат ответа от сервера');
     }
+    
+    return result;
+  } catch (error: any) {
     console.error('Ошибка при получении профиля пользователя:', error);
     throw error;
   }

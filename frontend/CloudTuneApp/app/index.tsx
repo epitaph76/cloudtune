@@ -1,58 +1,43 @@
 // app/index.tsx
-import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
-import { registerUser } from '@/lib/api';
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useAuth } from '@/providers/AuthProvider';
 
 export default function Index() {
-  const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const router = useRouter();
+  const { loading } = useAuth();
 
-  const handleRegister = async () => {
-    try {
-      const response = await registerUser({
-        email,
-        username,
-        password
-      });
-      Alert.alert('Успех', `Регистрация прошла успешно! ${response.message}`);
-      console.log('Регистрация успешна:', response);
-    } catch (error: any) {
-      Alert.alert('Ошибка', error.message || 'Ошибка при регистрации');
-      console.error('Ошибка регистрации:', error);
-    }
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text>Загрузка...</Text>
+      </View>
+    );
+  }
+
+  const handleLogin = () => {
+    router.push('/login');
+  };
+
+  const handleRegister = () => {
+    router.push('/register');
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Регистрация в CloudTune</Text>
-      
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
-      
-      <TextInput
-        style={styles.input}
-        placeholder="Имя пользователя"
-        value={username}
-        onChangeText={setUsername}
-        autoCapitalize="none"
-      />
-      
-      <TextInput
-        style={styles.input}
-        placeholder="Пароль"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
-      
-      <Button title="Зарегистрироваться" onPress={handleRegister} />
+      <Text style={styles.title}>Добро пожаловать в CloudTune</Text>
+      <Text style={styles.subtitle}>Музыка повсюду, где вы</Text>
+
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+          <Text style={styles.buttonText}>Войти</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.registerButton} onPress={handleRegister}>
+          <Text style={styles.buttonText}>Зарегистрироваться</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -62,18 +47,57 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 20,
+    backgroundColor: '#f5f5f5',
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 20,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    padding: 10,
     marginBottom: 10,
-    borderRadius: 5,
+    color: '#333',
+  },
+  subtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 40,
+    color: '#666',
+  },
+  buttonContainer: {
+    flexDirection: 'column',
+    gap: 15,
+  },
+  loginButton: {
+    backgroundColor: '#4CAF50',
+    padding: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 10,
+    shadowColor: '#4CAF50',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  registerButton: {
+    backgroundColor: '#2196F3',
+    padding: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    shadowColor: '#2196F3',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

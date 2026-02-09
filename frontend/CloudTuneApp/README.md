@@ -1,50 +1,174 @@
-# Welcome to your Expo app 👋
+# CloudTune Frontend
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+The React Native/Expo frontend for CloudTune - a cloud music player application with cross-device synchronization.
 
-## Get started
+## 🎵 About
 
-1. Install dependencies
+CloudTune Frontend is a mobile application built with React Native and Expo that provides a seamless music listening experience across devices. The app connects to the CloudTune backend to manage user accounts, playlists, and music collections.
 
+## 🛠 Technologies
+
+- **React Native** - cross-platform mobile development
+- **Expo** - development workflow and services
+- **TypeScript** - type-safe JavaScript
+- **React Navigation** - navigation solution
+- **Async Storage** - local data persistence
+- **Expo Router** - file-based routing
+
+## 📁 Project Structure
+
+```
+frontend/CloudTuneApp/
+├── app/                    # Application screens and routes
+│   ├── (tabs)/           # Tab navigator screens
+│   │   ├── _layout.tsx   # Tab navigator layout
+│   │   ├── index.tsx     # Main home screen
+│   │   └── profile.tsx   # Profile screen
+│   ├── _layout.tsx       # Root layout with providers
+│   ├── index.tsx         # Landing screen (login/register)
+│   ├── login.tsx         # Login screen
+│   ├── register.tsx      # Registration screen
+│   └── modal.tsx         # Modal screen example
+├── components/            # Reusable UI components
+│   └── ProfileScreen.tsx  # User profile component
+├── constants/             # Constants and themes
+│   └── theme.ts          # Color and font themes
+├── contexts/              # React contexts
+├── hooks/                 # Custom React hooks
+├── lib/                   # Utility functions and API calls
+│   ├── api.ts            # API client and endpoints
+│   └── authStorage.ts    # Authentication token storage
+├── providers/             # React providers
+│   └── AuthProvider.tsx  # Authentication context provider
+├── assets/                # Static assets (images, icons)
+├── node_modules/          # Dependencies
+├── package.json          # Project dependencies and scripts
+├── app.json              # Expo configuration
+├── tsconfig.json         # TypeScript configuration
+└── ...
+```
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js (v18 or later)
+- npm or yarn
+- Expo Go app installed on your mobile device (for testing)
+
+### Installation
+
+1. Navigate to the frontend directory:
+   ```bash
+   cd frontend/CloudTuneApp
+   ```
+
+2. Install dependencies:
    ```bash
    npm install
    ```
 
-2. Start the app
-
+3. Start the development server:
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+4. Scan the QR code with the Expo Go app on your mobile device or use an emulator
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Development Scripts
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- `npm start` - start the development server
+- `npm run android` - open the app in an Android emulator
+- `npm run ios` - open the app in an iOS simulator
+- `npm run web` - open the app in a web browser
+- `npm run reset-project` - reset the project to initial state
 
-## Get a fresh project
+## 🌐 API Integration
 
-When you're ready, run:
+The frontend communicates with the CloudTune backend API for user authentication and data management. The API client is located in `lib/api.ts` and includes:
 
+- User registration
+- User login
+- Profile retrieval
+- Token management
+
+Make sure the backend is running and accessible at the configured URL before testing authentication features.
+
+## 🎨 Theming
+
+The application supports both light and dark modes. The theme configuration is located in `constants/theme.ts` and includes:
+
+- Color palettes for both light and dark modes
+- Font configurations for different platforms
+- Consistent styling across the application
+
+## 🔐 Authentication Flow
+
+The application implements a secure authentication flow:
+
+1. User registration/login on the landing screen
+2. JWT token storage in Async Storage
+3. Automatic authentication state management
+4. Protected routes that require authentication
+5. Logout functionality
+
+The authentication context is managed by `AuthProvider.tsx` which handles token storage and user state.
+
+## 🧪 Testing
+
+To run tests:
 ```bash
-npm run reset-project
+npm test
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## 🚢 Deployment
 
-## Learn more
+To build the application for production:
 
-To learn more about developing your project with Expo, look at the following resources:
+1. Create a production build:
+   ```bash
+   npx expo export
+   ```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+2. For app stores, follow the Expo documentation for building standalone apps:
+   - [Building Standalone Apps](https://docs.expo.dev/distribution/building-standalone-apps/)
 
-## Join the community
+## 🤝 Contributing
 
-Join our community of developers creating universal apps.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Commit your changes (`git commit -m 'Add amazing feature'`)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+
+## 🐞 Troubleshooting
+
+### Common Issues
+
+1. **Network requests failing**: Ensure the backend API URL in `lib/api.ts` is correctly configured and accessible from your device/emulator.
+
+2. **Expo Go connection issues**: Make sure your computer and mobile device are on the same network when testing on a physical device.
+
+3. **TypeScript errors**: Run `npx tsc --noEmit` to check for TypeScript compilation errors.
+
+### Debugging Tips
+
+- Enable Remote Debugging in Expo Go for browser-based debugging
+- Use React Native Debugger for enhanced debugging experience
+- Check the Metro Bundler logs for any build errors
+- Verify that the backend service is running and accessible
+
+## 🌟 Features
+
+- Responsive UI that works on various screen sizes
+- Light and dark theme support
+- Secure authentication with JWT tokens
+- Cross-platform compatibility (iOS/Android)
+- Offline token storage
+- Clean, modern UI design
+- Proper error handling and user feedback

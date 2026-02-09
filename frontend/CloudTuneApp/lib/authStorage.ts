@@ -1,4 +1,4 @@
-// storage/authStorage.ts
+// lib/authStorage.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TOKEN_KEY = 'cloudtune_token';

@@ -1,66 +1,55 @@
 // components/ProfileScreen.tsx
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/providers/AuthProvider';
 
 const ProfileScreen = () => {
   const router = useRouter();
-  const { logout, userData } = useAuth();
-
-  const handleLogin = () => {
-    // Перенаправляем на страницу аутентификации в режиме входа
-    router.push('/?mode=login');
-  };
-
-  const handleRegister = () => {
-    // Перенаправляем на страницу аутентификации в режиме регистрации
-    router.push('/?mode=register');
-  };
+  const { logout, userData, loading } = useAuth();
 
   const handleLogout = async () => {
     await logout();
+    // После выхода возвращаемся на главную страницу
+    router.push('/');
   };
 
-  // Если есть данные профиля, отображаем их
-  if (userData) {
+  // Показываем индикатор загрузки, если данные еще не загружены
+  if (loading) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Профиль пользователя</Text>
-        
-        <View style={styles.profileInfo}>
-          <Text style={styles.label}>ID:</Text>
-          <Text style={styles.value}>{userData.id}</Text>
-          
-          <Text style={styles.label}>Email:</Text>
-          <Text style={styles.value}>{userData.email}</Text>
-          
-          <Text style={styles.label}>Имя пользователя:</Text>
-          <Text style={styles.value}>{userData.username}</Text>
-        </View>
-        
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutButtonText}>Выйти</Text>
-        </TouchableOpacity>
+        <ActivityIndicator size="large" color="#4CAF50" />
+        <Text style={styles.loadingText}>Загрузка профиля...</Text>
       </View>
     );
   }
 
-  // Если нет данных профиля, показываем кнопки входа и регистрации
+  // Если пользователь не аутентифицирован, перенаправляем на главную
+  if (!userData) {
+    router.push('/');
+    return null;
+  }
+
+  // Отображаем информацию профиля
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>CloudTune</Text>
-      <Text style={styles.subtitle}>Профиль пользователя</Text>
-      
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.buttonText}>Войти</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.button} onPress={handleRegister}>
-          <Text style={styles.buttonText}>Зарегистрироваться</Text>
-        </TouchableOpacity>
+      <Text style={styles.title}>Профиль пользователя</Text>
+
+      <View style={styles.profileInfo}>
+        <View style={styles.infoItem}>
+          <Text style={styles.label}>Email:</Text>
+          <Text style={styles.value}>{userData.email}</Text>
+        </View>
+
+        <View style={styles.infoItem}>
+          <Text style={styles.label}>Имя пользователя:</Text>
+          <Text style={styles.value}>{userData.username}</Text>
+        </View>
       </View>
+
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <Text style={styles.logoutButtonText}>Выйти</Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -76,25 +65,44 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 30,
     color: '#333',
   },
-  subtitle: {
-    fontSize: 18,
-    textAlign: 'center',
-    marginBottom: 40,
+  profileInfo: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 10,
+    marginBottom: 30,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  infoItem: {
+    marginBottom: 15,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: 'bold',
     color: '#666',
+    marginBottom: 5,
   },
-  buttonContainer: {
-    flexDirection: 'column',
-    gap: 15,
+  value: {
+    fontSize: 16,
+    color: '#333',
+    paddingLeft: 10,
+    paddingTop: 5,
+    paddingBottom: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
-  button: {
-    backgroundColor: '#4CAF50',
+  logoutButton: {
+    backgroundColor: '#f44336',
     padding: 16,
     borderRadius: 10,
     alignItems: 'center',
-    shadowColor: '#4CAF50',
+    shadowColor: '#f44336',
     shadowOffset: {
       width: 0,
       height: 2,
@@ -103,38 +111,15 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  profileInfo: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 10,
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#666',
-    marginTop: 10,
-  },
-  value: {
-    fontSize: 16,
-    color: '#333',
-    paddingLeft: 10,
-  },
-  logoutButton: {
-    backgroundColor: '#f44336',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
   logoutButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
   },
 });
 
