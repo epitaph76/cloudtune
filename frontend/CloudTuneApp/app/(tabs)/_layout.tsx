@@ -9,10 +9,12 @@ export default function TabLayout() {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName = '';
 
-          if (route.name === 'index') {
-            iconName = focused ? 'home' : 'home-outline';
+          if (route.name === 'local') {
+            iconName = focused ? 'albums' : 'albums-outline';
           } else if (route.name === 'profile') {
             iconName = focused ? 'person' : 'person-outline';
+          } else if (route.name === 'cloud') {
+            iconName = focused ? 'cloud' : 'cloud-outline';
           }
 
           return <Ionicons name={iconName as any} size={size} color={color} />;
@@ -21,19 +23,26 @@ export default function TabLayout() {
         tabBarInactiveTintColor: 'gray',
       })}
     >
-      <Tabs.Screen 
-        name="index" 
-        options={{ 
+      <Tabs.Screen
+        name="local"
+        options={{
           headerShown: false,
-          title: 'Главная' 
-        }} 
+          title: 'Local'
+        }}
       />
-      <Tabs.Screen 
-        name="profile" 
-        options={{ 
+      <Tabs.Screen
+        name="profile"
+        options={{
           headerShown: false,
-          title: 'Профиль' 
-        }} 
+          title: 'Account'
+        }}
+      />
+      <Tabs.Screen
+        name="cloud"
+        options={{
+          headerShown: false,
+          title: 'Cloud'
+        }}
       />
     </Tabs>
   );

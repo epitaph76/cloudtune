@@ -22,15 +22,16 @@ frontend/CloudTuneApp/
 ├── app/                    # Application screens and routes
 │   ├── (tabs)/           # Tab navigator screens
 │   │   ├── _layout.tsx   # Tab navigator layout
-│   │   ├── index.tsx     # Main home screen
-│   │   └── profile.tsx   # Profile screen
+│   │   ├── local.tsx     # Local storage screen
+│   │   ├── profile.tsx   # Profile screen with authentication
+│   │   └── cloud.tsx     # Cloud storage screen
 │   ├── _layout.tsx       # Root layout with providers
-│   ├── index.tsx         # Landing screen (login/register)
+│   ├── index.tsx         # Splash screen with logo
+│   ├── auth.tsx          # Authentication screen (login/register)
 │   ├── login.tsx         # Login screen
 │   ├── register.tsx      # Registration screen
 │   └── modal.tsx         # Modal screen example
 ├── components/            # Reusable UI components
-│   └── ProfileScreen.tsx  # User profile component
 ├── constants/             # Constants and themes
 │   └── theme.ts          # Color and font themes
 ├── contexts/              # React contexts
