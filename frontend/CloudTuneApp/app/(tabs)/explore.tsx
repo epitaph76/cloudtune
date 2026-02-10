@@ -9,12 +9,12 @@ export default function CloudStorageScreen() {
 
   const goToCloud = () => {
     // Переход на заглушку облачного хранилища
-    router.push('/(tabs)/cloud');
+    router.push('/cloud');
   };
 
   const goToLocalStorage = () => {
     // Переход на страницу локального хранилища
-    router.push('/(tabs)/local');
+    router.push('/local');
   };
 
   return (

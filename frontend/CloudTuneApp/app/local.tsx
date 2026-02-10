@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert } from 'react-native';
+import { DocumentPicker, DocumentPickerAsset } from 'expo-document-picker';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 
-// Заглушка для типа файла
+// Тип для аудиофайла
 interface AudioFile {
   id: string;
   name: string;
   size: number;
+  uri: string;
   duration?: string;
 }
 
@@ -18,16 +20,27 @@ export default function LocalStorageScreen() {
   const pickAudioFile = async () => {
     setLoading(true);
     try {
-      // В реальном приложении здесь будет вызов expo-document-picker
-      // Для демонстрации добавим заглушку
-      const mockFile: AudioFile = {
-        id: Date.now().toString(),
-        name: `demo-track-${audioFiles.length + 1}.mp3`,
-        size: Math.floor(Math.random() * 10000000) + 5000000, // 5-15 MB
-      };
-      
-      setAudioFiles(prev => [...prev, mockFile]);
-      Alert.alert('Успех', 'Файл добавлен (демонстрация)');
+      // Выбираем только аудиофайлы
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['audio/*', '.mp3', '.wav', '.m4a', '.flac'],
+        multiple: true, // Позволяем выбирать несколько файлов
+      });
+
+      if (result.canceled) {
+        Alert.alert('Отменено', 'Выбор файла был отменен');
+        return;
+      }
+
+      // Обрабатываем выбранные файлы
+      const newFiles: AudioFile[] = result.assets.map((asset: DocumentPickerAsset) => ({
+        id: asset.uri + Date.now(), // Уникальный ID
+        name: asset.name || 'Unknown File',
+        size: asset.size || 0,
+        uri: asset.uri,
+      }));
+
+      setAudioFiles(prev => [...prev, ...newFiles]);
+      Alert.alert('Успех', `Добавлено ${newFiles.length} файлов`);
     } catch (error) {
       console.error('Ошибка при выборе файла:', error);
       Alert.alert('Ошибка', 'Не удалось выбрать файл');
@@ -62,7 +75,7 @@ export default function LocalStorageScreen() {
         disabled={loading}
       >
         <ThemedText type="buttonText">
-          {loading ? 'Загрузка...' : 'Добавить файл'}
+          {loading ? 'Загрузка...' : 'Добавить файлы'}
         </ThemedText>
       </TouchableOpacity>
       
