@@ -2,18 +2,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Audio } from 'expo-av';
+import { AudioPlayer, AudioMode } from 'expo-audio';
 import { useFocusEffect } from '@react-navigation/native';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 
 // Устанавливаем аудио режим при запуске приложения
-Audio.setAudioModeAsync({
+AudioMode.setAudioModeAsync({
   allowsRecordingIOS: false,
-  interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+  interruptionModeIOS: AudioMode.IOSInterruptionMode.DoNotMix,
   playsInSilentModeIOS: true,
   shouldDuckAndroid: true,
-  interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+  interruptionModeAndroid: AudioMode.AndroidInterruptionMode.DoNotMix,
   playThroughEarpieceAndroid: false,
 });
 
@@ -31,7 +31,7 @@ const LOCAL_FILES_STORAGE_KEY = 'local_audio_files';
 export default function HomeTab() {
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [playingFile, setPlayingFile] = useState<string | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
 
   // Загружаем все файлы при монтировании компонента
   useEffect(() => {
@@ -80,30 +80,30 @@ export default function HomeTab() {
       
       // Начинаем воспроизведение нового файла
       try {
-        const { sound } = await Audio.Sound.createAsync(
-          { uri },
-          {
-            shouldPlay: true,
-            progressUpdateIntervalMillis: 1000,
-          },
-          // Callback для обновления воспроизведения
-          (status) => {
-            if (status.didJustFinish) {
-              setPlayingFile(null);
-              soundRef.current?.unloadAsync();
-              soundRef.current = null;
-            }
+        const player = new AudioPlayer({ source: { uri } });
+        await player.loadAsync();
+        
+        // Подписываемся на событие завершения воспроизведения
+        player.setOnPlaybackStatusUpdate((status) => {
+          if (status.didJustFinish) {
+            setPlayingFile(null);
+            soundRef.current = null;
           }
-        );
+        });
         
         // Устанавливаем метаданные для уведомления
         const currentFile = audioFiles.find(file => file.id === fileId);
         if (currentFile) {
-          await sound.setTitleAsync(currentFile.name);
-          await sound.setArtistAsync('CloudTune');
+          // Устанавливаем метаданные для уведомления
+          await player.setInfoAsync({
+            title: currentFile.name,
+            artist: 'CloudTune',
+            album: 'Local Files',
+          });
         }
         
-        soundRef.current = sound;
+        await player.playAsync();
+        soundRef.current = player;
         
         setPlayingFile(fileId);
       } catch (error) {
