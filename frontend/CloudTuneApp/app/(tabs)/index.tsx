@@ -3,11 +3,12 @@ import { View, Text, StyleSheet } from 'react-native';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 
-export default function HomeScreen() {
+export default function HomeTab() {
   return (
     <ThemedView style={styles.container}>
       <ThemedText type="title">CloudTune</ThemedText>
-      <Text style={styles.developmentText}>Добро пожаловать в CloudTune!</Text>
+      <Text style={styles.descriptionText}>Ваш личный облачный плеер музыки</Text>
+      <Text style={styles.developmentText}>Здесь будет список треков</Text>
       <Text style={styles.developmentText}>В разработке</Text>
     </ThemedView>
   );
@@ -20,9 +21,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  descriptionText: {
+    fontSize: 16,
+    marginTop: 10,
+    color: '#888',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
   developmentText: {
-    fontSize: 18,
-    marginTop: 20,
+    fontSize: 16,
+    marginTop: 10,
     color: '#666',
     textAlign: 'center',
   },
