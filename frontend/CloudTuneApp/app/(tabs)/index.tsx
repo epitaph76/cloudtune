@@ -2,12 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AudioPlayer } from 'expo-audio';
+import { Audio } from 'expo-av';
 import { useFocusEffect } from '@react-navigation/native';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-
-
 
 // Тип для аудиофайла
 interface AudioFile {
@@ -23,7 +21,7 @@ const LOCAL_FILES_STORAGE_KEY = 'local_audio_files';
 export default function HomeTab() {
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [playingFile, setPlayingFile] = useState<string | null>(null);
-  const soundRef = useRef<AudioPlayer | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
 
   // Загружаем все файлы при монтировании компонента
   useEffect(() => {
@@ -72,34 +70,23 @@ export default function HomeTab() {
       
       // Начинаем воспроизведение нового файла
       try {
-        const player = new AudioPlayer({ source: { uri } });
-        await player.loadAsync();
-        
-        // Устанавливаем метаданные для уведомления
-        const currentFile = audioFiles.find(file => file.id === fileId);
-        if (currentFile) {
-          // Устанавливаем метаданные для уведомления
-          try {
-            await player.setInfoAsync({
-              title: currentFile.name,
-              artist: 'CloudTune',
-              album: 'Local Files',
-            });
-          } catch (error) {
-            console.warn('Не удалось установить метаданные для уведомления:', error);
+        const { sound } = await Audio.Sound.createAsync(
+          { uri },
+          {
+            shouldPlay: true,
+            progressUpdateIntervalMillis: 1000,
+          },
+          // Callback для обновления воспроизведения
+          (status) => {
+            if (status.didJustFinish) {
+              setPlayingFile(null);
+              soundRef.current?.unloadAsync();
+              soundRef.current = null;
+            }
           }
-        }
+        );
         
-        // Подписываемся на событие завершения воспроизведения
-        player.setOnPlaybackStatusUpdate((status) => {
-          if (status.didJustFinish) {
-            setPlayingFile(null);
-            soundRef.current = null;
-          }
-        });
-        
-        await player.playAsync();
-        soundRef.current = player;
+        soundRef.current = sound;
         
         setPlayingFile(fileId);
       } catch (error) {
