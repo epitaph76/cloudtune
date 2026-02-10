@@ -41,7 +41,7 @@ export default function TabLayout() {
         name="explore"
         options={{
           headerShown: false,
-          title: 'Облако'
+          title: 'Хранилище'
         }}
       />
     </Tabs>
