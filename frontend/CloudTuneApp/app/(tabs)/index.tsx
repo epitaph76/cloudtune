@@ -2,20 +2,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AudioPlayer, AudioMode } from 'expo-audio';
+import { AudioPlayer } from 'expo-audio';
 import { useFocusEffect } from '@react-navigation/native';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 
-// Устанавливаем аудио режим при запуске приложения
-AudioMode.setAudioModeAsync({
-  allowsRecordingIOS: false,
-  interruptionModeIOS: AudioMode.IOSInterruptionMode.DoNotMix,
-  playsInSilentModeIOS: true,
-  shouldDuckAndroid: true,
-  interruptionModeAndroid: AudioMode.AndroidInterruptionMode.DoNotMix,
-  playThroughEarpieceAndroid: false,
-});
+
 
 // Тип для аудиофайла
 interface AudioFile {
@@ -83,6 +75,21 @@ export default function HomeTab() {
         const player = new AudioPlayer({ source: { uri } });
         await player.loadAsync();
         
+        // Устанавливаем метаданные для уведомления
+        const currentFile = audioFiles.find(file => file.id === fileId);
+        if (currentFile) {
+          // Устанавливаем метаданные для уведомления
+          try {
+            await player.setInfoAsync({
+              title: currentFile.name,
+              artist: 'CloudTune',
+              album: 'Local Files',
+            });
+          } catch (error) {
+            console.warn('Не удалось установить метаданные для уведомления:', error);
+          }
+        }
+        
         // Подписываемся на событие завершения воспроизведения
         player.setOnPlaybackStatusUpdate((status) => {
           if (status.didJustFinish) {
@@ -90,17 +97,6 @@ export default function HomeTab() {
             soundRef.current = null;
           }
         });
-        
-        // Устанавливаем метаданные для уведомления
-        const currentFile = audioFiles.find(file => file.id === fileId);
-        if (currentFile) {
-          // Устанавливаем метаданные для уведомления
-          await player.setInfoAsync({
-            title: currentFile.name,
-            artist: 'CloudTune',
-            album: 'Local Files',
-          });
-        }
         
         await player.playAsync();
         soundRef.current = player;
