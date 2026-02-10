@@ -13,7 +13,9 @@ export default function TabLayout() {
             iconName = focused ? 'home' : 'home-outline';
           } else if (route.name === 'profile') {
             iconName = focused ? 'person' : 'person-outline';
-          } else if (route.name === 'explore') {
+          } else if (route.name === 'local') {
+            iconName = focused ? 'albums' : 'albums-outline';
+          } else if (route.name === 'cloud') {
             iconName = focused ? 'cloud' : 'cloud-outline';
           }
 
@@ -38,10 +40,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="local"
         options={{
           headerShown: false,
-          title: 'Хранилище'
+          title: 'Локальное'
+        }}
+      />
+      <Tabs.Screen
+        name="cloud"
+        options={{
+          headerShown: false,
+          title: 'Облако'
         }}
       />
     </Tabs>

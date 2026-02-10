@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 
@@ -13,9 +14,35 @@ interface AudioFile {
   duration?: string;
 }
 
+const LOCAL_FILES_STORAGE_KEY = 'local_audio_files';
+
 export default function LocalStorageScreen() {
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Загружаем сохраненные файлы при монтировании компонента
+  useEffect(() => {
+    loadSavedFiles();
+  }, []);
+
+  const loadSavedFiles = async () => {
+    try {
+      const savedFiles = await AsyncStorage.getItem(LOCAL_FILES_STORAGE_KEY);
+      if (savedFiles) {
+        setAudioFiles(JSON.parse(savedFiles));
+      }
+    } catch (error) {
+      console.error('Ошибка при загрузке сохраненных файлов:', error);
+    }
+  };
+
+  const saveFiles = async (files: AudioFile[]) => {
+    try {
+      await AsyncStorage.setItem(LOCAL_FILES_STORAGE_KEY, JSON.stringify(files));
+    } catch (error) {
+      console.error('Ошибка при сохранении файлов:', error);
+    }
+  };
 
   const pickAudioFile = async () => {
     setLoading(true);
@@ -39,7 +66,9 @@ export default function LocalStorageScreen() {
         uri: asset.uri,
       }));
 
-      setAudioFiles(prev => [...prev, ...newFiles]);
+      const updatedFiles = [...audioFiles, ...newFiles];
+      setAudioFiles(updatedFiles);
+      await saveFiles(updatedFiles);
       Alert.alert('Успех', `Добавлено ${newFiles.length} файлов`);
     } catch (error) {
       console.error('Ошибка при выборе файла:', error);
