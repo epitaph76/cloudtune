@@ -7,6 +7,16 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 
+// Устанавливаем аудио режим при запуске приложения
+Audio.setAudioModeAsync({
+  allowsRecordingIOS: false,
+  interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+  playsInSilentModeIOS: true,
+  shouldDuckAndroid: true,
+  interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+  playThroughEarpieceAndroid: false,
+});
+
 // Тип для аудиофайла
 interface AudioFile {
   id: string;
@@ -57,11 +67,9 @@ export default function HomeTab() {
     if (playingFile === fileId) {
       // Останавливаем воспроизведение
       if (soundRef.current) {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
+        await soundRef.current.pauseAsync();
+        setPlayingFile(null);
       }
-      setPlayingFile(null);
     } else {
       // Останавливаем текущее воспроизведение
       if (soundRef.current) {
@@ -72,19 +80,31 @@ export default function HomeTab() {
       
       // Начинаем воспроизведение нового файла
       try {
-        const { sound } = await Audio.Sound.createAsync({ uri });
+        const { sound } = await Audio.Sound.createAsync(
+          { uri },
+          {
+            shouldPlay: true,
+            progressUpdateIntervalMillis: 1000,
+          },
+          // Callback для обновления воспроизведения
+          (status) => {
+            if (status.didJustFinish) {
+              setPlayingFile(null);
+              soundRef.current?.unloadAsync();
+              soundRef.current = null;
+            }
+          }
+        );
+        
+        // Устанавливаем метаданные для уведомления
+        const currentFile = audioFiles.find(file => file.id === fileId);
+        if (currentFile) {
+          await sound.setTitleAsync(currentFile.name);
+          await sound.setArtistAsync('CloudTune');
+        }
+        
         soundRef.current = sound;
         
-        // При завершении воспроизведения сбрасываем состояние
-        sound.setOnPlaybackStatusUpdate(status => {
-          if (status.didJustFinish) {
-            setPlayingFile(null);
-            soundRef.current?.unloadAsync();
-            soundRef.current = null;
-          }
-        });
-        
-        await sound.playAsync();
         setPlayingFile(fileId);
       } catch (error) {
         console.error('Ошибка при воспроизведении аудио:', error);
