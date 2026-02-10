@@ -4,7 +4,7 @@ The React Native/Expo frontend for CloudTune - a cloud music player application 
 
 ## 🎵 About
 
-CloudTune Frontend is a mobile application built with React Native and Expo that provides a seamless music listening experience across devices. The app connects to the CloudTune backend to manage user accounts, playlists, and music collections.
+CloudTune Frontend is a mobile application built with React Native and Expo that provides a seamless music listening experience across devices. The app connects to the CloudTune backend to manage user accounts, playlists, and music collections. The application supports local audio file playback with background audio capabilities.
 
 ## 🛠 Technologies
 
@@ -14,6 +14,8 @@ CloudTune Frontend is a mobile application built with React Native and Expo that
 - **React Navigation** - navigation solution
 - **Async Storage** - local data persistence
 - **Expo Router** - file-based routing
+- **Expo Audio** - audio playback capabilities
+- **Expo AV** - audio/video handling
 
 ## 📁 Project Structure
 
@@ -22,12 +24,12 @@ frontend/CloudTuneApp/
 ├── app/                    # Application screens and routes
 │   ├── (tabs)/           # Tab navigator screens
 │   │   ├── _layout.tsx   # Tab navigator layout
+│   │   ├── index.tsx     # Main screen with audio playback
 │   │   ├── local.tsx     # Local storage screen
 │   │   ├── profile.tsx   # Profile screen with authentication
 │   │   └── cloud.tsx     # Cloud storage screen
 │   ├── _layout.tsx       # Root layout with providers
 │   ├── index.tsx         # Splash screen with logo
-│   ├── auth.tsx          # Authentication screen (login/register)
 │   ├── login.tsx         # Login screen
 │   ├── register.tsx      # Registration screen
 │   └── modal.tsx         # Modal screen example
@@ -83,6 +85,23 @@ frontend/CloudTuneApp/
 - `npm run ios` - open the app in an iOS simulator
 - `npm run web` - open the app in a web browser
 - `npm run reset-project` - reset the project to initial state
+
+## 🎧 Audio Playback Features
+
+The application includes local audio file playback functionality:
+
+- **Audio File Selection**: Users can select audio files from their device using Document Picker
+- **Local Storage**: Selected audio files are stored locally using Async Storage
+- **Audio Playback**: Uses Expo Audio for playing audio files with play/pause controls
+- **Background Audio**: Audio continues playing when the app is in the background (iOS/Android)
+- **Supported Formats**: MP3, WAV, M4A, FLAC and other common audio formats
+
+### Audio Playback Implementation
+
+The audio playback is implemented using `expo-audio` library:
+- Main playback functionality is in `app/(tabs)/index.tsx`
+- Audio files are selected and stored in `app/(tabs)/local.tsx`
+- The `AudioPlayer` class manages playback state and controls
 
 ## 🌐 API Integration
 
@@ -157,6 +176,8 @@ This project is licensed under the MIT License - see the [LICENSE](../../LICENSE
 
 3. **TypeScript errors**: Run `npx tsc --noEmit` to check for TypeScript compilation errors.
 
+4. **Audio playback issues**: Check that the app has necessary permissions to access media files and play audio in the background.
+
 ### Debugging Tips
 
 - Enable Remote Debugging in Expo Go for browser-based debugging
@@ -171,5 +192,7 @@ This project is licensed under the MIT License - see the [LICENSE](../../LICENSE
 - Secure authentication with JWT tokens
 - Cross-platform compatibility (iOS/Android)
 - Offline token storage
+- Local audio file selection and playback
+- Background audio playback support
 - Clean, modern UI design
 - Proper error handling and user feedback
