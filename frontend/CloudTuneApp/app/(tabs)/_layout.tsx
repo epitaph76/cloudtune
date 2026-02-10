@@ -13,6 +13,8 @@ export default function TabLayout() {
             iconName = focused ? 'home' : 'home-outline';
           } else if (route.name === 'profile') {
             iconName = focused ? 'person' : 'person-outline';
+          } else if (route.name === 'explore') {
+            iconName = focused ? 'cloud' : 'cloud-outline';
           }
 
           return <Ionicons name={iconName as any} size={size} color={color} />;
@@ -33,6 +35,13 @@ export default function TabLayout() {
         options={{
           headerShown: false,
           title: 'Профиль'
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          headerShown: false,
+          title: 'Облако'
         }}
       />
     </Tabs>
