@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert } from 'react-native';
-import { DocumentPicker, DocumentPickerAsset } from 'expo-document-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 
@@ -32,7 +32,7 @@ export default function LocalStorageScreen() {
       }
 
       // Обрабатываем выбранные файлы
-      const newFiles: AudioFile[] = result.assets.map((asset: DocumentPickerAsset) => ({
+      const newFiles = result.assets.map(asset => ({
         id: asset.uri + Date.now(), // Уникальный ID
         name: asset.name || 'Unknown File',
         size: asset.size || 0,
