@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Используем домен сервера вместо локального адреса
-const BASE_URL = 'http://192.168.1.96:8080'; // URL вашего бэкенда
+const BASE_URL = 'http://10.79.180.60:8080'; // URL вашего бэкенда
 
 // Получение токена из хранилища
 const getToken = async () => {

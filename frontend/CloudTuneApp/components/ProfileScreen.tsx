@@ -1,21 +1,72 @@
 // components/ProfileScreen.tsx
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/providers/AuthProvider';
+import { registerUser, loginUser } from '@/lib/api';
 
 const ProfileScreen = () => {
   const router = useRouter();
-  const { logout, userData } = useAuth();
+  const { login, logout, userData } = useAuth();
+  
+  // Состояния для формы аутентификации
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isLoginMode, setIsLoginMode] = useState(true); // true для входа, false для регистрации
 
-  const handleLogin = () => {
-    // Перенаправляем на страницу аутентификации в режиме входа
-    router.push('/?mode=login');
-  };
+  const handleAuth = async () => {
+    if (!email || !password) {
+      Alert.alert('Ошибка', 'Пожалуйста, заполните email и пароль');
+      return;
+    }
 
-  const handleRegister = () => {
-    // Перенаправляем на страницу аутентификации в режиме регистрации
-    router.push('/?mode=register');
+    if (!isLoginMode && !username) {
+      Alert.alert('Ошибка', 'Пожалуйста, заполните имя пользователя');
+      return;
+    }
+
+    if (!isLoginMode && password.length < 6) {
+      Alert.alert('Ошибка', 'Пароль должен быть не менее 6 символов');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      let response;
+      if (isLoginMode) {
+        // Вход
+        response = await loginUser({
+          email,
+          password
+        });
+      } else {
+        // Регистрация
+        response = await registerUser({
+          email,
+          username,
+          password
+        });
+      }
+
+      // Вызываем функцию login из AuthProvider
+      if (response.token && response.user) {
+        await login(response.user, response.token);
+      }
+
+      Alert.alert('Успех', isLoginMode ? 'Вы успешно вошли!' : 'Вы успешно зарегистрировались!');
+      
+      // Очищаем поля
+      setEmail('');
+      setUsername('');
+      setPassword('');
+    } catch (error: any) {
+      Alert.alert('Ошибка', error.message || (isLoginMode ? 'Ошибка при входе' : 'Ошибка при регистрации'));
+      console.error(isLoginMode ? 'Ошибка входа:' : 'Ошибка регистрации:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -29,9 +80,6 @@ const ProfileScreen = () => {
         <Text style={styles.title}>Профиль пользователя</Text>
 
         <View style={styles.profileInfo}>
-          <Text style={styles.label}>ID:</Text>
-          <Text style={styles.value}>{userData.id}</Text>
-
           <Text style={styles.label}>Email:</Text>
           <Text style={styles.value}>{userData.email}</Text>
 
@@ -46,21 +94,56 @@ const ProfileScreen = () => {
     );
   }
 
-  // Если нет данных профиля, показываем кнопки входа и регистрации
+  // Если нет данных профиля, показываем форму аутентификации
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>CloudTune</Text>
-      <Text style={styles.subtitle}>Профиль пользователя</Text>
+      <Text style={styles.title}>{isLoginMode ? 'Вход в CloudTune' : 'Регистрация в CloudTune'}</Text>
 
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.buttonText}>Войти</Text>
-        </TouchableOpacity>
+      <TextInput
+        style={styles.input}
+        placeholder="Email"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoComplete="email"
+      />
 
-        <TouchableOpacity style={styles.button} onPress={handleRegister}>
-          <Text style={styles.buttonText}>Зарегистрироваться</Text>
+      {!isLoginMode && (
+        <TextInput
+          style={styles.input}
+          placeholder="Имя пользователя"
+          value={username}
+          onChangeText={setUsername}
+          autoCapitalize="none"
+          autoComplete="username"
+        />
+      )}
+
+      <TextInput
+        style={styles.input}
+        placeholder="Пароль"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        autoComplete="password"
+      />
+
+      {loading ? (
+        <ActivityIndicator size="large" color="#4CAF50" style={styles.loading} />
+      ) : (
+        <TouchableOpacity style={styles.authButton} onPress={handleAuth}>
+          <Text style={styles.buttonText}>{isLoginMode ? 'Войти' : 'Зарегистрироваться'}</Text>
         </TouchableOpacity>
-      </View>
+      )}
+
+      <TouchableOpacity style={styles.toggleModeButton} onPress={() => setIsLoginMode(!isLoginMode)}>
+        <Text style={styles.toggleModeButtonText}>
+          {isLoginMode 
+            ? 'Нет аккаунта? Зарегистрироваться' 
+            : 'Уже есть аккаунт? Войти'}
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -73,27 +156,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 30,
     color: '#333',
   },
-  subtitle: {
-    fontSize: 18,
-    textAlign: 'center',
-    marginBottom: 40,
-    color: '#666',
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    padding: 15,
+    marginBottom: 15,
+    borderRadius: 8,
+    backgroundColor: 'white',
+    fontSize: 16,
   },
-  buttonContainer: {
-    flexDirection: 'column',
-    gap: 15,
-  },
-  button: {
+  authButton: {
     backgroundColor: '#4CAF50',
     padding: 16,
     borderRadius: 10,
     alignItems: 'center',
+    marginTop: 10,
     shadowColor: '#4CAF50',
     shadowOffset: {
       width: 0,
@@ -103,10 +186,22 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  toggleModeButton: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  toggleModeButtonText: {
+    color: '#2196F3',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   buttonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  loading: {
+    marginTop: 20,
   },
   profileInfo: {
     backgroundColor: 'white',
