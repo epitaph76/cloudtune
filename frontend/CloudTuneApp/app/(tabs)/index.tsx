@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
+import { useFocusEffect } from '@react-navigation/native';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 
@@ -24,7 +25,6 @@ export default function HomeTab() {
 
   // Загружаем все файлы при монтировании компонента
   useEffect(() => {
-    loadAllFiles();
     return () => {
       // Очищаем аудио при размонтировании компонента
       if (soundRef.current) {
@@ -33,11 +33,20 @@ export default function HomeTab() {
     };
   }, []);
 
+  // Обновляем список файлов при фокусе на вкладке
+  useFocusEffect(
+    React.useCallback(() => {
+      loadAllFiles();
+    }, [])
+  );
+
   const loadAllFiles = async () => {
     try {
       const savedFiles = await AsyncStorage.getItem(LOCAL_FILES_STORAGE_KEY);
       if (savedFiles) {
         setAudioFiles(JSON.parse(savedFiles));
+      } else {
+        setAudioFiles([]);
       }
     } catch (error) {
       console.error('Ошибка при загрузке файлов:', error);
