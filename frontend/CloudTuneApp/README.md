@@ -92,16 +92,18 @@ The application includes local audio file playback functionality:
 
 - **Audio File Selection**: Users can select audio files from their device using Document Picker
 - **Local Storage**: Selected audio files are stored locally using Async Storage
-- **Audio Playback**: Uses Expo Audio for playing audio files with play/pause controls
+- **Audio Playback**: Uses Expo AV for playing audio files with play/pause controls
 - **Background Audio**: Audio continues playing when the app is in the background (iOS/Android)
+- **Media Notifications**: Shows playback controls in the notification bar with track info and play/pause functionality
 - **Supported Formats**: MP3, WAV, M4A, FLAC and other common audio formats
 
 ### Audio Playback Implementation
 
-The audio playback is implemented using `expo-audio` library:
-- Main playback functionality is in `app/(tabs)/index.tsx`
+The audio playback is implemented using `expo-av` library with background audio support:
+- Audio service initialization is in `app/_layout.tsx`
+- Main playback functionality is in `lib/audioService.ts`
+- Playback controls are in `app/(tabs)/index.tsx`
 - Audio files are selected and stored in `app/(tabs)/local.tsx`
-- The `AudioPlayer` class manages playback state and controls
 
 ## 🌐 API Integration
 

@@ -1,11 +1,11 @@
 // app/(tabs)/index.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AudioPlayer } from 'expo-audio';
 import { useFocusEffect } from '@react-navigation/native';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
+import { audioPlayerService } from '@/lib/trackPlayerService';
 
 // Тип для аудиофайла
 interface AudioFile {
@@ -14,6 +14,7 @@ interface AudioFile {
   size: number;
   uri: string;
   duration?: string;
+  artist?: string; // Добавляем поле для исполнителя
 }
 
 const LOCAL_FILES_STORAGE_KEY = 'local_audio_files';
@@ -21,17 +22,34 @@ const LOCAL_FILES_STORAGE_KEY = 'local_audio_files';
 export default function HomeTab() {
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [playingFile, setPlayingFile] = useState<string | null>(null);
-  const soundRef = useRef<AudioPlayer | null>(null);
 
   // Загружаем все файлы при монтировании компонента
   useEffect(() => {
-    return () => {
-      // Очищаем аудио при размонтировании компонента
-      if (soundRef.current) {
-        soundRef.current.unloadAsync();
+    // Подписываемся на обновления состояния воспроизведения
+    const interval = setInterval(async () => {
+      try {
+        const currentTrack = await audioPlayerService.getCurrentTrack();
+        const state = await audioPlayerService.getPlaybackState();
+        
+        if (currentTrack && (state.state === State.Playing)) {
+          // Найти ID файла по ID трека
+          const currentFile = audioFiles.find(file => file.id === currentTrack.id);
+          if (currentFile) {
+            setPlayingFile(currentFile.id);
+          }
+        } else {
+          setPlayingFile(null);
+        }
+      } catch (error) {
+        console.error('Ошибка при получении состояния воспроизведения:', error);
+        setPlayingFile(null);
       }
+    }, 1000); // Обновляем каждую секунду
+
+    return () => {
+      clearInterval(interval);
     };
-  }, []);
+  }, [audioFiles]);
 
   // Обновляем список файлов при фокусе на вкладке
   useFocusEffect(
@@ -53,37 +71,22 @@ export default function HomeTab() {
     }
   };
 
-  const togglePlayback = async (fileId: string, uri: string) => {
+  const togglePlayback = async (fileId: string, uri: string, trackName: string = 'Неизвестный трек', artist: string = 'CloudTune') => {
     if (playingFile === fileId) {
-      // Останавливаем воспроизведение
-      if (soundRef.current) {
-        await soundRef.current.pauseAsync();
-        setPlayingFile(null);
-      }
+      // Пауза текущего трека
+      await audioPlayerService.pause();
+      setPlayingFile(null);
     } else {
-      // Останавливаем текущее воспроизведение
-      if (soundRef.current) {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-      
-      // Начинаем воспроизведение нового файла
+      // Воспроизведение нового трека
       try {
-        const player = new AudioPlayer({ source: { uri } });
-        await player.loadAsync();
-        
-        // Подписываемся на событие завершения воспроизведения
-        player.setOnPlaybackStatusUpdate((status) => {
-          if (status.didJustFinish) {
-            setPlayingFile(null);
-            soundRef.current = null;
-          }
+        // Добавляем трек в очередь и воспроизводим его
+        await audioPlayerService.addTrack({
+          id: fileId,
+          url: uri,
+          title: trackName,
+          artist: artist
         });
-        
-        await player.playAsync();
-        soundRef.current = player;
-        
+        await audioPlayerService.playTrack(fileId);
         setPlayingFile(fileId);
       } catch (error) {
         console.error('Ошибка при воспроизведении аудио:', error);
@@ -104,9 +107,9 @@ export default function HomeTab() {
         <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
         <Text style={styles.fileSize}>{formatFileSize(item.size)}</Text>
       </View>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.playButton}
-        onPress={() => togglePlayback(item.id, item.uri)}
+        onPress={() => togglePlayback(item.id, item.uri, item.name, item.artist || 'CloudTune')}
       >
         <Text style={styles.playButtonText}>
           {playingFile === item.id ? '⏹' : '▶'}
@@ -119,12 +122,12 @@ export default function HomeTab() {
     <ThemedView style={styles.container}>
       <ThemedText type="title">CloudTune</ThemedText>
       <Text style={styles.descriptionText}>Ваш личный облачный плеер музыки</Text>
-      
+
       <View style={styles.filesSection}>
         <ThemedText type="subtitle" style={styles.sectionTitle}>
           Все треки ({audioFiles.length})
         </ThemedText>
-        
+
         {audioFiles.length > 0 ? (
           <FlatList
             data={audioFiles}

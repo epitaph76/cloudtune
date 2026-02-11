@@ -36,6 +36,8 @@ CloudTune is a personal cloud music player with cross-device synchronization. Up
 - **Cross-Platform**: Works on iOS and Android devices
 - **Self-Hosted**: Full control over your music collection and data
 - **Secure**: Password hashing, input validation, and SQL injection protection
+- **Background Audio Playback**: Music continues playing when the app is in the background
+- **Media Notifications**: Shows playback controls in the notification bar with track info and play/pause functionality
 
 ## 🔐 Security
 
