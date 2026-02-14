@@ -1,204 +1,204 @@
 # CloudTune Backend
 
-The backend service for CloudTune - a REST API for managing cloud music resources with secure user authentication.
+Сервис бэкенда для CloudTune - REST API для управления облачными музыкальными ресурсами с безопасной аутентификацией пользователей.
 
-## 🛠 Technologies
+## 🛠 Технологии
 
-- **Go** (version 1.25+)
-- **Gin Framework** - web framework
-- **PostgreSQL** - database
-- **Air** - hot reload tool for development
-- **JWT** - authentication tokens
-- **bcrypt** - password hashing
+- **Go** (версия 1.25+)
+- **Gin Framework** - веб-фреймворк
+- **PostgreSQL** - база данных
+- **Air** - инструмент горячей перезагрузки для разработки
+- **JWT** - токены аутентификации
+- **bcrypt** - хеширование паролей
 
-## 📁 Project Structure
+## 📁 Структура проекта
 
 ```
 backend/
 ├── cmd/
 │   └── api/
-│       └── main.go          # Application entry point
+│       └── main.go          # Точка входа в приложение
 ├── internal/
-│   ├── database/            # Database connection and setup
-│   │   ├── connection.go    # Database connection logic
-│   │   └── migrations.go    # Schema creation
-│   ├── handlers/            # HTTP request handlers
-│   │   ├── auth.go          # Authentication endpoints
-│   │   ├── health.go        # Health check endpoint
-│   │   └── status.go        # Status endpoint
-│   ├── middleware/          # Authentication and other middleware
-│   │   └── auth.go          # JWT authentication middleware
-│   ├── models/              # Data models
-│   │   └── user.go          # User model
-│   └── utils/               # Utility functions
-│       ├── password.go      # Password hashing utilities
-│       └── jwt.go           # JWT token utilities
-├── pkg/                     # Shared packages
-├── go.mod                   # Go module dependencies
-├── go.sum                   # Dependency checksums
-├── .air.toml                # Air configuration
-├── Dockerfile.dev           # Development Dockerfile
-├── docker-compose.yml       # Docker Compose configuration
-└── .env.example            # Environment variables example
+│   ├── database/            # Подключение к базе данных и настройка
+│   │   ├── db.go            # Логика подключения к базе данных
+│   │   └── schema.go        # Создание схемы
+│   ├── handlers/            # Обработчики HTTP-запросов
+│   │   ├── auth.go          # Эндпоинты аутентификации
+│   │   ├── health.go        # Эндпоинт проверки работоспособности
+│   │   └── status.go        # Эндпоинт статуса
+│   ├── middleware/          # Аутентификация и другие промежуточные обработчики
+│   │   └── auth.go          # Промежуточный обработчик JWT-аутентификации
+│   ├── models/              # Модели данных
+│   │   └── user.go          # Модель пользователя
+│   └── utils/               # Вспомогательные функции
+│       ├── password.go      # Вспомогательные функции хеширования паролей
+│       └── token.go         # Вспомогательные функции JWT-токенов
+├── pkg/                     # Общие пакеты
+├── go.mod                   # Зависимости Go-модуля
+├── go.sum                   # Контрольные суммы зависимостей
+├── .air.toml                # Конфигурация Air
+├── Dockerfile.dev           # Dockerfile для разработки
+├── docker-compose.yml       # Конфигурация Docker Compose
+└── .env.example            # Пример переменных окружения
 ```
 
-## 🚀 Getting Started
+## 🚀 Начало работы
 
-### Prerequisites
+### Предварительные требования
 
 - Go 1.25+
-- PostgreSQL (for development)
-- Docker and Docker Compose (optional, for containerized development)
+- PostgreSQL (для разработки)
+- Docker и Docker Compose (опционально, для контейнеризованной разработки)
 
-### Local Development
+### Локальная разработка
 
-1. Ensure you have Go version 1.25+ installed
-2. Install Air for hot reloading:
+1. Убедитесь, что у вас установлена версия Go 1.25+
+2. Установите Air для горячей перезагрузки:
    ```bash
    go install github.com/air-verse/air@latest
    ```
-3. Install dependencies:
+3. Установите зависимости:
    ```bash
    go mod tidy
    ```
-4. Set up environment variables:
+4. Настройте переменные окружения:
    ```bash
    cp .env.example .env
-   # Edit .env with your configuration
+   # Отредактируйте .env с вашей конфигурацией
    ```
-5. Run the application:
+5. Запустите приложение:
    ```bash
    cd cmd/api
    go run main.go
    ```
 
-   Or use Air for automatic reloading:
+   Или используйте Air для автоматической перезагрузки:
    ```bash
    air
    ```
 
-### Using Docker
+### Использование Docker
 
-1. Build the image:
+1. Соберите образ:
    ```bash
    docker build -f Dockerfile.dev -t cloudtune-backend .
    ```
 
-2. Run the container:
+2. Запустите контейнер:
    ```bash
    docker run -d -p 8080:8080 --name cloudtune-backend-container cloudtune-backend
    ```
 
-### Using Docker Compose (with PostgreSQL)
+### Использование Docker Compose (с PostgreSQL)
 
-1. Ensure you have Docker and Docker Compose installed
+1. Убедитесь, что у вас установлены Docker и Docker Compose
 
-2. Start the services:
+2. Запустите сервисы:
    ```bash
    docker-compose up -d
    ```
 
-3. On first run, the application may take time to install dependencies
+3. При первом запуске приложению может потребоваться время для установки зависимостей
 
-4. To stop the services:
+4. Чтобы остановить сервисы:
    ```bash
    docker-compose down
    ```
 
-## 🌐 API Endpoints
+## 🌐 API-эндпоинты
 
-### Health Check
-- `GET /health` - server health status
+### Проверка работоспособности
+- `GET /health` - статус работоспособности сервера
 
-### Authentication
-- `POST /auth/register` - user registration
-- `POST /auth/login` - user login
+### Аутентификация
+- `POST /auth/register` - регистрация пользователя
+- `POST /auth/login` - вход пользователя
 
-### Protected Routes
-- `GET /api/profile` - user profile (requires authentication)
+### Защищенные маршруты
+- `GET /api/profile` - профиль пользователя (требует аутентификации)
 
-### Example Requests
+### Примеры запросов
 
-#### User Registration
+#### Регистрация пользователя
 ```bash
 curl -X POST http://localhost:8080/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","username":"username","password":"password"}'
 ```
 
-#### User Login
+#### Вход пользователя
 ```bash
 curl -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"password"}'
 ```
 
-#### Accessing Protected Resources
+#### Доступ к защищенным ресурсам
 ```bash
 curl -X GET http://localhost:8080/api/profile \
   -H "Authorization: Bearer YOUR_JWT_TOKEN_HERE"
 ```
 
-## 🔐 Environment Variables
+## 🔐 Переменные окружения
 
-Create a `.env` file based on `.env.example` and set the required environment variables:
+Создайте файл `.env` на основе `.env.example` и установите требуемые переменные окружения:
 
 ```bash
-# Copy the example configuration
+# Скопируйте пример конфигурации
 cp .env.example .env
 
-# Edit the .env file with your values
+# Отредактируйте файл .env с вашими значениями
 ```
 
-Key variables:
-- `DB_HOST` - database host (default: localhost)
-- `DB_PORT` - database port (default: 5432)
-- `DB_USER` - database username (default: postgres)
-- `DB_PASSWORD` - database password (default: password)
-- `DB_NAME` - database name (default: cloudtune)
-- `JWT_SECRET` - secret key for JWT tokens (change this in production!)
+Ключевые переменные:
+- `DB_HOST` - хост базы данных (по умолчанию: localhost)
+- `DB_PORT` - порт базы данных (по умолчанию: 5432)
+- `DB_USER` - имя пользователя базы данных (по умолчанию: postgres)
+- `DB_PASSWORD` - пароль базы данных (по умолчанию: password)
+- `DB_NAME` - имя базы данных (по умолчанию: cloudtune)
+- `JWT_SECRET` - секретный ключ для JWT-токенов (измените это в продакшене!)
 
-## 🛡️ Security Features
+## 🛡️ Особенности безопасности
 
-- Password hashing with bcrypt (cost=12)
-- JWT-based authentication
-- Input validation for all requests
-- Parameterized queries to prevent SQL injection
-- Secure token handling
+- Хеширование паролей с помощью bcrypt (cost=12)
+- Аутентификация на основе JWT
+- Валидация ввода для всех запросов
+- Параметризованные запросы для предотвращения SQL-инъекций
+- Безопасная обработка токенов
 
-## 🧪 Testing
+## 🧪 Тестирование
 
-To run tests:
+Для запуска тестов:
 ```bash
 go test ./...
 ```
 
-## 🚧 Development
+## 🚧 Разработка
 
-During development, it's recommended to use Air for hot reloading. The configuration is located in the `.air.toml` file.
+Во время разработки рекомендуется использовать Air для горячей перезагрузки. Конфигурация находится в файле `.air.toml`.
 
-## 🤝 Contributing
+## 🤝 Вклад в проект
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Commit your changes (`git commit -m 'Add amazing feature'`)
-5. Push to the branch (`git push origin feature/amazing-feature`)
-6. Open a Pull Request
+1. Форкните репозиторий
+2. Создайте ветку для новой функции (`git checkout -b feature/amazing-feature`)
+3. Внесите свои изменения
+4. Зафиксируйте изменения (`git commit -m 'Add amazing feature'`)
+5. Отправьте ветку (`git push origin feature/amazing-feature`)
+6. Создайте Pull Request
 
-## 📄 License
+## 📄 Лицензия
 
-This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+Этот проект лицензирован под лицензией MIT - см. файл [LICENSE](../LICENSE) для получения подробной информации.
 
-## 🐳 Docker Compose Configuration
+## 🐳 Конфигурация Docker Compose
 
-The project includes a comprehensive Docker Compose configuration for easy development setup:
+Проект включает в себя комплексную конфигурацию Docker Compose для простой настройки разработки:
 
 ```yaml
 version: '3.8'
 
 services:
-  # Application service
+  # Сервис приложения
   app:
     build:
       context: .
@@ -218,7 +218,7 @@ services:
       - .:/app
     command: air
 
-  # PostgreSQL database service
+  # Сервис базы данных PostgreSQL
   db:
     image: postgres:15
     environment:
@@ -234,4 +234,4 @@ volumes:
   postgres_data:
 ```
 
-This configuration sets up both the application and database containers with proper networking and persistence.
+Эта конфигурация настраивает контейнеры приложения и базы данных с правильной сетевой настройкой и постоянным хранением.
