@@ -3,6 +3,7 @@ package middleware
 import (
 	"cloudtune/internal/utils"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -44,7 +45,30 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Add user ID to the context for use in handlers
-		c.Set("user_id", claims["user_id"])
+		// Convert user_id to int before storing in context
+		var userID int
+		switch v := claims["user_id"].(type) {
+		case float64:
+			userID = int(v)
+		case string:
+			// Если user_id приходит как строка, нужно преобразовать
+			parsedID, err := strconv.Atoi(v)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "Invalid user ID format",
+				})
+				c.Abort()
+				return
+			}
+			userID = parsedID
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Invalid user ID format",
+			})
+			c.Abort()
+			return
+		}
+		c.Set("user_id", userID)
 		c.Next()
 	}
 }

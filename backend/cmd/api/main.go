@@ -35,8 +35,16 @@ func main() {
 	protectedRoutes := router.Group("/api")
 	protectedRoutes.Use(middleware.AuthMiddleware()) // Middleware для аутентификации
 	{
-		// Пример защищенного маршрута
-		// protectedRoutes.GET("/profile", handlers.GetProfile)
+		// Маршруты для работы с песнями
+		protectedRoutes.POST("/songs/upload", handlers.UploadSong)
+		protectedRoutes.GET("/songs/library", handlers.GetUserLibrary)
+		protectedRoutes.GET("/songs/:id", handlers.GetSongByID)
+
+		// Маршруты для работы с плейлистами
+		protectedRoutes.POST("/playlists", handlers.CreatePlaylist)
+		protectedRoutes.GET("/playlists", handlers.GetUserPlaylists)
+		protectedRoutes.POST("/playlists/:playlist_id/songs/:song_id", handlers.AddSongToPlaylist)
+		protectedRoutes.GET("/playlists/:playlist_id/songs", handlers.GetPlaylistSongs)
 	}
 
 	// Запускаем сервер

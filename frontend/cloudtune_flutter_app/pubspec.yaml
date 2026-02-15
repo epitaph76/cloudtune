@@ -33,16 +33,29 @@ dependencies:
 
   # HTTP client for API communication
   dio: ^5.4.3+1
-  
+
   # State management
   provider: ^6.1.1
-  
+
   # Local data persistence
   shared_preferences: ^2.2.2
-  
+
   # Form validation
   form_field_validator: ^1.1.0
 
+  # File picker
+  file_picker: ^8.0.0+1
+
+  # Path manipulation
+  path: ^1.9.0
+
+  # Audio player with background playback support
+  just_audio: ^0.9.39
+  just_audio_background: ^0.0.1-beta.11
+  
+  # Audio service for background playback
+  audio_service: ^0.18.15
+  
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8

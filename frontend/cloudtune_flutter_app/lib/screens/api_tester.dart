@@ -11,7 +11,10 @@ class ApiTester extends StatefulWidget {
 
 class _ApiTesterState extends State<ApiTester> {
   String _result = '';
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(BaseOptions(
+    connectTimeout: Duration(seconds: 9),
+    receiveTimeout: Duration(seconds: 9),
+  ));
 
   Future<void> _testConnection() async {
     try {

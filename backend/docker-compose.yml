@@ -19,6 +19,7 @@ services:
       - db
     volumes:
       - .:/app
+      - uploads:/app/uploads
     command: air
 
   # Сервис базы данных PostgreSQL
@@ -35,3 +36,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads:
