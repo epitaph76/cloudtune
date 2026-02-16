@@ -9,6 +9,7 @@ import 'screens/api_tester.dart';
 import 'screens/login_screen.dart';
 import 'providers/auth_provider.dart';
 import 'providers/local_music_provider.dart';
+import 'providers/cloud_music_provider.dart';
 import 'providers/audio_player_provider.dart';
 
 void main() {
@@ -24,6 +25,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (context) => AuthProvider()),
         ChangeNotifierProvider(create: (context) => LocalMusicProvider()),
+        ChangeNotifierProvider(create: (context) => CloudMusicProvider()),
         ChangeNotifierProxyProvider<LocalMusicProvider, AudioPlayerProvider>(
           create: (context) => AudioPlayerProvider(context.read<LocalMusicProvider>()),
           update: (context, localMusicProvider, audioPlayerProvider) {

@@ -226,24 +226,24 @@ func GetSongByID(c *gin.Context) {
 
 	db := database.DB
 	var song models.Song
-	
-	query := `SELECT id, filename, original_filename, filepath, filesize, artist, title, album, genre, year, mime_type, upload_date 
+
+	query := `SELECT id, filename, original_filename, filepath, filesize, artist, title, album, genre, year, mime_type, upload_date
 			  FROM songs WHERE id = $1`
-	
+
 	var artist, title, album, genre sql.NullString
 	var year sql.NullInt64
-	
-	err = db.QueryRow(query, songID).Scan(&song.ID, &song.Filename, &song.OriginalFilename, 
-										  &song.Filepath, &song.Filesize, &artist, 
-										  &title, &album, &genre, &year, 
+
+	err = db.QueryRow(query, songID).Scan(&song.ID, &song.Filename, &song.OriginalFilename,
+										  &song.Filepath, &song.Filesize, &artist,
+										  &title, &album, &genre, &year,
 										  &song.MimeType, &song.UploadDate)
-	
+
 	if err != nil {
 		log.Printf("Error retrieving song: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Song not found"})
 		return
 	}
-	
+
 	// Устанавливаем значения, если они не равны NULL
 	if artist.Valid {
 		song.Artist = &artist.String
@@ -263,4 +263,63 @@ func GetSongByID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"song": song})
+}
+
+// DownloadSong handles downloading a song by ID
+func DownloadSong(c *gin.Context) {
+	// Получаем ID пользователя из контекста
+	userIDInterface, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDInterface.(int)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	songID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid song ID"})
+		return
+	}
+
+	db := database.DB
+	var song models.Song
+
+	// Проверяем, что пользователь имеет доступ к этой песне (через user_library)
+	query := `SELECT s.id, s.filename, s.original_filename, s.filepath, s.filesize, s.mime_type, s.upload_date
+			  FROM songs s
+			  JOIN user_library ul ON s.id = ul.song_id
+			  WHERE s.id = $1 AND ul.user_id = $2`
+
+	err = db.QueryRow(query, songID, userID).Scan(&song.ID, &song.Filename, &song.OriginalFilename,
+												  &song.Filepath, &song.Filesize, &song.MimeType, &song.UploadDate)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied to this song"})
+			return
+		}
+		log.Printf("Error retrieving song for download: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error retrieving song"})
+		return
+	}
+
+	// Проверяем, что файл существует
+	if _, err := os.Stat(song.Filepath); os.IsNotExist(err) {
+		log.Printf("File does not exist: %s", song.Filepath)
+		c.JSON(http.StatusNotFound, gin.H{"error": "File not found"})
+		return
+	}
+
+	// Отправляем файл пользователю
+	c.Header("Content-Description", "File Transfer")
+	c.Header("Content-Transfer-Encoding", "binary")
+	c.Header("Content-Disposition", "attachment; filename="+song.OriginalFilename)
+	c.Header("Content-Type", "application/octet-stream")
+
+	c.File(song.Filepath)
 }
