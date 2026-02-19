@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/local_music_provider.dart';
+
 import '../providers/audio_player_provider.dart';
-import 'dart:io';
+import '../providers/local_music_provider.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -18,17 +18,13 @@ class HomeScreen extends StatelessWidget {
       body: Consumer2<LocalMusicProvider, AudioPlayerProvider>(
         builder: (context, localMusicProvider, audioProvider, child) {
           final tracks = localMusicProvider.selectedFiles;
-          
+
           if (tracks.isEmpty) {
             return const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.music_off,
-                    size: 100,
-                    color: Colors.grey,
-                  ),
+                  Icon(Icons.music_off, size: 100, color: Colors.grey),
                   SizedBox(height: 20),
                   Text(
                     'Нет загруженных треков',
@@ -36,7 +32,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                   SizedBox(height: 10),
                   Text(
-                    'Перейдите на вкладку "Локальная музыка", чтобы выбрать файлы',
+                    'Перейдите во вкладку "Локальная музыка", чтобы добавить файлы',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 14, color: Colors.grey),
                   ),
@@ -44,10 +40,9 @@ class HomeScreen extends StatelessWidget {
               ),
             );
           }
-          
+
           return Column(
             children: [
-              // Player controls section
               if (audioProvider.audioFiles.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -62,42 +57,44 @@ class HomeScreen extends StatelessWidget {
                             children: [
                               IconButton(
                                 icon: const Icon(Icons.skip_previous),
-                                onPressed: () {
-                                  // Implement skip to previous
-                                },
+                                onPressed: audioProvider.skipToPrevious,
                               ),
                               IconButton(
                                 icon: Icon(
-                                  audioProvider.playing ? Icons.pause : Icons.play_arrow,
+                                  audioProvider.playing
+                                      ? Icons.pause
+                                      : Icons.play_arrow,
                                 ),
                                 iconSize: 48,
-                                onPressed: () {
-                                  audioProvider.playPause();
-                                },
+                                onPressed: audioProvider.playPause,
                               ),
                               IconButton(
                                 icon: const Icon(Icons.skip_next),
-                                onPressed: () {
-                                  // Implement skip to next
-                                },
+                                onPressed: audioProvider.skipToNext,
                               ),
                             ],
                           ),
                           const SizedBox(height: 8),
-                          // Progress indicator
                           if (audioProvider.duration.inSeconds > 0)
                             Column(
                               children: [
                                 Slider(
-                                  value: audioProvider.position.inSeconds.toDouble(),
+                                  value: audioProvider.position.inSeconds
+                                      .toDouble()
+                                      .clamp(
+                                        0.0,
+                                        audioProvider.duration.inSeconds
+                                            .toDouble(),
+                                      )
+                                      .toDouble(),
                                   min: 0.0,
                                   max: audioProvider.duration.inSeconds.toDouble(),
-                                  onChanged: (value) {
-                                    audioProvider.seek(Duration(seconds: value.toInt()));
-                                  },
+                                  onChanged: (value) => audioProvider
+                                      .seek(Duration(seconds: value.toInt())),
                                 ),
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
                                       _formatDuration(audioProvider.position),
@@ -116,41 +113,45 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-              
-              // Tracks list
               Expanded(
                 child: ListView.builder(
                   itemCount: tracks.length,
                   itemBuilder: (context, index) {
-                    String fileName = tracks[index].path.split('/').last;
-                    // Определяется через audioProvider.isCurrentTrack(index)
-                    
+                    final fileName = tracks[index].path.split('/').last;
                     return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: audioProvider.isCurrentTrack(index) ? Colors.blue : Colors.grey[300],
+                          backgroundColor: audioProvider.isCurrentTrack(index)
+                              ? Colors.blue
+                              : Colors.grey[300],
                           child: Icon(
-                            audioProvider.isCurrentTrack(index) ? Icons.music_note : Icons.audiotrack,
-                            color: audioProvider.isCurrentTrack(index) ? Colors.white : Colors.blue,
+                            audioProvider.isCurrentTrack(index)
+                                ? Icons.music_note
+                                : Icons.audiotrack,
+                            color: audioProvider.isCurrentTrack(index)
+                                ? Colors.white
+                                : Colors.blue,
                           ),
                         ),
-                        title: Text(
-                          fileName,
+                        title: Text(fileName, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(
+                          tracks[index].path,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        subtitle: Text(
-                          'Размер: ${(File(tracks[index].path).lengthSync() / 1024 / 1024).toStringAsFixed(2)} MB',
-                        ),
                         trailing: IconButton(
-                          icon: const Icon(Icons.play_arrow),
-                          onPressed: () {
-                            audioProvider.playAudioAt(index);
-                          },
+                          icon: Icon(
+                            audioProvider.isTrackPlaying(index)
+                                ? Icons.pause
+                                : Icons.play_arrow,
+                          ),
+                          onPressed: () => audioProvider.toggleTrackAt(index),
                         ),
-                        onTap: () {
-                          audioProvider.playAudioAt(index);
-                        },
+                        onTap: () => audioProvider.toggleTrackAt(index),
                       ),
                     );
                   },
@@ -162,11 +163,11 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, "0");
-    String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
-    String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
-    return "${twoDigits(duration.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
+    final twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
+    return '${twoDigits(duration.inHours)}:$twoDigitMinutes:$twoDigitSeconds';
   }
 }

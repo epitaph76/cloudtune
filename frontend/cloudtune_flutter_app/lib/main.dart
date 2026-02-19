@@ -11,8 +11,21 @@ import 'providers/auth_provider.dart';
 import 'providers/local_music_provider.dart';
 import 'providers/cloud_music_provider.dart';
 import 'providers/audio_player_provider.dart';
+import 'package:audio_service/audio_service.dart';
+import 'services/audio_handler.dart';
 
-void main() {
+late final MyAudioHandler audioHandler;
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+   audioHandler = await AudioService.init(
+    builder: () => MyAudioHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.cloudtune.audio',
+      androidNotificationChannelName: 'CloudTune Playback',
+      androidNotificationOngoing: true,
+    ),
+  );
   runApp(const MyApp());
 }
 
@@ -23,13 +36,15 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (context) => AuthProvider()),
-        ChangeNotifierProvider(create: (context) => LocalMusicProvider()),
-        ChangeNotifierProvider(create: (context) => CloudMusicProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => LocalMusicProvider()),
+        ChangeNotifierProvider(create: (_) => CloudMusicProvider()),
         ChangeNotifierProxyProvider<LocalMusicProvider, AudioPlayerProvider>(
-          create: (context) => AudioPlayerProvider(context.read<LocalMusicProvider>()),
+          create: (context) =>
+              AudioPlayerProvider(context.read<LocalMusicProvider>(), audioHandler),
           update: (context, localMusicProvider, audioPlayerProvider) {
-            return audioPlayerProvider!..updateLocalMusicProvider(localMusicProvider);
+            audioPlayerProvider!.updateLocalMusicProvider(localMusicProvider);
+            return audioPlayerProvider;
           },
         ),
       ],
@@ -60,11 +75,11 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const ProfileScreen(),
-    const LocalMusicScreen(),
-    const ServerMusicScreen(),
+  final List<Widget> _screens = const [
+    HomeScreen(),
+    ProfileScreen(),
+    LocalMusicScreen(),
+    ServerMusicScreen(),
   ];
 
   void _onItemTapped(int index) {
@@ -78,23 +93,11 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       body: _screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Главная',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Профиль',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.music_note),
-            label: 'Локальная музыка',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.cloud),
-            label: 'Серверная музыка',
-          ),
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Главная'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Профиль'),
+          BottomNavigationBarItem(icon: Icon(Icons.music_note), label: 'Локальная музыка'),
+          BottomNavigationBarItem(icon: Icon(Icons.cloud), label: 'Серверная музыка'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Colors.blue,

@@ -38,7 +38,13 @@ class LocalMusicProvider with ChangeNotifier {
   }
 
   Future<void> addFiles(List<File> files) async {
-    _selectedFiles.addAll(files);
+    final existingPaths = _selectedFiles.map((file) => file.path).toSet();
+    for (final file in files) {
+      if (!existingPaths.contains(file.path)) {
+        _selectedFiles.add(file);
+        existingPaths.add(file.path);
+      }
+    }
     await _saveFiles();
     notifyListeners();
   }

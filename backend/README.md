@@ -1,95 +1,84 @@
-# CloudTune Backend
+﻿# CloudTune Backend
 
-Backend для облачного музыкального плеера CloudTune.
+Backend часть CloudTune на Go (Gin + PostgreSQL).
 
-## Особенности
+## Функциональность
 
-- Аутентификация пользователей с использованием JWT
-- Загрузка и хранение музыкальных файлов
-- Управление пользовательской библиотекой
-- Создание и управление плейлистами
-- Защита файлов - доступ только владельцу
+- Регистрация и вход пользователя (JWT).
+- Загрузка аудиофайлов на сервер.
+- Персональная облачная библиотека (`user_library`).
+- Плейлисты: создание, список, добавление треков, просмотр треков.
+- Скачивание треков с проверкой доступа.
 
-## Установка и запуск
+## Стек
 
-### Локальный запуск
+- Go `1.24`
+- Gin
+- PostgreSQL
+- JWT (`github.com/golang-jwt/jwt/v5`)
+- Docker / Docker Compose
 
-1. Установите Go (версия 1.24 или выше)
-2. Установите Docker и Docker Compose
-3. Скопируйте `.env.example` в `.env` и настройте переменные окружения
-4. Запустите сервисы:
+## Структура
+
+```text
+backend/
+  cmd/api/main.go
+  internal/database/
+  internal/handlers/
+  internal/middleware/
+  internal/models/
+  internal/utils/
+  docker-compose.yml
+  Dockerfile.dev
+```
+
+## Запуск
 
 ```bash
-docker-compose up --build
+cd backend
+docker compose up --build
 ```
 
-Сервер будет доступен по адресу `http://localhost:8080`
+Сервис поднимется на `http://localhost:8080`.
 
-### Запуск в продакшене
+## Переменные окружения
 
-1. Настройте домен (например, `api.api-mp3-player.ru`)
-2. Обновите конфигурацию nginx
-3. Запустите с помощью docker-compose
+Используются:
 
-## API Эндпоинты
+- `DB_HOST` (default: `localhost`)
+- `DB_PORT` (default: `5432`)
+- `DB_USER` (default: `postgres`)
+- `DB_PASSWORD` (default: `password`)
+- `DB_NAME` (default: `cloudtune`)
+- `JWT_SECRET` (обязательно задать надежное значение для продакшена)
 
-### Аутентификация
+## API
 
-- `POST /auth/register` - регистрация пользователя
-- `POST /auth/login` - вход пользователя
+### Public
 
-### Работа с песнями
+- `GET /health`
+- `GET /api/status`
+- `POST /auth/register`
+- `POST /auth/login`
 
-- `POST /api/songs/upload` - загрузка новой песни (требует аутентификации)
-- `GET /api/songs/library` - получить библиотеку пользователя (требует аутентификации)
-- `GET /api/songs/:id` - получить информацию о песне (требует аутентификации)
+### Protected (`Authorization: Bearer <token>`)
 
-### Работа с плейлистами
+#### Songs
 
-- `POST /api/playlists` - создать новый плейлист (требует аутентификации)
-- `GET /api/playlists` - получить плейлисты пользователя (требует аутентификации)
-- `POST /api/playlists/:playlist_id/songs/:song_id` - добавить песню в плейлист (требует аутентификации)
-- `GET /api/playlists/:playlist_id/songs` - получить песни из плейлиста (требует аутентификации)
+- `POST /api/songs/upload`
+- `GET /api/songs/library`
+- `GET /api/songs/:id`
+- `GET /api/songs/download/:id`
 
-## Структура проекта
+#### Playlists
 
-```
-backend/
-├── cmd/
-│   └── api/
-│       └── main.go          # Основной файл приложения
-├── internal/
-│   ├── database/            # Работа с базой данных
-│   ├── handlers/            # Обработчики HTTP запросов
-│   ├── middleware/          # Middleware (например, аутентификация)
-│   ├── models/              # Модели данных
-│   └── utils/               # Вспомогательные функции
-├── uploads/                 # Загруженные файлы (создается автоматически)
-├── go.mod                   # Зависимости Go
-├── go.sum                   # Чек-суммы зависимостей
-├── docker-compose.yml       # Конфигурация Docker
-└── Dockerfile.dev           # Dockerfile для разработки
-```
+- `POST /api/playlists`
+- `GET /api/playlists`
+- `POST /api/playlists/:playlist_id/songs/:song_id`
+- `GET /api/playlists/:playlist_id/songs`
 
-## Технологии
+## Важно
 
-- Go (Golang)
-- PostgreSQL
-- Gin Framework
-- JWT для аутентификации
-- Docker для контейнеризации
-- Nginx для reverse proxy
-
-## Деплой на сервер
-
-1. Скопируйте проект на сервер
-2. Обновите `.env` файл с продакшен параметрами
-3. Запустите с помощью `docker-compose up -d`
-4. Настройте nginx как reverse proxy (пример конфигурации уже предоставлен)
-
-## Безопасность
-
-- Все чувствительные эндпоинты защищены JWT токенами
-- Проверка типа загружаемых файлов
-- Ограничение доступа к файлам - только владелец может управлять своими файлами
-- Использование безопасного хранения паролей (bcrypt)
+- Таблицы БД создаются автоматически при старте.
+- В текущей версии отсутствует эндпоинт `/api/profile`.
+- Допустимые MIME-типы при загрузке: `audio/mpeg`, `audio/wav`, `audio/mp4`, `audio/flac`.

@@ -48,13 +48,11 @@ dependencies:
 
   # Path manipulation
   path: ^1.9.0
+  path_provider: ^2.1.4
 
   # Audio player with background playback support
-  just_audio: ^0.9.39
-  just_audio_background: ^0.0.1-beta.11
-  
-  # Audio service for background playback
-  audio_service: ^0.18.15
+  just_audio: ^0.9.40
+  audio_service: ^0.18.18
   
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

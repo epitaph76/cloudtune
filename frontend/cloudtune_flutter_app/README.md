@@ -1,17 +1,74 @@
-# cloudtune_flutter_app
+﻿# CloudTune Flutter App
 
-A new Flutter project.
+Flutter-клиент для CloudTune.
 
-## Getting Started
+## Что умеет сейчас
 
-This project is a starting point for a Flutter application.
+- Аутентификация: регистрация и вход.
+- Локальная библиотека:
+  - выбор аудиофайлов с устройства;
+  - хранение списка треков в `SharedPreferences`;
+  - восстановление списка после перезапуска приложения.
+- Облачная библиотека:
+  - загрузка файла в облако;
+  - просмотр треков и плейлистов;
+  - скачивание трека в постоянную папку приложения `CloudTune`.
+- Аудиоплеер:
+  - `play/pause/seek`;
+  - `next/previous` по очереди;
+  - фоновое воспроизведение (`audio_service` + `just_audio`);
+  - Android media notification с кнопками управления.
 
-A few resources to get you started if this is your first Flutter project:
+## Архитектура
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```text
+lib/
+  main.dart
+  models/
+  providers/
+  screens/
+  services/
+  utils/
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Слои:
+
+- `screens` - UI
+- `providers` - состояние и orchestration
+- `services` - API/аудио/инфраструктура
+- `models` - DTO/модели
+
+## Важные файлы
+
+- `lib/main.dart` - инициализация приложения и `AudioService`.
+- `lib/services/audio_handler.dart` - обработчик фонового аудио.
+- `lib/providers/audio_player_provider.dart` - синхронизация UI с playback state.
+- `lib/screens/home_screen.dart` - локальный плеер и список треков.
+- `lib/screens/server_music_screen.dart` - облачные треки и скачивание.
+- `lib/services/api_service.dart` - запросы к backend API.
+
+## Конфиг API
+
+`lib/utils/constants.dart`
+
+По умолчанию:
+
+- `baseUrl = http://10.0.2.2:8080`
+
+## Запуск
+
+```bash
+flutter pub get
+flutter run
+```
+
+## Android требования
+
+В `AndroidManifest.xml` уже добавлены необходимые разрешения для фонового аудио и работы с файлами.
+
+`MainActivity` использует `AudioServiceActivity`, что обязательно для `audio_service`.
+
+## Известные ограничения
+
+- Скачанные треки сохраняются в app-specific директорию (`.../files/CloudTune`), а не в публичную `Download`.
+- Эмулятор Android может давать нестабильное аудио поведение; для финальной проверки лучше использовать физическое устройство.

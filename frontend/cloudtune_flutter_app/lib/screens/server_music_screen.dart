@@ -1,13 +1,17 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/cloud_music_provider.dart';
-import '../providers/local_music_provider.dart';
-import '../models/track.dart';
-import '../models/playlist.dart';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
+
+import '../models/playlist.dart';
+import '../models/track.dart';
+import '../providers/cloud_music_provider.dart';
+import '../providers/local_music_provider.dart';
+
 class ServerMusicScreen extends StatefulWidget {
-  const ServerMusicScreen({Key? key}) : super(key: key);
+  const ServerMusicScreen({super.key});
 
   @override
   State<ServerMusicScreen> createState() => _ServerMusicScreenState();
@@ -18,10 +22,57 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final cloudMusicProvider = Provider.of<CloudMusicProvider>(context, listen: false);
+      final cloudMusicProvider =
+          Provider.of<CloudMusicProvider>(context, listen: false);
       cloudMusicProvider.fetchUserLibrary();
       cloudMusicProvider.fetchUserPlaylists();
     });
+  }
+
+  Future<Directory> _getPersistentDownloadDir() async {
+    final Directory? baseExternalDir = await getExternalStorageDirectory();
+    final Directory baseDir =
+        baseExternalDir ?? await getApplicationDocumentsDirectory();
+
+    final Directory cloudTuneDir = Directory(p.join(baseDir.path, 'CloudTune'));
+    if (!await cloudTuneDir.exists()) {
+      await cloudTuneDir.create(recursive: true);
+    }
+
+    return cloudTuneDir;
+  }
+
+  Future<void> _downloadTrack(
+    CloudMusicProvider cloudMusicProvider,
+    LocalMusicProvider localMusicProvider,
+    Track track,
+  ) async {
+    final fileName = track.originalFilename ?? track.filename;
+    final persistentDir = await _getPersistentDownloadDir();
+    final savePath = p.join(persistentDir.path, fileName);
+
+    final success = await cloudMusicProvider.downloadTrack(track.id, savePath);
+    if (!mounted) return;
+
+    if (success) {
+      await localMusicProvider.addFiles([File(savePath)]);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Трек сохранен: $savePath'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Ошибка при скачивании трека'),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   @override
@@ -37,10 +88,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Список плейлистов (квадратные карточки)
               Container(
                 height: 120,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: cloudMusicProvider.isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : cloudMusicProvider.playlists.isEmpty
@@ -55,7 +106,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                             scrollDirection: Axis.horizontal,
                             itemCount: cloudMusicProvider.playlists.length,
                             itemBuilder: (context, index) {
-                              Playlist playlist = cloudMusicProvider.playlists[index];
+                              final Playlist playlist =
+                                  cloudMusicProvider.playlists[index];
                               return Container(
                                 width: 100,
                                 margin: const EdgeInsets.only(right: 12),
@@ -90,20 +142,13 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                             },
                           ),
               ),
-              
-              // Разделитель
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Text(
                   'Все треки',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
-              
-              // Список треков (прямоугольные карточки как на 3-й странице)
               Expanded(
                 child: cloudMusicProvider.isLoading
                     ? const Center(child: CircularProgressIndicator())
@@ -117,11 +162,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                         : ListView.builder(
                             itemCount: cloudMusicProvider.tracks.length,
                             itemBuilder: (context, index) {
-                              Track track = cloudMusicProvider.tracks[index];
+                              final Track track = cloudMusicProvider.tracks[index];
                               return Card(
-                                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
                                 child: ListTile(
-                                  leading: const Icon(Icons.music_note, color: Colors.blue),
+                                  leading: const Icon(
+                                    Icons.music_note,
+                                    color: Colors.blue,
+                                  ),
                                   title: Text(
                                     track.originalFilename ?? track.filename,
                                     overflow: TextOverflow.ellipsis,
@@ -129,59 +180,20 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                   subtitle: Text(
                                     'Размер: ${track.filesize != null ? (track.filesize! / 1024 / 1024).toStringAsFixed(2) : 'N/A'} MB',
                                   ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.download, color: Colors.green),
-                                        onPressed: () async {
-                                          // Получаем провайдеры до асинхронной операции
-                                          final cloudMusicProvider = context.read<CloudMusicProvider>();
-                                          final localMusicProvider = context.read<LocalMusicProvider>();
-                                          
-                                          // Получаем путь для сохранения файла
-                                          String downloadsPath = Directory.systemTemp.path;
-                                          String fileName = track.originalFilename ?? track.filename;
-                                          String savePath = '$downloadsPath/$fileName';
-                                          
-                                          // Скачиваем трек
-                                          bool success = await cloudMusicProvider.downloadTrack(track.id, savePath);
-                                          
-                                          if (success) {
-                                            // Добавляем в локальное хранилище
-                                            File downloadedFile = File(savePath);
-                                            await localMusicProvider.addFiles([downloadedFile]);
-                                            
-                                            // Используем mounted для проверки, что виджет все еще в дереве
-                                            if (mounted) {
-                                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                                if (mounted) { // Проверяем снова, на случай, если состояние изменилось
-                                                  ScaffoldMessenger.of(context).showSnackBar(
-                                                    const SnackBar(
-                                                      content: Text('Трек успешно скачан и добавлен в локальное хранилище'),
-                                                      backgroundColor: Colors.green,
-                                                    ),
-                                                  );
-                                                }
-                                              });
-                                            }
-                                          } else {
-                                            if (mounted) {
-                                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                                if (mounted) { // Проверяем снова, на случай, если состояние изменилось
-                                                  ScaffoldMessenger.of(context).showSnackBar(
-                                                    const SnackBar(
-                                                      content: Text('Ошибка при скачивании трека'),
-                                                      backgroundColor: Colors.red,
-                                                    ),
-                                                  );
-                                                }
-                                              });
-                                            }
-                                          }
-                                        },
-                                      ),
-                                    ],
+                                  trailing: IconButton(
+                                    icon: const Icon(
+                                      Icons.download,
+                                      color: Colors.green,
+                                    ),
+                                    onPressed: () async {
+                                      final localMusicProvider =
+                                          context.read<LocalMusicProvider>();
+                                      await _downloadTrack(
+                                        cloudMusicProvider,
+                                        localMusicProvider,
+                                        track,
+                                      );
+                                    },
                                   ),
                                 ),
                               );
