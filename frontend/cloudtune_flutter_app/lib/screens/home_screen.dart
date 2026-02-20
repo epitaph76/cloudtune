@@ -5,7 +5,9 @@ import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
 import '../providers/audio_player_provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/local_music_provider.dart';
+import '../providers/main_nav_provider.dart';
 import '../widgets/theme_settings_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -19,6 +21,62 @@ class _HomeScreenState extends State<HomeScreen> {
   final Set<String> _likedTracks = <String>{};
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   String _selectedPlaylistId = 'all';
+
+  static const double _horizontalSwipeThreshold = 80;
+  static const double _verticalSwipeThreshold = 80;
+
+  void _handleTopZoneHorizontalSwipe(DragEndDetails details) {
+    final dx = details.primaryVelocity ?? 0;
+    if (dx > _horizontalSwipeThreshold * 8) {
+      _scaffoldKey.currentState?.openDrawer();
+      return;
+    }
+    if (dx < -_horizontalSwipeThreshold * 8) {
+      context.read<MainNavProvider>().setIndex(1);
+    }
+  }
+
+  void _handleTopZoneVerticalSwipe(
+    DragEndDetails details,
+    List<File> tracks,
+    AudioPlayerProvider audioProvider,
+  ) {
+    final dy = details.primaryVelocity ?? 0;
+    if (dy < -_verticalSwipeThreshold * 8) {
+      _openQueueSheet(context, tracks, audioProvider);
+    }
+  }
+
+  Future<void> _confirmLogout() async {
+    final authProvider = context.read<AuthProvider>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+    await authProvider.logout();
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Logged out')));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,26 +137,35 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
               child: Column(
                 children: [
-                  Row(
-                    children: [
-                      _TopActionButton(
-                        icon: Icons.menu_rounded,
-                        onTap: () => _scaffoldKey.currentState?.openDrawer(),
-                      ),
-                      const Spacer(),
-                      Text(
-                        'Minimal Player',
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                  GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onHorizontalDragEnd: _handleTopZoneHorizontalSwipe,
+                    onVerticalDragEnd: (details) => _handleTopZoneVerticalSwipe(
+                      details,
+                      tracks,
+                      audioProvider,
+                    ),
+                    child: Row(
+                      children: [
+                        _TopActionButton(
+                          icon: Icons.menu_rounded,
+                          onTap: () => _scaffoldKey.currentState?.openDrawer(),
                         ),
-                      ),
-                      const Spacer(),
-                      _TopActionButton(
-                        icon: Icons.music_note_rounded,
-                        onTap: () =>
-                            _openQueueSheet(context, tracks, audioProvider),
-                      ),
-                    ],
+                        const Spacer(),
+                        Text(
+                          'CloudTune',
+                          style: textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        _TopActionButton(
+                          icon: Icons.music_note_rounded,
+                          onTap: () =>
+                              _openQueueSheet(context, tracks, audioProvider),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 24),
                   if (!hasTracks)
@@ -147,69 +214,83 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: SingleChildScrollView(
                         child: Column(
                           children: [
-                            const SizedBox(height: 22),
-                            Container(
-                              width: 312,
-                              height: 312,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(42),
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    colorScheme.primary,
-                                    colorScheme.tertiary,
-                                  ],
-                                ),
+                            GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onHorizontalDragEnd: _handleTopZoneHorizontalSwipe,
+                              onVerticalDragEnd: (details) =>
+                                  _handleTopZoneVerticalSwipe(
+                                    details,
+                                    tracks,
+                                    audioProvider,
+                                  ),
+                              child: Column(
+                                children: [
+                                  const SizedBox(height: 22),
+                                  Container(
+                                    width: 312,
+                                    height: 312,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(42),
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          colorScheme.primary,
+                                          colorScheme.tertiary,
+                                        ],
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      Icons.music_note_rounded,
+                                      size: 136,
+                                      color: colorScheme.onPrimary.withValues(
+                                        alpha: 0.92,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 30),
+                                  Text(
+                                    currentTitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: textTheme.headlineSmall?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 31,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    currentSubtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: textTheme.bodyMedium?.copyWith(
+                                      color: colorScheme.onSurface.withValues(
+                                        alpha: 0.65,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  IconButton(
+                                    onPressed: currentFile == null
+                                        ? null
+                                        : () {
+                                            setState(() {
+                                              if (isLiked) {
+                                                _likedTracks.remove(currentFile.path);
+                                              } else {
+                                                _likedTracks.add(currentFile.path);
+                                              }
+                                            });
+                                          },
+                                    icon: Icon(
+                                      isLiked
+                                          ? Icons.favorite_rounded
+                                          : Icons.favorite_border_rounded,
+                                    ),
+                                    color: colorScheme.primary,
+                                  ),
+                                ],
                               ),
-                              child: Icon(
-                                Icons.music_note_rounded,
-                                size: 136,
-                                color: colorScheme.onPrimary.withValues(
-                                  alpha: 0.92,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 30),
-                            Text(
-                              currentTitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 31,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              currentSubtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: textTheme.bodyMedium?.copyWith(
-                                color: colorScheme.onSurface.withValues(
-                                  alpha: 0.65,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            IconButton(
-                              onPressed: currentFile == null
-                                  ? null
-                                  : () {
-                                      setState(() {
-                                        if (isLiked) {
-                                          _likedTracks.remove(currentFile.path);
-                                        } else {
-                                          _likedTracks.add(currentFile.path);
-                                        }
-                                      });
-                                    },
-                              icon: Icon(
-                                isLiked
-                                    ? Icons.favorite_rounded
-                                    : Icons.favorite_border_rounded,
-                              ),
-                              color: colorScheme.primary,
                             ),
                             const SizedBox(height: 12),
                             Slider(
@@ -376,7 +457,54 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+              child: Consumer<AuthProvider>(
+                builder: (context, authProvider, child) {
+                  final user = authProvider.currentUser;
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: colorScheme.outline),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: colorScheme.secondary,
+                          child: Icon(
+                            Icons.person_rounded,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            user?.username ?? 'Guest',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: user == null
+                              ? null
+                              : () => _confirmLogout(),
+                          icon: const Icon(Icons.logout_rounded, size: 18),
+                          label: const Text('Logout'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               child: SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(

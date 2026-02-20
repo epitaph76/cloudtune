@@ -29,6 +29,7 @@ type Playlist struct {
 	IsPublic    bool       `json:"is_public" db:"is_public"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
+	SongCount   *int       `json:"song_count,omitempty" db:"song_count"`
 }
 
 type PlaylistSong struct {

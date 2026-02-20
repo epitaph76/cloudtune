@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LocalPlaylist {
@@ -69,6 +70,7 @@ class LocalMusicProvider with ChangeNotifier {
         _playlists = decoded.map(LocalPlaylist.fromJson).toList();
       }
 
+      await _deduplicateSelectedFilesAndRepairPlaylists();
       _cleanupPlaylists();
       await _saveFiles();
       await _savePlaylists();
@@ -86,7 +88,25 @@ class LocalMusicProvider with ChangeNotifier {
         existingPaths.add(file.path);
       }
     }
+    await _deduplicateSelectedFilesAndRepairPlaylists();
+    _cleanupPlaylists();
     await _saveFiles();
+    await _savePlaylists();
+    notifyListeners();
+  }
+
+  Future<void> refreshLocalLibrary() async {
+    final kept = <File>[];
+    for (final file in _selectedFiles) {
+      if (await file.exists()) {
+        kept.add(file);
+      }
+    }
+    _selectedFiles = kept;
+    await _deduplicateSelectedFilesAndRepairPlaylists();
+    _cleanupPlaylists();
+    await _saveFiles();
+    await _savePlaylists();
     notifyListeners();
   }
 
@@ -157,6 +177,46 @@ class LocalMusicProvider with ChangeNotifier {
       playlist.trackPaths.removeWhere((path) => !existingPaths.contains(path));
     }
     _playlists.removeWhere((playlist) => playlist.trackPaths.isEmpty);
+  }
+
+  Future<void> _deduplicateSelectedFilesAndRepairPlaylists() async {
+    final keyToKeptPath = <String, String>{};
+    final duplicatePathToKeptPath = <String, String>{};
+    final dedupedFiles = <File>[];
+
+    for (final file in _selectedFiles) {
+      final key = _fileDedupKey(file);
+      final keptPath = keyToKeptPath[key];
+      if (keptPath == null) {
+        keyToKeptPath[key] = file.path;
+        dedupedFiles.add(file);
+      } else {
+        duplicatePathToKeptPath[file.path] = keptPath;
+      }
+    }
+
+    if (duplicatePathToKeptPath.isNotEmpty) {
+      for (final playlist in _playlists) {
+        final updated = <String>{};
+        for (final path in playlist.trackPaths) {
+          updated.add(duplicatePathToKeptPath[path] ?? path);
+        }
+        playlist.trackPaths
+          ..clear()
+          ..addAll(updated);
+      }
+    }
+
+    _selectedFiles = dedupedFiles;
+  }
+
+  String _fileDedupKey(File file) {
+    final base = p.basename(file.path).toLowerCase();
+    int size = -1;
+    try {
+      size = file.lengthSync();
+    } catch (_) {}
+    return '$base|$size';
   }
 
   Future<void> _saveFiles() async {

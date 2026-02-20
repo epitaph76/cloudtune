@@ -84,8 +84,15 @@ func GetUserPlaylists(c *gin.Context) {
 
 	db := database.DB
 	
-	query := `SELECT id, name, description, is_public, created_at, updated_at 
-			  FROM playlists WHERE owner_id = $1 ORDER BY created_at DESC`
+	query := `
+		SELECT p.id, p.name, p.description, p.owner_id, p.is_public, p.created_at, p.updated_at,
+		       COUNT(ps.song_id)::int AS song_count
+		FROM playlists p
+		LEFT JOIN playlist_songs ps ON ps.playlist_id = p.id
+		WHERE p.owner_id = $1
+		GROUP BY p.id, p.name, p.description, p.owner_id, p.is_public, p.created_at, p.updated_at
+		ORDER BY p.created_at DESC
+	`
 	
 	rows, err := db.Query(query, userID)
 	if err != nil {
@@ -95,13 +102,22 @@ func GetUserPlaylists(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	var playlists []models.Playlist
+	playlists := make([]models.Playlist, 0)
 	for rows.Next() {
 		var playlist models.Playlist
 		var description sql.NullString
+		var songCount int
 		
-		err := rows.Scan(&playlist.ID, &playlist.Name, &description, 
-						 &playlist.IsPublic, &playlist.CreatedAt, &playlist.UpdatedAt)
+		err := rows.Scan(
+			&playlist.ID,
+			&playlist.Name,
+			&description,
+			&playlist.OwnerID,
+			&playlist.IsPublic,
+			&playlist.CreatedAt,
+			&playlist.UpdatedAt,
+			&songCount,
+		)
 		if err != nil {
 			log.Printf("Error scanning playlist: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error scanning playlist"})
@@ -111,6 +127,7 @@ func GetUserPlaylists(c *gin.Context) {
 		if description.Valid {
 			playlist.Description = &description.String
 		}
+		playlist.SongCount = &songCount
 		
 		playlists = append(playlists, playlist)
 	}
@@ -118,6 +135,58 @@ func GetUserPlaylists(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"playlists": playlists,
 		"count":     len(playlists),
+	})
+}
+
+// DeletePlaylist deletes user's playlist by id
+func DeletePlaylist(c *gin.Context) {
+	userIDInterface, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDInterface.(int)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	playlistID, err := strconv.Atoi(c.Param("playlist_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid playlist ID"})
+		return
+	}
+
+	db := database.DB
+
+	var ownerID int
+	checkQuery := `SELECT owner_id FROM playlists WHERE id = $1`
+	err = db.QueryRow(checkQuery, playlistID).Scan(&ownerID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})
+			return
+		}
+		log.Printf("Error checking playlist owner: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking playlist"})
+		return
+	}
+
+	if ownerID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to delete this playlist"})
+		return
+	}
+
+	_, err = db.Exec(`DELETE FROM playlists WHERE id = $1`, playlistID)
+	if err != nil {
+		log.Printf("Error deleting playlist: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error deleting playlist"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Playlist deleted successfully",
 	})
 }
 

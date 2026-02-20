@@ -97,9 +97,10 @@ class ApiService {
       Response response = await _dio.get('/api/playlists', options: options);
 
       if (response.statusCode == 200) {
+        final playlistsRaw = response.data['playlists'];
         return {
           'success': true,
-          'playlists': response.data['playlists'],
+          'playlists': playlistsRaw is List ? playlistsRaw : <dynamic>[],
         };
       } else {
         return {
@@ -107,6 +108,124 @@ class ApiService {
           'message': 'Ошибка при получении плейлистов',
         };
       }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> createPlaylist({
+    required String name,
+    String? description,
+    bool isPublic = false,
+  }) async {
+    try {
+      final options = await _getAuthOptions();
+      final response = await _dio.post(
+        '/api/playlists',
+        data: {
+          'name': name,
+          'description': description,
+          'is_public': isPublic,
+        },
+        options: options,
+      );
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'playlist_id': response.data['playlist_id'],
+          'playlist': response.data['playlist'],
+        };
+      }
+      return {
+        'success': false,
+        'message': 'Failed to create playlist',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> addSongToPlaylist({
+    required int playlistId,
+    required int songId,
+  }) async {
+    try {
+      final options = await _getAuthOptions();
+      final response = await _dio.post(
+        '/api/playlists/$playlistId/songs/$songId',
+        options: options,
+      );
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'data': response.data,
+        };
+      }
+      return {
+        'success': false,
+        'message': 'Failed to add song to playlist',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> getPlaylistSongs(int playlistId) async {
+    try {
+      final options = await _getAuthOptions();
+      final response = await _dio.get(
+        '/api/playlists/$playlistId/songs',
+        options: options,
+      );
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'songs': response.data['songs'] ?? <dynamic>[],
+          'count': response.data['count'] ?? 0,
+        };
+      }
+      return {
+        'success': false,
+        'message': 'Failed to fetch playlist songs',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> deletePlaylist(int playlistId) async {
+    try {
+      final options = await _getAuthOptions();
+      final response = await _dio.delete(
+        '/api/playlists/$playlistId',
+        options: options,
+      );
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'data': response.data,
+        };
+      }
+      return {
+        'success': false,
+        'message': 'Failed to delete playlist',
+      };
     } catch (e) {
       return {
         'success': false,

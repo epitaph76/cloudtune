@@ -6,6 +6,7 @@ import 'providers/audio_player_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/cloud_music_provider.dart';
 import 'providers/local_music_provider.dart';
+import 'providers/main_nav_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/api_tester.dart';
 import 'screens/home_screen.dart';
@@ -39,6 +40,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => MainNavProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => LocalMusicProvider()),
         ChangeNotifierProvider(create: (_) => CloudMusicProvider()),
@@ -82,27 +84,76 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 0;
-
   static const _navItems = [
     _MainNavItem(icon: Icons.music_note_rounded, label: 'Player'),
     _MainNavItem(icon: Icons.storage_rounded, label: 'Storage'),
   ];
 
-  final List<Widget> _screens = const [HomeScreen(), ServerMusicScreen()];
+  static const List<Widget> _screens = [HomeScreen(), ServerMusicScreen()];
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
+  late final PageController _pageController;
+  MainNavProvider? _navProvider;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final navProvider = context.read<MainNavProvider>();
+    if (_navProvider == navProvider) return;
+
+    _navProvider?.removeListener(_handleNavChanged);
+    _navProvider = navProvider;
+    _navProvider!.addListener(_handleNavChanged);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      _pageController.jumpToPage(_navProvider!.selectedIndex);
     });
+  }
+
+  void _handleNavChanged() {
+    if (!mounted || !_pageController.hasClients || _navProvider == null) return;
+    final targetIndex = _navProvider!.selectedIndex;
+    final currentPage = (_pageController.page ?? 0).round();
+    if (currentPage == targetIndex) return;
+
+    _pageController.animateToPage(
+      targetIndex,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  void dispose() {
+    _navProvider?.removeListener(_handleNavChanged);
+    _pageController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final navProvider = context.watch<MainNavProvider>();
+    final selectedIndex = navProvider.selectedIndex;
 
     return Scaffold(
-      body: IndexedStack(index: _selectedIndex, children: _screens),
+      body: PageView(
+        controller: _pageController,
+        physics: const NeverScrollableScrollPhysics(),
+        onPageChanged: (index) {
+          final provider = context.read<MainNavProvider>();
+          if (provider.selectedIndex != index) {
+            provider.setIndex(index);
+          }
+        },
+        children: _screens,
+      ),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
@@ -119,8 +170,8 @@ class _MainScreenState extends State<MainScreen> {
               (index) => Expanded(
                 child: _BottomNavButton(
                   item: _navItems[index],
-                  selected: _selectedIndex == index,
-                  onTap: () => _onItemTapped(index),
+                  selected: selectedIndex == index,
+                  onTap: () => navProvider.setIndex(index),
                 ),
               ),
             ),

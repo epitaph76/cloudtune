@@ -44,6 +44,7 @@ func main() {
 		// Маршруты для работы с плейлистами
 		protectedRoutes.POST("/playlists", handlers.CreatePlaylist)
 		protectedRoutes.GET("/playlists", handlers.GetUserPlaylists)
+		protectedRoutes.DELETE("/playlists/:playlist_id", handlers.DeletePlaylist)
 		protectedRoutes.POST("/playlists/:playlist_id/songs/:song_id", handlers.AddSongToPlaylist)
 		protectedRoutes.GET("/playlists/:playlist_id/songs", handlers.GetPlaylistSongs)
 	}
