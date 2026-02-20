@@ -66,11 +66,19 @@ class _LoginScreenState extends State<LoginScreen> {
                                 _passwordController.text,
                               );
 
-                              if (success && mounted) { // Проверяем mounted перед использованием context
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (success && mounted) {
+                                // Проверяем mounted перед использованием context
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
                                   if (mounted) {
-                                    Helpers.showSnackBar(context, 'Успешный вход!');
-                                    Navigator.pop(context); // Return to previous screen
+                                    Helpers.showSnackBar(
+                                      context,
+                                      'Успешный вход!',
+                                    );
+                                    Navigator.pop(
+                                      context,
+                                    ); // Return to previous screen
                                   }
                                 });
                               }
@@ -79,10 +87,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blue,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 32,
+                              vertical: 16,
+                            ),
                           ),
                           child: const Text('Войти'),
                         ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => Navigator.pushNamed(context, '/register'),
+                    child: const Text('Нет аккаунта? Зарегистрироваться'),
+                  ),
                   if (authProvider.errorMessage != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 16),

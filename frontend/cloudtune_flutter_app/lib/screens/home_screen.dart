@@ -91,15 +91,21 @@ class _HomeScreenState extends State<HomeScreen> {
             localMusicProvider.playlists.any(
               (playlist) => playlist.id == _selectedPlaylistId,
             );
-        final activePlaylistId = hasSelectedPlaylist ? _selectedPlaylistId : 'all';
-        final tracks = localMusicProvider.getTracksForPlaylist(activePlaylistId);
+        final activePlaylistId = hasSelectedPlaylist
+            ? _selectedPlaylistId
+            : 'all';
+        final tracks = localMusicProvider.getTracksForPlaylist(
+          activePlaylistId,
+        );
         final hasTracks = tracks.isNotEmpty;
         final currentTrackPath = audioProvider.currentTrackPath;
         final currentTrackIndex = currentTrackPath == null
             ? -1
             : tracks.indexWhere((track) => track.path == currentTrackPath);
         final currentFile = hasTracks
-            ? (currentTrackIndex >= 0 ? tracks[currentTrackIndex] : tracks.first)
+            ? (currentTrackIndex >= 0
+                  ? tracks[currentTrackIndex]
+                  : tracks.first)
             : null;
         final currentTitle = currentFile != null
             ? p.basenameWithoutExtension(currentFile.path)
@@ -127,11 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
         return Scaffold(
           key: _scaffoldKey,
-          drawer: _buildSideMenu(
-            context,
-            localMusicProvider,
-            activePlaylistId,
-          ),
+          drawer: _buildSideMenu(context, localMusicProvider, activePlaylistId),
           body: SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
@@ -170,41 +172,51 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 24),
                   if (!hasTracks)
                     Expanded(
-                      child: Center(
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: colorScheme.surface,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: colorScheme.outline),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.music_off_rounded,
-                                size: 72,
-                                color: colorScheme.onSurface.withValues(
-                                  alpha: 0.5,
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                'No local tracks yet',
-                                style: textTheme.titleMedium,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Go to Storage tab and add files.',
-                                textAlign: TextAlign.center,
-                                style: textTheme.bodyMedium?.copyWith(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onHorizontalDragEnd: _handleTopZoneHorizontalSwipe,
+                        onVerticalDragEnd: (details) =>
+                            _handleTopZoneVerticalSwipe(
+                              details,
+                              tracks,
+                              audioProvider,
+                            ),
+                        child: Center(
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: colorScheme.outline),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.music_off_rounded,
+                                  size: 72,
                                   color: colorScheme.onSurface.withValues(
-                                    alpha: 0.65,
+                                    alpha: 0.5,
                                   ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 14),
+                                Text(
+                                  'No local tracks yet',
+                                  style: textTheme.titleMedium,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Go to Storage tab and add files.',
+                                  textAlign: TextAlign.center,
+                                  style: textTheme.bodyMedium?.copyWith(
+                                    color: colorScheme.onSurface.withValues(
+                                      alpha: 0.65,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -216,7 +228,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             GestureDetector(
                               behavior: HitTestBehavior.translucent,
-                              onHorizontalDragEnd: _handleTopZoneHorizontalSwipe,
+                              onHorizontalDragEnd:
+                                  _handleTopZoneHorizontalSwipe,
                               onVerticalDragEnd: (details) =>
                                   _handleTopZoneVerticalSwipe(
                                     details,
@@ -276,9 +289,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                         : () {
                                             setState(() {
                                               if (isLiked) {
-                                                _likedTracks.remove(currentFile.path);
+                                                _likedTracks.remove(
+                                                  currentFile.path,
+                                                );
                                               } else {
-                                                _likedTracks.add(currentFile.path);
+                                                _likedTracks.add(
+                                                  currentFile.path,
+                                                );
                                               }
                                             });
                                           },
@@ -345,8 +362,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 const SizedBox(width: 8),
                                 FilledButton(
                                   onPressed: hasTracks
-                                      ? () =>
-                                          audioProvider.playPauseFromTracks(tracks)
+                                      ? () => audioProvider.playPauseFromTracks(
+                                          tracks,
+                                        )
                                       : null,
                                   style: FilledButton.styleFrom(
                                     shape: const CircleBorder(),
@@ -362,10 +380,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 const SizedBox(width: 8),
                                 IconButton(
                                   onPressed: hasTracks
-                                      ? () =>
-                                            audioProvider.skipToNextFromTracks(
-                                              tracks,
-                                            )
+                                      ? () => audioProvider
+                                            .skipToNextFromTracks(tracks)
                                       : null,
                                   icon: const Icon(Icons.skip_next_rounded),
                                   iconSize: 34,
@@ -648,10 +664,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                     IconButton(
                                       onPressed: () async {
-                                        await queueProvider.toggleTrackFromTracks(
-                                          tracks,
-                                          index,
-                                        );
+                                        await queueProvider
+                                            .toggleTrackFromTracks(
+                                              tracks,
+                                              index,
+                                            );
                                       },
                                       icon: Icon(
                                         isCurrent && queueProvider.playing
@@ -809,9 +826,7 @@ class _ToggleCircleButton extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: active
-            ? colorScheme.primary
-            : Colors.transparent,
+        color: active ? colorScheme.primary : Colors.transparent,
         border: Border.all(
           color: active ? colorScheme.primary : colorScheme.outline,
         ),
