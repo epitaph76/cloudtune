@@ -43,7 +43,13 @@ flutter pub get
 flutter run
 ```
 
-Для Android-эмулятора базовый URL уже настроен как `http://10.0.2.2:8080`.
+По умолчанию приложение использует серверный URL: `https://api-mp3-player.ru`.
+
+Для запуска приложения с серверным backend используйте:
+
+```bash
+flutter run --dart-define=API_BASE_URL=https://api.your-domain.com
+```
 
 ## Документация по модулям
 

@@ -30,9 +30,13 @@ flutter run
 
 По умолчанию:
 
-- Android emulator: `http://10.0.2.2:8080`
+- `https://api-mp3-player.ru`
 
-Если backend запущен не локально, поменяйте `Constants.baseUrl`.
+При необходимости можно переопределить URL при запуске/сборке:
+
+```bash
+flutter run --dart-define=API_BASE_URL=https://api.your-domain.com
+```
 
 ## Дополнительно
 

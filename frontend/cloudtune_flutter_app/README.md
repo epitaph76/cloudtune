@@ -53,7 +53,19 @@ lib/
 
 По умолчанию:
 
-- `baseUrl = http://10.0.2.2:8080`
+- `baseUrl = https://api-mp3-player.ru`
+
+Для сервера используйте `--dart-define`:
+
+```bash
+flutter run --dart-define=API_BASE_URL=https://api.your-domain.com
+```
+
+Для release build:
+
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=https://api.your-domain.com
+```
 
 ## Запуск
 

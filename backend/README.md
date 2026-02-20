@@ -28,7 +28,9 @@ backend/
   internal/middleware/
   internal/models/
   internal/utils/
+  Dockerfile
   docker-compose.yml
+  docker-compose.prod.yml
   Dockerfile.dev
 ```
 
@@ -40,6 +42,35 @@ docker compose up --build
 ```
 
 Сервис поднимется на `http://localhost:8080`.
+
+## Production Deploy (VDS + Docker)
+
+1. Подготовьте переменные:
+
+```bash
+cd backend
+cp .env.prod.example .env.prod
+```
+
+2. Заполните `.env.prod` сильными значениями.
+
+3. Запуск production-сборки:
+
+```bash
+cd backend
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+```
+
+API будет слушать `127.0.0.1:8080` (удобно проксировать через Nginx).
+
+4. Автодеплой из GitHub:
+
+```bash
+REPO_URL=https://github.com/<user>/<repo>.git \
+BRANCH=master \
+APP_DIR=/opt/cloudtune \
+bash backend/scripts/deploy-from-github.sh
+```
 
 ## Переменные окружения
 

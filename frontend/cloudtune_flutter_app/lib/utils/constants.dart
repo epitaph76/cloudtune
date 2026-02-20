@@ -1,6 +1,11 @@
 class Constants {
   // API Constants
-  static const String baseUrl = 'http://10.0.2.2:8080';
+  // Override in run/build with:
+  // --dart-define=API_BASE_URL=https://api.your-domain.com
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://api-mp3-player.ru',
+  );
 
   // Storage Keys
   static const String tokenKey = 'cloudtune_token';
