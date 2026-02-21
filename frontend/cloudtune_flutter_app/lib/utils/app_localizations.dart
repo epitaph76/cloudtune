@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 class AppLocalizations {
@@ -66,6 +68,36 @@ class AppLocalizations {
       'download_to_local': 'Скачать в локальное',
       'upload_to_cloud': 'Загрузить в облако',
       'add_to_playlist': 'Добавить в плейлист',
+      'upload_tracks': 'Загрузить треки',
+      'pick_folder': 'Выбрать папку',
+      'auto_scan_device': 'Автопоиск на устройстве',
+      'pick_one_or_multiple_audio': 'Выберите один или несколько аудиофайлов',
+      'import_from_folder_with_filters': 'Импорт из папки с фильтрами',
+      'find_new_audio_on_device': 'Найти новые аудиофайлы на устройстве',
+      'cant_access_folder_directly':
+          'Нельзя открыть эту папку напрямую на Android. Используйте "Загрузить треки" и выберите файлы.',
+      'storage_permission_import_denied':
+          'Доступ к хранилищу отклонён. Разрешите доступ для импорта из папки.',
+      'no_matching_files_in': 'Нет подходящих файлов в:',
+      'imported_files': 'Импортировано файлов:',
+      'import_from_folder': 'Импорт из папки',
+      'auto_scan_android_only': 'Автопоиск пока работает только на Android',
+      'storage_permission_scan_denied':
+          'Доступ к хранилищу отклонён. Разрешите доступ для сканирования.',
+      'scanning_device_audio': 'Сканирование устройства на аудиофайлы...',
+      'no_new_audio_files': 'Новых аудиофайлов не найдено',
+      'added_files': 'Добавлено файлов:',
+      'found_new_audio_files': 'Найдено новых аудиофайлов:',
+      'select_all': 'Выбрать все',
+      'clear': 'Очистить',
+      'selected_shown': 'выбрано • показано',
+      'search_by_name_or_path': 'Поиск по имени файла или пути',
+      'add_selected_files': 'Добавить выбранные файлы',
+      'create_playlist_title': 'Создать плейлист',
+      'playlist_name': 'Название плейлиста',
+      'select_tracks': 'Выберите треки',
+      'clear_selection': 'Снять выделение',
+      'add_local_tracks_first': 'Сначала добавьте локальные треки',
     },
     'en': {
       'menu': 'Menu',
@@ -125,6 +157,38 @@ class AppLocalizations {
       'download_to_local': 'Download to local',
       'upload_to_cloud': 'Upload to cloud',
       'add_to_playlist': 'Add to playlist',
+      'upload_tracks': 'Upload tracks',
+      'pick_folder': 'Pick folder',
+      'auto_scan_device': 'Auto scan device',
+      'pick_one_or_multiple_audio': 'Pick one or multiple audio files',
+      'import_from_folder_with_filters':
+          'Import files from folder with filters',
+      'find_new_audio_on_device': 'Find new audio files on device',
+      'cant_access_folder_directly':
+          'Can not access this folder directly on Android. Use "Upload tracks" and select files.',
+      'storage_permission_import_denied':
+          'Storage permission denied. Grant permission to import from folder.',
+      'no_matching_files_in': 'No matching files in:',
+      'imported_files': 'Imported files:',
+      'import_from_folder': 'Import from folder',
+      'auto_scan_android_only':
+          'Auto scan is currently supported on Android only',
+      'storage_permission_scan_denied':
+          'Storage permission denied. Grant permission to scan.',
+      'scanning_device_audio': 'Scanning device for audio files...',
+      'no_new_audio_files': 'No new audio files found',
+      'added_files': 'Added files:',
+      'found_new_audio_files': 'Found new audio files:',
+      'select_all': 'Select all',
+      'clear': 'Clear',
+      'selected_shown': 'selected • shown',
+      'search_by_name_or_path': 'Search by file name or path',
+      'add_selected_files': 'Add selected files',
+      'create_playlist_title': 'Create playlist',
+      'playlist_name': 'Playlist name',
+      'select_tracks': 'Select tracks',
+      'clear_selection': 'Clear selection',
+      'add_local_tracks_first': 'Add local tracks first',
     },
     'es': {
       'menu': 'Menú',
@@ -184,12 +248,55 @@ class AppLocalizations {
       'download_to_local': 'Descargar a local',
       'upload_to_cloud': 'Subir a la nube',
       'add_to_playlist': 'Añadir a la lista',
+      'upload_tracks': 'Subir pistas',
+      'pick_folder': 'Elegir carpeta',
+      'auto_scan_device': 'Búsqueda automática',
+      'pick_one_or_multiple_audio': 'Elige uno o varios archivos de audio',
+      'import_from_folder_with_filters': 'Importar desde carpeta con filtros',
+      'find_new_audio_on_device': 'Buscar nuevos audios en el dispositivo',
+      'cant_access_folder_directly':
+          'No se puede acceder a esta carpeta directamente en Android. Usa "Subir pistas" y elige archivos.',
+      'storage_permission_import_denied':
+          'Permiso de almacenamiento denegado. Concédelo para importar.',
+      'no_matching_files_in': 'No hay archivos válidos en:',
+      'imported_files': 'Archivos importados:',
+      'import_from_folder': 'Importar desde carpeta',
+      'auto_scan_android_only':
+          'La búsqueda automática está disponible solo en Android',
+      'storage_permission_scan_denied':
+          'Permiso de almacenamiento denegado. Concédelo para escanear.',
+      'scanning_device_audio': 'Escaneando el dispositivo en busca de audio...',
+      'no_new_audio_files': 'No se encontraron archivos nuevos de audio',
+      'added_files': 'Archivos añadidos:',
+      'found_new_audio_files': 'Nuevos archivos de audio encontrados:',
+      'select_all': 'Seleccionar todo',
+      'clear': 'Limpiar',
+      'selected_shown': 'seleccionados • visibles',
+      'search_by_name_or_path': 'Buscar por nombre o ruta',
+      'add_selected_files': 'Agregar archivos seleccionados',
+      'create_playlist_title': 'Crear playlist',
+      'playlist_name': 'Nombre de la playlist',
+      'select_tracks': 'Selecciona pistas',
+      'clear_selection': 'Quitar selección',
+      'add_local_tracks_first': 'Primero añade pistas locales',
     },
   };
 
   static String text(BuildContext context, String key) {
     final code = Localizations.localeOf(context).languageCode;
     final byLocale = _strings[code] ?? _strings['en']!;
-    return byLocale[key] ?? _strings['en']![key] ?? key;
+    final raw = byLocale[key] ?? _strings['en']![key] ?? key;
+    return _decodeMojibakeIfNeeded(raw);
+  }
+
+  static String _decodeMojibakeIfNeeded(String input) {
+    if (!input.contains('Р') && !input.contains('Г') && !input.contains('В')) {
+      return input;
+    }
+    try {
+      return utf8.decode(latin1.encode(input));
+    } catch (_) {
+      return input;
+    }
   }
 }

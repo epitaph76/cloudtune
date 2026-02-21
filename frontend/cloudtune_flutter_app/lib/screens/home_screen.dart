@@ -477,13 +477,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                        TextButton.icon(
-                          onPressed: user == null
-                              ? null
-                              : () => _confirmLogout(),
-                          icon: const Icon(Icons.logout_rounded, size: 18),
-                          label: Text(t('logout')),
-                        ),
+                        if (user != null)
+                          TextButton.icon(
+                            onPressed: () => _confirmLogout(),
+                            icon: const Icon(Icons.logout_rounded, size: 18),
+                            label: Text(t('logout')),
+                          ),
                       ],
                     ),
                   );

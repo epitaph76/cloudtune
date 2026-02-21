@@ -138,6 +138,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   }
 
   Future<void> _showUploadOptions() async {
+    String t(String key) => AppLocalizations.text(context, key);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -151,8 +152,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.audiotrack_rounded),
-                  title: const Text('Upload tracks'),
-                  subtitle: const Text('Pick one or multiple audio files'),
+                  title: Text(t('upload_tracks')),
+                  subtitle: Text(t('pick_one_or_multiple_audio')),
                   onTap: () async {
                     Navigator.of(sheetContext).pop();
                     await _pickLocalFiles();
@@ -160,8 +161,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.folder_rounded),
-                  title: const Text('Pick folder'),
-                  subtitle: const Text('Import files from folder with filters'),
+                  title: Text(t('pick_folder')),
+                  subtitle: Text(t('import_from_folder_with_filters')),
                   onTap: () async {
                     Navigator.of(sheetContext).pop();
                     await _pickLocalFolderWithFilters();
@@ -169,8 +170,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.manage_search_rounded),
-                  title: const Text('Auto scan device'),
-                  subtitle: const Text('Find new audio files on device'),
+                  title: Text(t('auto_scan_device')),
+                  subtitle: Text(t('find_new_audio_on_device')),
                   onTap: () async {
                     Navigator.of(sheetContext).pop();
                     await _scanDeviceForNewAudioFiles();
@@ -185,6 +186,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   }
 
   Future<void> _pickLocalFolderWithFilters() async {
+    String t(String key) => AppLocalizations.text(context, key);
     final localMusicProvider = context.read<LocalMusicProvider>();
     final rawDirectoryPath = await FilePicker.platform.getDirectoryPath();
     if (rawDirectoryPath == null || !mounted) return;
@@ -192,13 +194,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     final directoryPath = _normalizePickedDirectoryPath(rawDirectoryPath);
     if (directoryPath == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Can not access this folder directly on Android. Use "Upload tracks" and select files.',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t('cant_access_folder_directly'))));
       return;
     }
 
@@ -209,11 +207,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     if (!mounted) return;
     if (!hasPermission) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Storage permission denied. Grant permission to import from folder.',
-          ),
-        ),
+        SnackBar(content: Text(t('storage_permission_import_denied'))),
       );
       return;
     }
@@ -226,16 +220,16 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
 
     if (files.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No matching files in: $directoryPath')),
+        SnackBar(content: Text('${t('no_matching_files_in')} $directoryPath')),
       );
       return;
     }
 
     await localMusicProvider.addFiles(files);
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Imported ${files.length} files')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${t('imported_files')} ${files.length}')),
+    );
   }
 
   Future<_FolderImportFilters?> _showFolderImportFilters() async {
@@ -358,7 +352,12 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                               ),
                             );
                           },
-                          child: const Text('Import from folder'),
+                          child: Text(
+                            AppLocalizations.text(
+                              context,
+                              'import_from_folder',
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -373,12 +372,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   }
 
   Future<void> _scanDeviceForNewAudioFiles() async {
+    String t(String key) => AppLocalizations.text(context, key);
     if (!Platform.isAndroid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Auto scan is currently supported on Android only'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t('auto_scan_android_only'))));
       return;
     }
 
@@ -386,9 +384,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     if (!mounted) return;
     if (!hasPermission) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Storage permission denied. Grant permission to scan.'),
-        ),
+        SnackBar(content: Text(t('storage_permission_scan_denied'))),
       );
       return;
     }
@@ -397,16 +393,16 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) {
-        return const AlertDialog(
+        return AlertDialog(
           content: Row(
             children: [
-              SizedBox(
+              const SizedBox(
                 width: 22,
                 height: 22,
                 child: CircularProgressIndicator(strokeWidth: 2.4),
               ),
-              SizedBox(width: 12),
-              Expanded(child: Text('Scanning device for audio files...')),
+              const SizedBox(width: 12),
+              Expanded(child: Text(t('scanning_device_audio'))),
             ],
           ),
         );
@@ -434,7 +430,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     if (newFiles.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('No new audio files found')));
+      ).showSnackBar(SnackBar(content: Text(t('no_new_audio_files'))));
       return;
     }
 
@@ -444,7 +440,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     await localMusicProvider.addFiles(selectedFiles);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added ${selectedFiles.length} files')),
+      SnackBar(content: Text('${t('added_files')} ${selectedFiles.length}')),
     );
   }
 
@@ -501,6 +497,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   }
 
   Future<List<File>?> _showScannedFilesPicker(List<File> files) {
+    String t(String key) => AppLocalizations.text(context, key);
     final selectedPaths = <String>{};
     String searchQuery = '';
 
@@ -531,7 +528,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Found ${files.length} new audio files',
+                        '${t('found_new_audio_files')} ${files.length}',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -551,7 +548,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                               context.read<AudioPlayerProvider>().stop();
                             },
                             icon: const Icon(Icons.done_all_rounded),
-                            label: const Text('Select all'),
+                            label: Text(t('select_all')),
                           ),
                           const SizedBox(width: 8),
                           OutlinedButton.icon(
@@ -560,11 +557,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                               context.read<AudioPlayerProvider>().stop();
                             },
                             icon: const Icon(Icons.deselect_rounded),
-                            label: const Text('Clear'),
+                            label: Text(t('clear')),
                           ),
                           const Spacer(),
                           Text(
-                            '${selectedPaths.length} selected - ${visibleFiles.length} shown',
+                            '${selectedPaths.length} ${t('selected_shown')} ${visibleFiles.length}',
                           ),
                         ],
                       ),
@@ -575,7 +572,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                         },
                         decoration: InputDecoration(
                           isDense: true,
-                          hintText: 'Search by file name or path',
+                          hintText: t('search_by_name_or_path'),
                           prefixIcon: Icon(Icons.search_rounded),
                         ),
                       ),
@@ -636,7 +633,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                       .toList();
                                   Navigator.of(sheetContext).pop(selected);
                                 },
-                          child: const Text('Add selected files'),
+                          child: Text(t('add_selected_files')),
                         ),
                       ),
                     ],
@@ -928,10 +925,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     List<File> localTracks,
     LocalMusicProvider localMusicProvider,
   ) {
+    String t(String key) => AppLocalizations.text(context, key);
     if (localTracks.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Add local tracks first')));
+      ).showSnackBar(SnackBar(content: Text(t('add_local_tracks_first'))));
       return;
     }
 
@@ -963,7 +961,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Create playlist',
+                        t('create_playlist_title'),
                         style: textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -973,11 +971,13 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                         onChanged: (value) {
                           playlistName = value;
                         },
-                        decoration: InputDecoration(labelText: 'Playlist name'),
+                        decoration: InputDecoration(
+                          labelText: t('playlist_name'),
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'Select tracks',
+                        t('select_tracks'),
                         style: textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -1006,8 +1006,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                           ),
                           label: Text(
                             selectedPaths.length == localTracks.length
-                                ? 'Clear selection'
-                                : 'Select all',
+                                ? t('clear_selection')
+                                : t('select_all'),
                           ),
                         ),
                       ),
@@ -1126,7 +1126,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
 
                             Navigator.of(sheetContext).pop();
                           },
-                          child: const Text('Create playlist'),
+                          child: Text(t('create_playlist')),
                         ),
                       ),
                     ],
