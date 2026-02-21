@@ -92,6 +92,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     await Future.wait([
       cloudMusicProvider.fetchUserLibrary(),
       cloudMusicProvider.fetchUserPlaylists(),
+      cloudMusicProvider.fetchStorageUsage(),
     ]);
     _cloudPlaylistTracksCache.clear();
 
@@ -1402,7 +1403,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                       ),
                                       const SizedBox(width: 8),
                                       Text(
-                                        '2GB / 10GB',
+                                        _formatStorageUsage(
+                                          cloudMusicProvider.usedBytes,
+                                          cloudMusicProvider.quotaBytes,
+                                        ),
                                         style: textTheme.labelLarge?.copyWith(
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -1579,6 +1583,24 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
         ? (track.filesize! / 1024 / 1024).toStringAsFixed(2)
         : 'n/a';
     return 'Size: $sizeInMb MB';
+  }
+
+  String _formatStorageUsage(int usedBytes, int quotaBytes) {
+    String prettyBytes(int bytes) {
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      var value = bytes.toDouble();
+      var unitIndex = 0;
+      while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex++;
+      }
+      final fixed = value >= 10 || unitIndex == 0
+          ? value.toStringAsFixed(0)
+          : value.toStringAsFixed(1);
+      return '$fixed${units[unitIndex]}';
+    }
+
+    return '${prettyBytes(usedBytes)} / ${prettyBytes(quotaBytes)}';
   }
 }
 

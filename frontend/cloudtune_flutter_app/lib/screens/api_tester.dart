@@ -11,14 +11,16 @@ class ApiTester extends StatefulWidget {
 
 class _ApiTesterState extends State<ApiTester> {
   String _result = '';
-  final Dio _dio = Dio(BaseOptions(
-    connectTimeout: Duration(seconds: 9),
-    receiveTimeout: Duration(seconds: 9),
-  ));
+  final Dio _dio = Dio(
+    BaseOptions(
+      connectTimeout: Duration(seconds: 9),
+      receiveTimeout: Duration(seconds: 9),
+    ),
+  );
 
   Future<void> _testConnection() async {
     try {
-      final response = await _dio.get('${Constants.baseUrl}/health');
+      final response = await _dio.get('${Constants.primaryBaseUrl}/health');
       setState(() {
         _result = 'Success: ${response.data}';
       });
@@ -32,9 +34,7 @@ class _ApiTesterState extends State<ApiTester> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('API Tester'),
-      ),
+      appBar: AppBar(title: const Text('API Tester')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -45,10 +45,7 @@ class _ApiTesterState extends State<ApiTester> {
               child: const Text('Test Connection'),
             ),
             const SizedBox(height: 20),
-            Text(
-              'Result:',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            Text('Result:', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 10),
             SelectableText(_result.isEmpty ? 'Click test button...' : _result),
           ],

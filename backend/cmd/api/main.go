@@ -40,6 +40,7 @@ func main() {
 		protectedRoutes.GET("/songs/library", handlers.GetUserLibrary)
 		protectedRoutes.GET("/songs/:id", handlers.GetSongByID)
 		protectedRoutes.GET("/songs/download/:id", handlers.DownloadSong)
+		protectedRoutes.GET("/storage/usage", handlers.GetStorageUsage)
 
 		// Маршруты для работы с плейлистами
 		protectedRoutes.POST("/playlists", handlers.CreatePlaylist)

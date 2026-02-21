@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -39,6 +40,10 @@ func Register(c *gin.Context) {
 	err = db.QueryRow(query, user.Email, user.Username, user.Password).Scan(&user.ID)
 	if err != nil {
 		log.Printf("Error inserting user: %v", err)
+		if strings.Contains(err.Error(), "duplicate key value") {
+			c.JSON(http.StatusConflict, gin.H{"error": "User with this email or username already exists"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating user"})
 		return
 	}
