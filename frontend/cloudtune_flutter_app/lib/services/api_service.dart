@@ -14,10 +14,10 @@ class ApiService {
           receiveTimeout: const Duration(seconds: 30),
         ),
       ) {
-    _baseUrls = <String>[
+    _baseUrls = {
       Constants.primaryBaseUrl,
       ...Constants.fallbackBaseUrls,
-    ].toSet().toList();
+    }.toList();
   }
 
   bool _isNetworkDioError(Object error) {

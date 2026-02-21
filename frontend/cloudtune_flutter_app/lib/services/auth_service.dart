@@ -16,10 +16,10 @@ class AuthService {
           receiveTimeout: const Duration(seconds: 9),
         ),
       ) {
-    _baseUrls = <String>[
+    _baseUrls = {
       Constants.primaryBaseUrl,
       ...Constants.fallbackBaseUrls,
-    ].toSet().toList();
+    }.toList();
   }
 
   bool _isNetworkDioError(Object error) {
