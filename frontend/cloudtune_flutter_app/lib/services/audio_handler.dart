@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final AudioPlayer _player = AudioPlayer();
   bool _hasPreparedShuffleForCurrentQueue = false;
+  bool _isDelayedAdvanceInProgress = false;
 
   bool get shuffleEnabled => _player.shuffleModeEnabled;
   Stream<bool> get shuffleEnabledStream => _player.shuffleModeEnabledStream;
@@ -26,6 +27,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     );
 
     _player.processingStateStream.listen((_) {
+      unawaited(_handleDelayedAdvanceIfNeeded());
       playbackState.add(_mapPlaybackState(_player));
     });
 
@@ -164,6 +166,25 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
     mediaItem.add(items[safeInitialIndex]);
     playbackState.add(_mapPlaybackState(_player));
+  }
+
+  Future<void> _handleDelayedAdvanceIfNeeded() async {
+    if (_isDelayedAdvanceInProgress) return;
+    if (_player.processingState != ProcessingState.completed) return;
+    if (_player.loopMode == LoopMode.one) return;
+    if (!_player.playing) return;
+    if (!_player.hasNext) return;
+
+    _isDelayedAdvanceInProgress = true;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (_player.processingState != ProcessingState.completed) return;
+      if (!_player.hasNext) return;
+      await _player.seekToNext();
+      await _player.play();
+    } finally {
+      _isDelayedAdvanceInProgress = false;
+    }
   }
 
   PlaybackState _mapPlaybackState(AudioPlayer player) {

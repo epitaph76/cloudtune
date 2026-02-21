@@ -152,6 +152,49 @@ class LocalMusicProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> addTrackToPlaylist({
+    required String playlistId,
+    required String trackPath,
+  }) async {
+    final playlist = _playlists.cast<LocalPlaylist?>().firstWhere(
+      (item) => item?.id == playlistId,
+      orElse: () => null,
+    );
+    if (playlist == null) return false;
+
+    final trackExists = _selectedFiles.any((file) => file.path == trackPath);
+    if (!trackExists) return false;
+
+    final changed = playlist.trackPaths.add(trackPath);
+    if (!changed) return false;
+
+    await _savePlaylists();
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> removeTrackFromPlaylist({
+    required String playlistId,
+    required String trackPath,
+  }) async {
+    final playlist = _playlists.cast<LocalPlaylist?>().firstWhere(
+      (item) => item?.id == playlistId,
+      orElse: () => null,
+    );
+    if (playlist == null) return false;
+
+    final changed = playlist.trackPaths.remove(trackPath);
+    if (!changed) return false;
+
+    if (playlist.trackPaths.isEmpty) {
+      _playlists.removeWhere((item) => item.id == playlistId);
+    }
+
+    await _savePlaylists();
+    notifyListeners();
+    return true;
+  }
+
   List<File> getTracksForPlaylist(String playlistId) {
     if (playlistId == 'all') return _selectedFiles;
 

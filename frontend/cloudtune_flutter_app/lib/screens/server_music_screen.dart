@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:provider/provider.dart';
 
 import '../models/track.dart';
 import '../models/playlist.dart';
+import '../providers/audio_player_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cloud_music_provider.dart';
 import '../providers/local_music_provider.dart';
@@ -60,6 +62,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   bool _cloudAuthRegisterMode = false;
   String _selectedLocalPlaylistId = 'all';
   int? _selectedCloudPlaylistId;
+  String _localTracksSearchQuery = '';
+  String _cloudTracksSearchQuery = '';
   static const double _storageSwipeVelocityThreshold = 280;
 
   static const List<String> _supportedAudioExtensions = <String>[
@@ -159,6 +163,15 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                   onTap: () async {
                     Navigator.of(sheetContext).pop();
                     await _pickLocalFolderWithFilters();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.manage_search_rounded),
+                  title: const Text('Auto scan device'),
+                  subtitle: const Text('Find new audio files on device'),
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    await _scanDeviceForNewAudioFiles();
                   },
                 ),
               ],
@@ -344,6 +357,276 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                             );
                           },
                           child: const Text('Import from folder'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _scanDeviceForNewAudioFiles() async {
+    if (!Platform.isAndroid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Auto scan is currently supported on Android only'),
+        ),
+      );
+      return;
+    }
+
+    final hasPermission = await _ensureFolderImportPermission();
+    if (!mounted) return;
+    if (!hasPermission) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Storage permission denied. Grant permission to scan.'),
+        ),
+      );
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return const AlertDialog(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.4),
+              ),
+              SizedBox(width: 12),
+              Expanded(child: Text('Scanning device for audio files...')),
+            ],
+          ),
+        );
+      },
+    );
+
+    List<File> scannedFiles = const <File>[];
+    try {
+      scannedFiles = await _collectAudioFilesFromDevice();
+    } finally {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+
+    if (!mounted) return;
+    final localMusicProvider = context.read<LocalMusicProvider>();
+    final existingPaths = localMusicProvider.selectedFiles
+        .map((item) => item.path)
+        .toSet();
+
+    final newFiles = scannedFiles
+        .where((file) => !existingPaths.contains(file.path))
+        .toList();
+    if (newFiles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No new audio files found')),
+      );
+      return;
+    }
+
+    final selectedFiles = await _showScannedFilesPicker(newFiles);
+    if (!mounted || selectedFiles == null || selectedFiles.isEmpty) return;
+
+    await localMusicProvider.addFiles(selectedFiles);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Added ${selectedFiles.length} files')),
+    );
+  }
+
+  Future<List<File>> _collectAudioFilesFromDevice() async {
+    final rootCandidates = <String>[
+      '/storage/emulated/0',
+      '/sdcard',
+    ];
+
+    final collected = <File>[];
+    final seenPaths = <String>{};
+
+    for (final rootPath in rootCandidates) {
+      final rootDir = Directory(rootPath);
+      if (!await rootDir.exists()) continue;
+
+      final pending = <Directory>[rootDir];
+      while (pending.isNotEmpty) {
+        final dir = pending.removeLast();
+        try {
+          await for (final entity in dir.list(followLinks: false)) {
+            if (entity is Directory) {
+              if (_shouldSkipDirectory(entity.path)) continue;
+              pending.add(entity);
+              continue;
+            }
+
+            if (entity is! File) continue;
+            final extension = p.extension(entity.path).toLowerCase();
+            if (!_supportedAudioExtensions.contains(extension)) continue;
+            if (seenPaths.add(entity.path)) {
+              collected.add(entity);
+            }
+          }
+        } catch (_) {
+          // Skip directories that are inaccessible.
+        }
+      }
+    }
+
+    collected.sort(
+      (a, b) => p.basename(a.path).toLowerCase().compareTo(
+        p.basename(b.path).toLowerCase(),
+      ),
+    );
+    return collected;
+  }
+
+  bool _shouldSkipDirectory(String path) {
+    final normalized = path.replaceAll('\\', '/').toLowerCase();
+    return normalized.contains('/android/data') ||
+        normalized.contains('/android/obb') ||
+        normalized.contains('/.thumbnails') ||
+        normalized.contains('/cache') ||
+        p.basename(normalized).startsWith('.');
+  }
+
+  Future<List<File>?> _showScannedFilesPicker(List<File> files) {
+    final selectedPaths = <String>{};
+    String searchQuery = '';
+
+    return showModalBottomSheet<List<File>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final normalizedQuery = searchQuery.trim().toLowerCase();
+            final visibleFiles = normalizedQuery.isEmpty
+                ? files
+                : files.where((file) {
+                    final fileName = p.basename(file.path).toLowerCase();
+                    final dirName = p.dirname(file.path).toLowerCase();
+                    return fileName.contains(normalizedQuery) ||
+                        dirName.contains(normalizedQuery);
+                  }).toList();
+
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+                child: SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.74,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Found ${files.length} new audio files',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              setModalState(() {
+                                selectedPaths
+                                  ..clear()
+                                  ..addAll(
+                                    visibleFiles.map((item) => item.path),
+                                  );
+                              });
+                            },
+                            icon: const Icon(Icons.done_all_rounded),
+                            label: const Text('Select all'),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              setModalState(selectedPaths.clear);
+                            },
+                            icon: const Icon(Icons.deselect_rounded),
+                            label: const Text('Clear'),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '${selectedPaths.length} selected • ${visibleFiles.length} shown',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        onChanged: (value) {
+                          setModalState(() => searchQuery = value);
+                        },
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          hintText: 'Search by file name or path',
+                          prefixIcon: Icon(Icons.search_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: visibleFiles.length,
+                          itemBuilder: (context, index) {
+                            final file = visibleFiles[index];
+                            final checked = selectedPaths.contains(file.path);
+                            return CheckboxListTile(
+                              value: checked,
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: Text(
+                                p.basename(file.path),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                p.dirname(file.path),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              onChanged: (value) {
+                                setModalState(() {
+                                  if (value == true) {
+                                    selectedPaths.add(file.path);
+                                  } else {
+                                    selectedPaths.remove(file.path);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: selectedPaths.isEmpty
+                              ? null
+                              : () {
+                                  final selected = files
+                                      .where(
+                                        (item) =>
+                                            selectedPaths.contains(item.path),
+                                      )
+                                      .toList();
+                                  Navigator.of(sheetContext).pop(selected);
+                                },
+                          child: const Text('Add selected files'),
                         ),
                       ),
                     ],
@@ -584,6 +867,21 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     return localMusicProvider.getTracksForPlaylist(_selectedLocalPlaylistId);
   }
 
+  bool _matchesLocalTrackSearch(File file) {
+    if (_localTracksSearchQuery.trim().isEmpty) return true;
+    final query = _localTracksSearchQuery.toLowerCase().trim();
+    final fileName = p.basename(file.path).toLowerCase();
+    final fileTitle = p.basenameWithoutExtension(file.path).toLowerCase();
+    return fileName.contains(query) || fileTitle.contains(query);
+  }
+
+  bool _matchesCloudTrackSearch(Track track) {
+    if (_cloudTracksSearchQuery.trim().isEmpty) return true;
+    final query = _cloudTracksSearchQuery.toLowerCase().trim();
+    final title = (track.originalFilename ?? track.filename).toLowerCase();
+    return title.contains(query);
+  }
+
   void _openCreatePlaylistDialog(
     List<File> localTracks,
     LocalMusicProvider localMusicProvider,
@@ -645,6 +943,34 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            setModalState(() {
+                              if (selectedPaths.length == localTracks.length) {
+                                selectedPaths.clear();
+                              } else {
+                                selectedPaths
+                                  ..clear()
+                                  ..addAll(
+                                    localTracks.map((file) => file.path),
+                                  );
+                              }
+                            });
+                          },
+                          icon: Icon(
+                            selectedPaths.length == localTracks.length
+                                ? Icons.deselect_rounded
+                                : Icons.done_all_rounded,
+                          ),
+                          label: Text(
+                            selectedPaths.length == localTracks.length
+                                ? 'Clear selection'
+                                : 'Select all',
+                          ),
+                        ),
+                      ),
                       Expanded(
                         child: ListView.separated(
                           itemCount: localTracks.length,
@@ -1066,13 +1392,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
 
     setState(() => _storageType = nextType);
 
-    if (nextType == _StorageType.local) {
-      await context.read<LocalMusicProvider>().refreshLocalLibrary();
-      return;
-    }
-
     final isCloudAuthed = context.read<AuthProvider>().currentUser != null;
-    if (isCloudAuthed) {
+    if (nextType == _StorageType.cloud && isCloudAuthed) {
       await _refreshCloudData();
     }
   }
@@ -1089,24 +1410,130 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     }
   }
 
+  Future<void> _addTrackToPlaylist(File file) async {
+    final localMusicProvider = context.read<LocalMusicProvider>();
+    final playlists = localMusicProvider.playlists;
+
+    if (playlists.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Create a playlist first')),
+      );
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: ListView.separated(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+            itemCount: playlists.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final playlist = playlists[index];
+              final alreadyAdded = playlist.trackPaths.contains(file.path);
+              final navigator = Navigator.of(sheetContext);
+              final scaffoldMessenger = ScaffoldMessenger.of(this.context);
+              return ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                tileColor: Theme.of(context).colorScheme.surface,
+                leading: const Icon(Icons.queue_music_rounded),
+                title: Text(playlist.name),
+                subtitle: Text('${playlist.trackPaths.length} tracks'),
+                trailing: alreadyAdded
+                    ? const Icon(Icons.check_rounded)
+                    : const Icon(Icons.add_rounded),
+                onTap: () {
+                  localMusicProvider
+                      .addTrackToPlaylist(
+                        playlistId: playlist.id,
+                        trackPath: file.path,
+                      )
+                      .then((ok) {
+                        if (!mounted) return;
+                        navigator.pop();
+                        scaffoldMessenger.showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok
+                                  ? 'Added to "${playlist.name}"'
+                                  : 'Track already in "${playlist.name}"',
+                            ),
+                          ),
+                        );
+                      });
+                },
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _removeTrackFromCurrentPlaylist(File file) async {
+    if (_selectedLocalPlaylistId == 'all') return;
+
+    final localMusicProvider = context.read<LocalMusicProvider>();
+    final removed = await localMusicProvider.removeTrackFromPlaylist(
+      playlistId: _selectedLocalPlaylistId,
+      trackPath: file.path,
+    );
+    if (!mounted || !removed) return;
+
+    final existsSelectedPlaylist = localMusicProvider.playlists.any(
+      (item) => item.id == _selectedLocalPlaylistId,
+    );
+    if (!existsSelectedPlaylist) {
+      setState(() => _selectedLocalPlaylistId = 'all');
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Track removed from playlist')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Consumer3<CloudMusicProvider, LocalMusicProvider, AuthProvider>(
-      builder: (context, cloudMusicProvider, localMusicProvider, authProvider, child) {
+    return Consumer4<
+      CloudMusicProvider,
+      LocalMusicProvider,
+      AuthProvider,
+      AudioPlayerProvider
+    >(
+      builder: (
+        context,
+        cloudMusicProvider,
+        localMusicProvider,
+        authProvider,
+        audioPlayerProvider,
+        child,
+      ) {
         final localTracks = localMusicProvider.selectedFiles;
         final localPlaylists = localMusicProvider.playlists;
-        final visibleLocalTracks = _localTracksForSelectedPlaylist(
+        final playlistLocalTracks = _localTracksForSelectedPlaylist(
           localMusicProvider,
         );
+        final visibleLocalTracks = playlistLocalTracks
+            .where(_matchesLocalTrackSearch)
+            .toList();
         final cloudTracks = cloudMusicProvider.tracks;
         final cloudPlaylists = cloudMusicProvider.playlists;
-        final visibleCloudTracks = _selectedCloudPlaylistId == null
+        final baseCloudTracks = _selectedCloudPlaylistId == null
             ? cloudTracks
             : (_cloudPlaylistTracksCache[_selectedCloudPlaylistId!] ??
                   const <Track>[]);
+        final visibleCloudTracks = baseCloudTracks
+            .where(_matchesCloudTrackSearch)
+            .toList();
         final isCloudPlaylistLoading =
             _selectedCloudPlaylistId != null &&
             _loadingCloudPlaylistIds.contains(_selectedCloudPlaylistId);
@@ -1115,9 +1542,15 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
         return Scaffold(
           body: SafeArea(
             child: RefreshIndicator(
-              onRefresh: _storageType == _StorageType.cloud && isCloudAuthed
-                  ? _refreshCloudData
-                  : () async {},
+              onRefresh: () async {
+                if (_storageType == _StorageType.local) {
+                  await context.read<LocalMusicProvider>().refreshLocalLibrary();
+                  return;
+                }
+                if (isCloudAuthed) {
+                  await _refreshCloudData();
+                }
+              },
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 260),
                 switchInCurve: Curves.easeOutCubic,
@@ -1299,11 +1732,30 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  'Tracks',
-                                  style: textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                Row(
+                                  children: [
+                                    Text(
+                                      'Tracks',
+                                      style: textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: TextField(
+                                        onChanged: (value) {
+                                          setState(
+                                            () => _localTracksSearchQuery = value,
+                                          );
+                                        },
+                                        decoration: const InputDecoration(
+                                          isDense: true,
+                                          hintText: 'Search track',
+                                          prefixIcon: Icon(Icons.search_rounded),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 10),
                                 if (visibleLocalTracks.isEmpty)
@@ -1322,6 +1774,23 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                       child: _TrackRow(
                                         title: p.basename(file.path),
                                         subtitle: _localFileSize(file),
+                                        selected: audioPlayerProvider
+                                            .isCurrentTrackPath(file.path),
+                                        isPlaying:
+                                            audioPlayerProvider.playing &&
+                                            audioPlayerProvider
+                                                .isCurrentTrackPath(file.path),
+                                        onTap: () {
+                                          final targetIndex = playlistLocalTracks
+                                              .indexWhere(
+                                                (item) => item.path == file.path,
+                                              );
+                                          if (targetIndex < 0) return;
+                                          audioPlayerProvider.toggleTrackFromTracks(
+                                            playlistLocalTracks,
+                                            targetIndex,
+                                          );
+                                        },
                                         menuItems: [
                                           _TrackMenuAction(
                                             label: uploading
@@ -1332,6 +1801,20 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                             onTap: () =>
                                                 _uploadLocalTrack(file),
                                           ),
+                                          _TrackMenuAction(
+                                            label: 'Add to playlist',
+                                            icon: Icons.playlist_add_rounded,
+                                            onTap: () => _addTrackToPlaylist(file),
+                                          ),
+                                          if (_selectedLocalPlaylistId != 'all')
+                                            _TrackMenuAction(
+                                              label: 'Remove from playlist',
+                                              icon: Icons.playlist_remove_rounded,
+                                              onTap: () =>
+                                                  _removeTrackFromCurrentPlaylist(
+                                                    file,
+                                                  ),
+                                            ),
                                           _TrackMenuAction(
                                             label: 'Delete',
                                             icon: Icons.delete_rounded,
@@ -1486,11 +1969,33 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    'Tracks',
-                                    style: textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'Tracks',
+                                        style: textTheme.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: TextField(
+                                          onChanged: (value) {
+                                            setState(
+                                              () =>
+                                                  _cloudTracksSearchQuery = value,
+                                            );
+                                          },
+                                          decoration: const InputDecoration(
+                                            isDense: true,
+                                            hintText: 'Search track',
+                                            prefixIcon: Icon(
+                                              Icons.search_rounded,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   const SizedBox(height: 10),
                                   if ((cloudMusicProvider.isLoading &&
@@ -1918,74 +2423,158 @@ class _TrackRow extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.menuItems,
+    this.selected = false,
+    this.isPlaying = false,
+    this.onTap,
   });
 
   final String title;
   final String subtitle;
   final List<_TrackMenuAction> menuItems;
+  final bool selected;
+  final bool isPlaying;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: colorScheme.outline),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              gradient: LinearGradient(
-                colors: [colorScheme.primary, colorScheme.tertiary],
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? colorScheme.secondary : colorScheme.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? colorScheme.primary : colorScheme.outline,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                gradient: LinearGradient(
+                  colors: [colorScheme.primary, colorScheme.tertiary],
+                ),
+              ),
+              child: isPlaying
+                  ? _AnimatedPlayingBars(color: colorScheme.onPrimary)
+                  : Icon(
+                      Icons.music_note_rounded,
+                      color: colorScheme.onPrimary,
+                    ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: textTheme.labelMedium?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.65),
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: Icon(Icons.music_note_rounded, color: colorScheme.onPrimary),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: textTheme.labelMedium?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.65),
-                  ),
-                ),
-              ],
+            PopupMenuButton<int>(
+              icon: const Icon(Icons.more_vert_rounded),
+              onSelected: (index) => menuItems[index].onTap(),
+              itemBuilder: (context) {
+                return List.generate(menuItems.length, (index) {
+                  final item = menuItems[index];
+                  return PopupMenuItem<int>(
+                    value: index,
+                    enabled: item.enabled,
+                    child: Row(
+                      children: [
+                        Icon(item.icon, size: 18),
+                        const SizedBox(width: 8),
+                        Text(item.label),
+                      ],
+                    ),
+                  );
+                });
+              },
             ),
-          ),
-          PopupMenuButton<int>(
-            icon: const Icon(Icons.more_vert_rounded),
-            onSelected: (index) => menuItems[index].onTap(),
-            itemBuilder: (context) {
-              return List.generate(menuItems.length, (index) {
-                final item = menuItems[index];
-                return PopupMenuItem<int>(
-                  value: index,
-                  enabled: item.enabled,
-                  child: Row(
-                    children: [
-                      Icon(item.icon, size: 18),
-                      const SizedBox(width: 8),
-                      Text(item.label),
-                    ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimatedPlayingBars extends StatefulWidget {
+  const _AnimatedPlayingBars({required this.color});
+
+  final Color color;
+
+  @override
+  State<_AnimatedPlayingBars> createState() => _AnimatedPlayingBarsState();
+}
+
+class _AnimatedPlayingBarsState extends State<_AnimatedPlayingBars>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double _barHeight(int index, double t) {
+    final phase = (t * 2 * math.pi) + (index * 0.9);
+    final normalized = (math.sin(phase) + 1) / 2;
+    return 8 + (normalized * 12);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SizedBox(
+        width: 18,
+        height: 22,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(3, (index) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 1),
+                  child: Container(
+                    width: 4,
+                    height: _barHeight(index, _controller.value),
+                    decoration: BoxDecoration(
+                      color: widget.color,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 );
-              });
-            },
-          ),
-        ],
+              }),
+            );
+          },
+        ),
       ),
     );
   }

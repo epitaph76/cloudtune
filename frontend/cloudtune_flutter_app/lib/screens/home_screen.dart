@@ -1,5 +1,4 @@
-import 'dart:io';
-
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
@@ -23,7 +22,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedPlaylistId = 'all';
 
   static const double _horizontalSwipeThreshold = 80;
-  static const double _verticalSwipeThreshold = 80;
 
   void _handleTopZoneHorizontalSwipe(DragEndDetails details) {
     final dx = details.primaryVelocity ?? 0;
@@ -33,17 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (dx < -_horizontalSwipeThreshold * 8) {
       context.read<MainNavProvider>().setIndex(1);
-    }
-  }
-
-  void _handleTopZoneVerticalSwipe(
-    DragEndDetails details,
-    List<File> tracks,
-    AudioPlayerProvider audioProvider,
-  ) {
-    final dy = details.primaryVelocity ?? 0;
-    if (dy < -_verticalSwipeThreshold * 8) {
-      _openQueueSheet(context, tracks, audioProvider);
     }
   }
 
@@ -135,18 +122,16 @@ class _HomeScreenState extends State<HomeScreen> {
           key: _scaffoldKey,
           drawer: _buildSideMenu(context, localMusicProvider, activePlaylistId),
           body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-              child: Column(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragEnd: _handleTopZoneHorizontalSwipe,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+                child: Column(
                 children: [
                   GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onHorizontalDragEnd: _handleTopZoneHorizontalSwipe,
-                    onVerticalDragEnd: (details) => _handleTopZoneVerticalSwipe(
-                      details,
-                      tracks,
-                      audioProvider,
-                    ),
                     child: Row(
                       children: [
                         _TopActionButton(
@@ -161,11 +146,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const Spacer(),
-                        _TopActionButton(
-                          icon: Icons.music_note_rounded,
-                          onTap: () =>
-                              _openQueueSheet(context, tracks, audioProvider),
-                        ),
+                        const SizedBox(width: 42, height: 42),
                       ],
                     ),
                   ),
@@ -175,12 +156,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: GestureDetector(
                         behavior: HitTestBehavior.translucent,
                         onHorizontalDragEnd: _handleTopZoneHorizontalSwipe,
-                        onVerticalDragEnd: (details) =>
-                            _handleTopZoneVerticalSwipe(
-                              details,
-                              tracks,
-                              audioProvider,
-                            ),
                         child: Center(
                           child: Container(
                             width: double.infinity,
@@ -223,181 +198,162 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                   else
                     Expanded(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            GestureDetector(
-                              behavior: HitTestBehavior.translucent,
-                              onHorizontalDragEnd:
-                                  _handleTopZoneHorizontalSwipe,
-                              onVerticalDragEnd: (details) =>
-                                  _handleTopZoneVerticalSwipe(
-                                    details,
-                                    tracks,
-                                    audioProvider,
-                                  ),
-                              child: Column(
-                                children: [
-                                  const SizedBox(height: 22),
-                                  Container(
-                                    width: 312,
-                                    height: 312,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(42),
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                        colors: [
-                                          colorScheme.primary,
-                                          colorScheme.tertiary,
-                                        ],
-                                      ),
-                                    ),
-                                    child: Icon(
-                                      Icons.music_note_rounded,
-                                      size: 136,
-                                      color: colorScheme.onPrimary.withValues(
-                                        alpha: 0.92,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 30),
-                                  Text(
-                                    currentTitle,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: textTheme.headlineSmall?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 31,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    currentSubtitle,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: textTheme.bodyMedium?.copyWith(
-                                      color: colorScheme.onSurface.withValues(
-                                        alpha: 0.65,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 14),
-                                  IconButton(
-                                    onPressed: currentFile == null
-                                        ? null
-                                        : () {
-                                            setState(() {
-                                              if (isLiked) {
-                                                _likedTracks.remove(
-                                                  currentFile.path,
-                                                );
-                                              } else {
-                                                _likedTracks.add(
-                                                  currentFile.path,
-                                                );
-                                              }
-                                            });
-                                          },
-                                    icon: Icon(
-                                      isLiked
-                                          ? Icons.favorite_rounded
-                                          : Icons.favorite_border_rounded,
-                                    ),
-                                    color: colorScheme.primary,
-                                  ),
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 22),
+                          Container(
+                            width: 312,
+                            height: 312,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(42),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  colorScheme.primary,
+                                  colorScheme.tertiary,
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 12),
-                            Slider(
-                              value: sliderValue,
-                              max: sliderMax,
-                              onChanged: !hasKnownDuration
-                                  ? null
-                                  : (value) {
-                                      audioProvider.seek(
-                                        Duration(seconds: value.round()),
-                                      );
-                                    },
+                            child: Icon(
+                              Icons.music_note_rounded,
+                              size: 136,
+                              color: colorScheme.onPrimary.withValues(
+                                alpha: 0.92,
+                              ),
                             ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  _formatDuration(audioProvider.position),
-                                  style: textTheme.labelMedium?.copyWith(
-                                    color: colorScheme.onSurface.withValues(
-                                      alpha: 0.6,
-                                    ),
+                          ),
+                          const SizedBox(height: 30),
+                          SizedBox(
+                            height: 40,
+                            child: _AutoScrollingText(
+                              text: currentTitle,
+                              textStyle: textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 31,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            currentSubtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurface.withValues(
+                                alpha: 0.65,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          IconButton(
+                            onPressed: currentFile == null
+                                ? null
+                                : () {
+                                    setState(() {
+                                      if (isLiked) {
+                                        _likedTracks.remove(currentFile.path);
+                                      } else {
+                                        _likedTracks.add(currentFile.path);
+                                      }
+                                    });
+                                  },
+                            icon: Icon(
+                              isLiked
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                            ),
+                            color: colorScheme.primary,
+                          ),
+                          const Spacer(),
+                          Slider(
+                            value: sliderValue,
+                            max: sliderMax,
+                            onChanged: !hasKnownDuration
+                                ? null
+                                : (value) {
+                                    audioProvider.seek(
+                                      Duration(seconds: value.round()),
+                                    );
+                                  },
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                _formatDuration(audioProvider.position),
+                                style: textTheme.labelMedium?.copyWith(
+                                  color: colorScheme.onSurface.withValues(
+                                    alpha: 0.6,
                                   ),
                                 ),
-                                Text(
-                                  _formatDuration(audioProvider.duration),
-                                  style: textTheme.labelMedium?.copyWith(
-                                    color: colorScheme.onSurface.withValues(
-                                      alpha: 0.6,
-                                    ),
+                              ),
+                              Text(
+                                _formatDuration(audioProvider.duration),
+                                style: textTheme.labelMedium?.copyWith(
+                                  color: colorScheme.onSurface.withValues(
+                                    alpha: 0.6,
                                   ),
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 28),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _ToggleCircleButton(
-                                  active: audioProvider.shuffleEnabled,
-                                  icon: Icons.shuffle_rounded,
-                                  onTap: audioProvider.toggleShuffle,
-                                ),
-                                IconButton(
-                                  onPressed: hasTracks
-                                      ? () => audioProvider
-                                            .skipToPreviousFromTracks(tracks)
-                                      : null,
-                                  icon: const Icon(Icons.skip_previous_rounded),
-                                  iconSize: 34,
-                                ),
-                                const SizedBox(width: 8),
-                                FilledButton(
-                                  onPressed: hasTracks
-                                      ? () => audioProvider.playPauseFromTracks(
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 28),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _ToggleCircleButton(
+                                active: audioProvider.shuffleEnabled,
+                                icon: Icons.shuffle_rounded,
+                                onTap: audioProvider.toggleShuffle,
+                              ),
+                              IconButton(
+                                onPressed: hasTracks
+                                    ? () => audioProvider.skipToPreviousFromTracks(
                                           tracks,
                                         )
-                                      : null,
-                                  style: FilledButton.styleFrom(
-                                    shape: const CircleBorder(),
-                                    padding: const EdgeInsets.all(18),
-                                  ),
-                                  child: Icon(
-                                    audioProvider.playing
-                                        ? Icons.pause_rounded
-                                        : Icons.play_arrow_rounded,
-                                    size: 34,
-                                  ),
+                                    : null,
+                                icon: const Icon(Icons.skip_previous_rounded),
+                                iconSize: 34,
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton(
+                                onPressed: hasTracks
+                                    ? () =>
+                                        audioProvider.playPauseFromTracks(tracks)
+                                    : null,
+                                style: FilledButton.styleFrom(
+                                  shape: const CircleBorder(),
+                                  padding: const EdgeInsets.all(18),
                                 ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  onPressed: hasTracks
-                                      ? () => audioProvider
-                                            .skipToNextFromTracks(tracks)
-                                      : null,
-                                  icon: const Icon(Icons.skip_next_rounded),
-                                  iconSize: 34,
+                                child: Icon(
+                                  audioProvider.playing
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  size: 34,
                                 ),
-                                _ToggleCircleButton(
-                                  active: audioProvider.repeatOneEnabled,
-                                  icon: Icons.repeat_rounded,
-                                  onTap: audioProvider.toggleRepeatOne,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: hasTracks
+                                    ? () =>
+                                        audioProvider.skipToNextFromTracks(tracks)
+                                    : null,
+                                icon: const Icon(Icons.skip_next_rounded),
+                                iconSize: 34,
+                              ),
+                              _ToggleCircleButton(
+                                active: audioProvider.repeatOneEnabled,
+                                icon: Icons.repeat_rounded,
+                                onTap: audioProvider.toggleRepeatOne,
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                 ],
+                ),
               ),
             ),
           ),
@@ -565,136 +521,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openQueueSheet(
-    BuildContext context,
-    List<File> tracks,
-    AudioPlayerProvider audioProvider,
-  ) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-
-    if (tracks.isEmpty) return;
-
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: SizedBox(
-              height: MediaQuery.of(sheetContext).size.height * 0.6,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Playback Queue',
-                    style: textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: Consumer<AudioPlayerProvider>(
-                      builder: (context, queueProvider, child) {
-                        return ListView.separated(
-                          itemCount: tracks.length,
-                          separatorBuilder: (context, index) =>
-                              const SizedBox(height: 8),
-                          itemBuilder: (context, index) {
-                            final track = tracks[index];
-                            final isCurrent = queueProvider.isCurrentTrackPath(
-                              track.path,
-                            );
-                            final title = p.basenameWithoutExtension(
-                              track.path,
-                            );
-
-                            return InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () async {
-                                await queueProvider.playFromTracks(
-                                  tracks,
-                                  initialIndex: index,
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(16),
-                                  color: isCurrent
-                                      ? colorScheme.secondary
-                                      : colorScheme.surface,
-                                  border: Border.all(
-                                    color: colorScheme.outline,
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 42,
-                                      height: 42,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(12),
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            colorScheme.primary,
-                                            colorScheme.tertiary,
-                                          ],
-                                        ),
-                                      ),
-                                      child: Icon(
-                                        Icons.music_note_rounded,
-                                        color: colorScheme.onPrimary,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        title,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    IconButton(
-                                      onPressed: () async {
-                                        await queueProvider
-                                            .toggleTrackFromTracks(
-                                              tracks,
-                                              index,
-                                            );
-                                      },
-                                      icon: Icon(
-                                        isCurrent && queueProvider.playing
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                      ),
-                                      color: colorScheme.primary,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   String _formatDuration(Duration duration) {
     if (duration.inSeconds <= 0) return '--:--';
 
@@ -707,6 +533,78 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return '$minutes:$seconds';
+  }
+}
+
+class _AutoScrollingText extends StatefulWidget {
+  const _AutoScrollingText({required this.text, this.textStyle});
+
+  final String text;
+  final TextStyle? textStyle;
+
+  @override
+  State<_AutoScrollingText> createState() => _AutoScrollingTextState();
+}
+
+class _AutoScrollingTextState extends State<_AutoScrollingText> {
+  final ScrollController _scrollController = ScrollController();
+  Timer? _timer;
+  bool _forward = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startAnimation());
+  }
+
+  @override
+  void didUpdateWidget(covariant _AutoScrollingText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text) {
+      _timer?.cancel();
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startAnimation());
+    }
+  }
+
+  void _startAnimation() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    if (maxScroll <= 0) return;
+
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      if (!mounted || !_scrollController.hasClients) return;
+      final target = _forward ? maxScroll : 0.0;
+      _forward = !_forward;
+      await _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 1200),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      controller: _scrollController,
+      scrollDirection: Axis.horizontal,
+      physics: const NeverScrollableScrollPhysics(),
+      child: Text(
+        widget.text,
+        maxLines: 1,
+        style: widget.textStyle,
+      ),
+    );
   }
 }
 
