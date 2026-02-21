@@ -44,6 +44,7 @@ func main() {
 		protectedRoutes.POST("/songs/upload", handlers.UploadSong)
 		protectedRoutes.GET("/songs/library", handlers.GetUserLibrary)
 		protectedRoutes.GET("/songs/:id", handlers.GetSongByID)
+		protectedRoutes.DELETE("/songs/:id", handlers.DeleteSong)
 		protectedRoutes.GET("/songs/download/:id", handlers.DownloadSong)
 		protectedRoutes.GET("/storage/usage", handlers.GetStorageUsage)
 

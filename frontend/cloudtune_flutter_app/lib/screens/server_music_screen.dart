@@ -17,6 +17,7 @@ import '../providers/cloud_music_provider.dart';
 import '../providers/local_music_provider.dart';
 import '../providers/main_nav_provider.dart';
 import '../services/api_service.dart';
+import '../utils/app_localizations.dart';
 
 enum _StorageType { local, cloud }
 
@@ -547,6 +548,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                     visibleFiles.map((item) => item.path),
                                   );
                               });
+                              context.read<AudioPlayerProvider>().stop();
                             },
                             icon: const Icon(Icons.done_all_rounded),
                             label: const Text('Select all'),
@@ -555,13 +557,14 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                           OutlinedButton.icon(
                             onPressed: () {
                               setModalState(selectedPaths.clear);
+                              context.read<AudioPlayerProvider>().stop();
                             },
                             icon: const Icon(Icons.deselect_rounded),
                             label: const Text('Clear'),
                           ),
                           const Spacer(),
                           Text(
-                            '${selectedPaths.length} selected • ${visibleFiles.length} shown',
+                            '${selectedPaths.length} selected - ${visibleFiles.length} shown',
                           ),
                         ],
                       ),
@@ -570,7 +573,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                         onChanged: (value) {
                           setModalState(() => searchQuery = value);
                         },
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           isDense: true,
                           hintText: 'Search by file name or path',
                           prefixIcon: Icon(Icons.search_rounded),
@@ -598,13 +601,21 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               onChanged: (value) {
+                                final shouldSelect = value == true;
                                 setModalState(() {
-                                  if (value == true) {
+                                  if (shouldSelect) {
                                     selectedPaths.add(file.path);
                                   } else {
                                     selectedPaths.remove(file.path);
                                   }
                                 });
+                                _handleScannedTrackSelection(
+                                  files: files,
+                                  selectedTrack: file,
+                                  shouldSelect: shouldSelect,
+                                  selectedCount: selectedPaths.length,
+                                  totalCount: files.length,
+                                );
                               },
                             );
                           },
@@ -637,6 +648,38 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
         );
       },
     );
+  }
+
+  Future<void> _handleScannedTrackSelection({
+    required List<File> files,
+    required File selectedTrack,
+    required bool shouldSelect,
+    required int selectedCount,
+    required int totalCount,
+  }) async {
+    final audioProvider = context.read<AudioPlayerProvider>();
+
+    if (selectedCount == totalCount || selectedCount == 0) {
+      await audioProvider.stop();
+      return;
+    }
+
+    if (!shouldSelect) {
+      if (audioProvider.currentTrackPath == selectedTrack.path) {
+        await audioProvider.stop();
+      }
+      return;
+    }
+
+    final index = files.indexWhere((item) => item.path == selectedTrack.path);
+    if (index < 0) return;
+
+    if (audioProvider.currentTrackPath == selectedTrack.path) {
+      await audioProvider.playPauseFromTracks(files);
+      return;
+    }
+
+    await audioProvider.playFromTracks(files, initialIndex: index);
   }
 
   Future<List<File>> _collectAudioFilesFromFolder({
@@ -930,9 +973,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                         onChanged: (value) {
                           playlistName = value;
                         },
-                        decoration: const InputDecoration(
-                          labelText: 'Playlist name',
-                        ),
+                        decoration: InputDecoration(labelText: 'Playlist name'),
                       ),
                       const SizedBox(height: 12),
                       Text(
@@ -1044,7 +1085,32 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                         child: FilledButton(
                           onPressed: () {
                             final name = playlistName.trim();
-                            if (name.isEmpty || selectedPaths.isEmpty) return;
+                            if (name.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    AppLocalizations.text(
+                                      context,
+                                      'playlist_name_required',
+                                    ),
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            if (selectedPaths.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    AppLocalizations.text(
+                                      context,
+                                      'playlist_tracks_required',
+                                    ),
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
 
                             localMusicProvider
                                 .createPlaylist(
@@ -1321,6 +1387,29 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     }
   }
 
+  Future<void> _deleteCloudTrack(Track track) async {
+    final result = await _apiService.deleteSong(track.id);
+    if (!mounted) return;
+
+    if (result['success'] == true) {
+      _cloudPlaylistTracksCache.removeWhere(
+        (_, songs) => songs.any((item) => item.id == track.id),
+      );
+      await _refreshCloudData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Deleted: ${track.originalFilename ?? track.filename}'),
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Delete failed: ${result['message']}')),
+    );
+  }
+
   Future<void> _deleteCloudPlaylist(Playlist playlist) async {
     if (_deletingCloudPlaylistIds.contains(playlist.id)) return;
     setState(() => _deletingCloudPlaylistIds.add(playlist.id));
@@ -1472,7 +1561,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                 tileColor: Theme.of(context).colorScheme.surface,
                 leading: const Icon(Icons.queue_music_rounded),
                 title: Text(playlist.name),
-                subtitle: Text('${playlist.trackPaths.length} tracks'),
+                subtitle: Text(
+                  '${playlist.trackPaths.length} ${AppLocalizations.text(context, 'tracks')}',
+                ),
                 trailing: alreadyAdded
                     ? const Icon(Icons.check_rounded)
                     : const Icon(Icons.add_rounded),
@@ -1542,6 +1633,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    String t(String key) => AppLocalizations.text(context, key);
 
     return Consumer3<CloudMusicProvider, LocalMusicProvider, AuthProvider>(
       builder: (context, cloudMusicProvider, localMusicProvider, authProvider, child) {
@@ -1606,370 +1698,62 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                 },
                 child: KeyedSubtree(
                   key: ValueKey<_StorageType>(_storageType),
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            'Storage',
-                            style: textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const Spacer(),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: colorScheme.secondary,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _ModeButton(
-                                selected: _storageType == _StorageType.local,
-                                label: 'Local',
-                                icon: Icons.storage_rounded,
-                                onTap: () =>
-                                    _switchStorageType(_StorageType.local),
-                              ),
-                            ),
-                            Expanded(
-                              child: _ModeButton(
-                                selected: _storageType == _StorageType.cloud,
-                                label: 'Cloud',
-                                icon: Icons.cloud_rounded,
-                                onTap: () =>
-                                    _switchStorageType(_StorageType.cloud),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      if (_storageType == _StorageType.local) ...[
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onHorizontalDragEnd: _storageType == _StorageType.local
+                        ? _handleLocalTracksSwipe
+                        : _handleCloudTracksSwipe,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                      children: [
                         Row(
                           children: [
-                            Expanded(
-                              child: Text(
-                                '${localPlaylists.length + 2} playlists • ${visibleLocalTracks.length} tracks',
-                                style: textTheme.bodyMedium?.copyWith(
-                                  color: colorScheme.onSurface.withValues(
-                                    alpha: 0.65,
-                                  ),
-                                ),
+                            Text(
+                              t('storage_title'),
+                              style: textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                            FilledButton(
-                              onPressed: _showUploadOptions,
-                              style: FilledButton.styleFrom(
-                                minimumSize: const Size(
-                                  _storageHeaderControlWidth,
-                                  _storageHeaderControlHeight,
-                                ),
-                                maximumSize: const Size(
-                                  _storageHeaderControlWidth,
-                                  _storageHeaderControlHeight,
-                                ),
-                              ),
-                              child: const Text('Upload'),
-                            ),
+                            const Spacer(),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 130,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            separatorBuilder: (context, index) =>
-                                const SizedBox(width: 10),
-                            itemCount: localPlaylists.length + 3,
-                            itemBuilder: (context, index) {
-                              if (index == 0) {
-                                return _CreatePlaylistCard(
-                                  onTap: () => _openCreatePlaylistDialog(
-                                    localTracks,
-                                    localMusicProvider,
-                                  ),
-                                );
-                              }
-
-                              if (index == 1) {
-                                return _SelectablePlaylistCard(
-                                  playlistName: 'All songs',
-                                  trackCount: localTracks.length,
-                                  selected:
-                                      _selectedLocalPlaylistId ==
-                                      LocalMusicProvider.allPlaylistId,
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedLocalPlaylistId =
-                                          LocalMusicProvider.allPlaylistId;
-                                    });
-                                  },
-                                  menuActions: [
-                                    _PlaylistMenuAction(
-                                      label:
-                                          _syncingLocalPlaylistIds.contains(
-                                            'system_${LocalMusicProvider.allPlaylistId}',
-                                          )
-                                          ? 'Syncing...'
-                                          : 'Upload to cloud',
-                                      icon: Icons.cloud_upload_rounded,
-                                      onTap: () => _uploadSystemPlaylistToCloud(
-                                        playlistId:
-                                            LocalMusicProvider.allPlaylistId,
-                                        playlistName: 'All songs',
-                                        localMusicProvider: localMusicProvider,
-                                        cloudMusicProvider: cloudMusicProvider,
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              }
-
-                              if (index == 2) {
-                                return _SelectablePlaylistCard(
-                                  playlistName: 'Liked songs',
-                                  trackCount:
-                                      localMusicProvider.likedTracksCount,
-                                  selected:
-                                      _selectedLocalPlaylistId ==
-                                      LocalMusicProvider.likedPlaylistId,
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedLocalPlaylistId =
-                                          LocalMusicProvider.likedPlaylistId;
-                                    });
-                                  },
-                                  menuActions: [
-                                    _PlaylistMenuAction(
-                                      label:
-                                          _syncingLocalPlaylistIds.contains(
-                                            'system_${LocalMusicProvider.likedPlaylistId}',
-                                          )
-                                          ? 'Syncing...'
-                                          : 'Upload to cloud',
-                                      icon: Icons.cloud_upload_rounded,
-                                      onTap: () => _uploadSystemPlaylistToCloud(
-                                        playlistId:
-                                            LocalMusicProvider.likedPlaylistId,
-                                        playlistName: 'Liked songs',
-                                        localMusicProvider: localMusicProvider,
-                                        cloudMusicProvider: cloudMusicProvider,
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              }
-
-                              final playlist = localPlaylists[index - 3];
-                              final trackCount = playlist.trackPaths
-                                  .where(
-                                    (path) => localTracks.any(
-                                      (track) => track.path == path,
-                                    ),
-                                  )
-                                  .length;
-
-                              return _SelectablePlaylistCard(
-                                playlistName: playlist.name,
-                                trackCount: trackCount,
-                                selected:
-                                    _selectedLocalPlaylistId == playlist.id,
-                                onTap: () {
-                                  setState(() {
-                                    _selectedLocalPlaylistId = playlist.id;
-                                  });
-                                },
-                                menuActions: [
-                                  _PlaylistMenuAction(
-                                    label:
-                                        _syncingLocalPlaylistIds.contains(
-                                          playlist.id,
-                                        )
-                                        ? 'Syncing...'
-                                        : 'Upload to cloud',
-                                    icon: Icons.cloud_upload_rounded,
-                                    onTap: () => _uploadLocalPlaylistToCloud(
-                                      playlist: playlist,
-                                      localMusicProvider: localMusicProvider,
-                                      cloudMusicProvider: cloudMusicProvider,
-                                    ),
-                                  ),
-                                  _PlaylistMenuAction(
-                                    label: 'Delete',
-                                    icon: Icons.delete_rounded,
-                                    onTap: () =>
-                                        _deleteLocalPlaylist(playlist.id),
-                                  ),
-                                ],
-                              );
-                            },
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: colorScheme.secondary,
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onHorizontalDragEnd: _handleLocalTracksSwipe,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minHeight:
-                                  MediaQuery.of(context).size.height * 0.34,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      'Tracks',
-                                      style: textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: TextField(
-                                        onChanged: (value) {
-                                          setState(
-                                            () =>
-                                                _localTracksSearchQuery = value,
-                                          );
-                                        },
-                                        decoration: const InputDecoration(
-                                          isDense: true,
-                                          hintText: 'Search track',
-                                          prefixIcon: Icon(
-                                            Icons.search_rounded,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _ModeButton(
+                                  selected: _storageType == _StorageType.local,
+                                  label: t('local'),
+                                  icon: Icons.storage_rounded,
+                                  onTap: () =>
+                                      _switchStorageType(_StorageType.local),
                                 ),
-                                const SizedBox(height: 10),
-                                if (visibleLocalTracks.isEmpty)
-                                  const _EmptyInlineState(
-                                    message: 'No local tracks yet',
-                                  )
-                                else
-                                  SizedBox(
-                                    height:
-                                        MediaQuery.of(context).size.height *
-                                        0.56,
-                                    child: ListView.separated(
-                                      primary: false,
-                                      itemCount: visibleLocalTracks.length,
-                                      separatorBuilder: (context, index) =>
-                                          const SizedBox(height: 10),
-                                      itemBuilder: (context, index) {
-                                        final file = visibleLocalTracks[index];
-                                        final uploading = _uploadingPaths
-                                            .contains(file.path);
-                                        final selected =
-                                            currentTrackPath == file.path;
-
-                                        return _TrackRow(
-                                          title: p.basename(file.path),
-                                          subtitle: _localFileSize(file),
-                                          selected: selected,
-                                          isPlaying:
-                                              selected && isCurrentTrackPlaying,
-                                          onTap: () {
-                                            final targetIndex =
-                                                playlistLocalTracks.indexWhere(
-                                                  (item) =>
-                                                      item.path == file.path,
-                                                );
-                                            if (targetIndex < 0) return;
-                                            context
-                                                .read<AudioPlayerProvider>()
-                                                .toggleTrackFromTracks(
-                                                  playlistLocalTracks,
-                                                  targetIndex,
-                                                );
-                                          },
-                                          menuItems: [
-                                            _TrackMenuAction(
-                                              label: uploading
-                                                  ? 'Uploading...'
-                                                  : 'Upload',
-                                              icon: Icons.cloud_upload_rounded,
-                                              enabled: !uploading,
-                                              onTap: () =>
-                                                  _uploadLocalTrack(file),
-                                            ),
-                                            _TrackMenuAction(
-                                              label: 'Add to playlist',
-                                              icon: Icons.playlist_add_rounded,
-                                              onTap: () =>
-                                                  _addTrackToPlaylist(file),
-                                            ),
-                                            if (_selectedLocalPlaylistId !=
-                                                LocalMusicProvider
-                                                    .allPlaylistId)
-                                              _TrackMenuAction(
-                                                label:
-                                                    _selectedLocalPlaylistId ==
-                                                        LocalMusicProvider
-                                                            .likedPlaylistId
-                                                    ? 'Remove like'
-                                                    : 'Remove from playlist',
-                                                icon: Icons
-                                                    .playlist_remove_rounded,
-                                                onTap: () =>
-                                                    _removeTrackFromCurrentPlaylist(
-                                                      file,
-                                                    ),
-                                              ),
-                                            _TrackMenuAction(
-                                              label: 'Delete',
-                                              icon: Icons.delete_rounded,
-                                              onTap: () =>
-                                                  _removeLocalTrack(file),
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    ),
-                                  ),
-                              ],
-                            ),
+                              ),
+                              Expanded(
+                                child: _ModeButton(
+                                  selected: _storageType == _StorageType.cloud,
+                                  label: t('cloud'),
+                                  icon: Icons.cloud_rounded,
+                                  onTap: () =>
+                                      _switchStorageType(_StorageType.cloud),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ] else ...[
-                        if (!isCloudAuthed)
-                          GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onHorizontalDragEnd: _handleCloudTracksSwipe,
-                            child: _CloudLoginCard(
-                              emailController: _emailController,
-                              usernameController: _usernameController,
-                              passwordController: _passwordController,
-                              loading: authProvider.isLoading,
-                              isRegisterMode: _cloudAuthRegisterMode,
-                              onSubmit: () => _cloudAuthRegisterMode
-                                  ? _submitCloudRegister(authProvider)
-                                  : _submitCloudLogin(authProvider),
-                              onToggleMode: () {
-                                setState(
-                                  () => _cloudAuthRegisterMode =
-                                      !_cloudAuthRegisterMode,
-                                );
-                              },
-                            ),
-                          )
-                        else ...[
+                        const SizedBox(height: 14),
+                        if (_storageType == _StorageType.local) ...[
                           Row(
                             children: [
                               Expanded(
                                 child: Text(
-                                  '${cloudPlaylists.length + 1} playlists | ${visibleCloudTracks.length} tracks',
+                                  '${localPlaylists.length + 2} ${t('playlists')} • ${visibleLocalTracks.length} ${t('tracks')}',
                                   style: textTheme.bodyMedium?.copyWith(
                                     color: colorScheme.onSurface.withValues(
                                       alpha: 0.65,
@@ -1977,39 +1761,19 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                   ),
                                 ),
                               ),
-                              SizedBox(
-                                width: _storageHeaderControlWidth,
-                                height: _storageHeaderControlHeight,
-                                child: Container(
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.surface,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: colorScheme.outline,
-                                    ),
+                              FilledButton(
+                                onPressed: _showUploadOptions,
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size(
+                                    _storageHeaderControlWidth,
+                                    _storageHeaderControlHeight,
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.cloud_rounded,
-                                        size: 20,
-                                        color: colorScheme.primary,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _formatStorageUsage(
-                                          cloudMusicProvider.usedBytes,
-                                          cloudMusicProvider.quotaBytes,
-                                        ),
-                                        style: textTheme.labelLarge?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
+                                  maximumSize: const Size(
+                                    _storageHeaderControlWidth,
+                                    _storageHeaderControlHeight,
                                   ),
                                 ),
+                                child: Text(t('upload')),
                               ),
                             ],
                           ),
@@ -2018,52 +1782,134 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                             height: 130,
                             child: ListView.separated(
                               scrollDirection: Axis.horizontal,
-                              itemCount: cloudPlaylists.length + 1,
                               separatorBuilder: (context, index) =>
                                   const SizedBox(width: 10),
+                              itemCount: localPlaylists.length + 3,
                               itemBuilder: (context, index) {
                                 if (index == 0) {
-                                  return _PlaylistCard(
-                                    playlistName: 'All songs',
-                                    trackCount: cloudTracks.length,
-                                    selected: _selectedCloudPlaylistId == null,
-                                    onTap: () => _selectCloudPlaylist(null),
+                                  return _CreatePlaylistCard(
+                                    label: t('create_playlist'),
+                                    onTap: () => _openCreatePlaylistDialog(
+                                      localTracks,
+                                      localMusicProvider,
+                                    ),
                                   );
                                 }
 
-                                final item = cloudPlaylists[index - 1];
-                                final downloadingPlaylist =
-                                    _downloadingCloudPlaylistIds.contains(
-                                      item.id,
-                                    );
-                                final deletingPlaylist =
-                                    _deletingCloudPlaylistIds.contains(item.id);
-                                return _PlaylistCard(
-                                  playlistName: item.name,
-                                  trackCount: item.songCount ?? 0,
-                                  selected: _selectedCloudPlaylistId == item.id,
-                                  onTap: () => _selectCloudPlaylist(item.id),
+                                if (index == 1) {
+                                  return _SelectablePlaylistCard(
+                                    playlistName: t('all_songs'),
+                                    trackCount: localTracks.length,
+                                    selected:
+                                        _selectedLocalPlaylistId ==
+                                        LocalMusicProvider.allPlaylistId,
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedLocalPlaylistId =
+                                            LocalMusicProvider.allPlaylistId;
+                                      });
+                                    },
+                                    menuActions: [
+                                      _PlaylistMenuAction(
+                                        label:
+                                            _syncingLocalPlaylistIds.contains(
+                                              'system_${LocalMusicProvider.allPlaylistId}',
+                                            )
+                                            ? 'Syncing...'
+                                            : t('upload_to_cloud'),
+                                        icon: Icons.cloud_upload_rounded,
+                                        onTap: () =>
+                                            _uploadSystemPlaylistToCloud(
+                                              playlistId: LocalMusicProvider
+                                                  .allPlaylistId,
+                                              playlistName: t('all_songs'),
+                                              localMusicProvider:
+                                                  localMusicProvider,
+                                              cloudMusicProvider:
+                                                  cloudMusicProvider,
+                                            ),
+                                      ),
+                                    ],
+                                  );
+                                }
+
+                                if (index == 2) {
+                                  return _SelectablePlaylistCard(
+                                    playlistName: t('liked_songs'),
+                                    trackCount:
+                                        localMusicProvider.likedTracksCount,
+                                    selected:
+                                        _selectedLocalPlaylistId ==
+                                        LocalMusicProvider.likedPlaylistId,
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedLocalPlaylistId =
+                                            LocalMusicProvider.likedPlaylistId;
+                                      });
+                                    },
+                                    menuActions: [
+                                      _PlaylistMenuAction(
+                                        label:
+                                            _syncingLocalPlaylistIds.contains(
+                                              'system_${LocalMusicProvider.likedPlaylistId}',
+                                            )
+                                            ? 'Syncing...'
+                                            : t('upload_to_cloud'),
+                                        icon: Icons.cloud_upload_rounded,
+                                        onTap: () =>
+                                            _uploadSystemPlaylistToCloud(
+                                              playlistId: LocalMusicProvider
+                                                  .likedPlaylistId,
+                                              playlistName: t('liked_songs'),
+                                              localMusicProvider:
+                                                  localMusicProvider,
+                                              cloudMusicProvider:
+                                                  cloudMusicProvider,
+                                            ),
+                                      ),
+                                    ],
+                                  );
+                                }
+
+                                final playlist = localPlaylists[index - 3];
+                                final trackCount = playlist.trackPaths
+                                    .where(
+                                      (path) => localTracks.any(
+                                        (track) => track.path == path,
+                                      ),
+                                    )
+                                    .length;
+
+                                return _SelectablePlaylistCard(
+                                  playlistName: playlist.name,
+                                  trackCount: trackCount,
+                                  selected:
+                                      _selectedLocalPlaylistId == playlist.id,
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedLocalPlaylistId = playlist.id;
+                                    });
+                                  },
                                   menuActions: [
                                     _PlaylistMenuAction(
-                                      label: downloadingPlaylist
-                                          ? 'Downloading...'
-                                          : 'Download to local',
-                                      icon: Icons.download_rounded,
-                                      onTap: () =>
-                                          _downloadCloudPlaylistToLocal(
-                                            playlist: item,
-                                            localMusicProvider:
-                                                localMusicProvider,
-                                            cloudMusicProvider:
-                                                cloudMusicProvider,
-                                          ),
+                                      label:
+                                          _syncingLocalPlaylistIds.contains(
+                                            playlist.id,
+                                          )
+                                          ? 'Syncing...'
+                                          : t('upload_to_cloud'),
+                                      icon: Icons.cloud_upload_rounded,
+                                      onTap: () => _uploadLocalPlaylistToCloud(
+                                        playlist: playlist,
+                                        localMusicProvider: localMusicProvider,
+                                        cloudMusicProvider: cloudMusicProvider,
+                                      ),
                                     ),
                                     _PlaylistMenuAction(
-                                      label: deletingPlaylist
-                                          ? 'Deleting...'
-                                          : 'Delete',
+                                      label: t('delete'),
                                       icon: Icons.delete_rounded,
-                                      onTap: () => _deleteCloudPlaylist(item),
+                                      onTap: () =>
+                                          _deleteLocalPlaylist(playlist.id),
                                     ),
                                   ],
                                 );
@@ -2073,7 +1919,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                           const SizedBox(height: 16),
                           GestureDetector(
                             behavior: HitTestBehavior.translucent,
-                            onHorizontalDragEnd: _handleCloudTracksSwipe,
+                            onHorizontalDragEnd: _handleLocalTracksSwipe,
                             child: ConstrainedBox(
                               constraints: BoxConstraints(
                                 minHeight:
@@ -2085,7 +1931,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                   Row(
                                     children: [
                                       Text(
-                                        'Tracks',
+                                        t('tracks'),
                                         style: textTheme.titleMedium?.copyWith(
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -2095,13 +1941,13 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                         child: TextField(
                                           onChanged: (value) {
                                             setState(
-                                              () => _cloudTracksSearchQuery =
+                                              () => _localTracksSearchQuery =
                                                   value,
                                             );
                                           },
-                                          decoration: const InputDecoration(
+                                          decoration: InputDecoration(
                                             isDense: true,
-                                            hintText: 'Search track',
+                                            hintText: t('search_track'),
                                             prefixIcon: Icon(
                                               Icons.search_rounded,
                                             ),
@@ -2111,71 +1957,331 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                     ],
                                   ),
                                   const SizedBox(height: 10),
-                                  if ((cloudMusicProvider.isLoading &&
-                                          cloudTracks.isEmpty) ||
-                                      isCloudPlaylistLoading)
-                                    const Center(
-                                      child: Padding(
-                                        padding: EdgeInsets.symmetric(
-                                          vertical: 28,
-                                        ),
-                                        child: CircularProgressIndicator(),
-                                      ),
-                                    )
-                                  else if (visibleCloudTracks.isEmpty)
-                                    const _EmptyInlineState(
-                                      message: 'No cloud tracks yet',
+                                  if (visibleLocalTracks.isEmpty)
+                                    _EmptyInlineState(
+                                      message: t('no_local_tracks_yet'),
                                     )
                                   else
-                                    ...visibleCloudTracks.map((track) {
-                                      final downloading = _downloadingTrackIds
-                                          .contains(track.id);
-                                      return Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 10,
-                                        ),
-                                        child: _TrackRow(
-                                          title:
-                                              track.originalFilename ??
-                                              track.filename,
-                                          subtitle: _cloudFileSize(track),
-                                          menuItems: [
-                                            _TrackMenuAction(
-                                              label: downloading
-                                                  ? 'Downloading...'
-                                                  : 'Download',
-                                              icon: Icons.download_rounded,
-                                              enabled: !downloading,
-                                              onTap: () =>
-                                                  _downloadTrack(track),
-                                            ),
-                                            _TrackMenuAction(
-                                              label: 'Delete',
-                                              icon: Icons.delete_rounded,
-                                              onTap: () {
-                                                if (!mounted) return;
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                      'Delete API will be connected later',
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }),
+                                    SizedBox(
+                                      height:
+                                          MediaQuery.of(context).size.height *
+                                          0.56,
+                                      child: ListView.separated(
+                                        primary: false,
+                                        itemCount: visibleLocalTracks.length,
+                                        separatorBuilder: (context, index) =>
+                                            const SizedBox(height: 10),
+                                        itemBuilder: (context, index) {
+                                          final file =
+                                              visibleLocalTracks[index];
+                                          final uploading = _uploadingPaths
+                                              .contains(file.path);
+                                          final selected =
+                                              currentTrackPath == file.path;
+
+                                          return _TrackRow(
+                                            title: p.basename(file.path),
+                                            subtitle: _localFileSize(file),
+                                            selected: selected,
+                                            isPlaying:
+                                                selected &&
+                                                isCurrentTrackPlaying,
+                                            onTap: () {
+                                              final targetIndex =
+                                                  playlistLocalTracks
+                                                      .indexWhere(
+                                                        (item) =>
+                                                            item.path ==
+                                                            file.path,
+                                                      );
+                                              if (targetIndex < 0) return;
+                                              context
+                                                  .read<AudioPlayerProvider>()
+                                                  .toggleTrackFromTracks(
+                                                    playlistLocalTracks,
+                                                    targetIndex,
+                                                  );
+                                            },
+                                            menuItems: [
+                                              _TrackMenuAction(
+                                                label: uploading
+                                                    ? 'Uploading...'
+                                                    : t('upload'),
+                                                icon:
+                                                    Icons.cloud_upload_rounded,
+                                                enabled: !uploading,
+                                                onTap: () =>
+                                                    _uploadLocalTrack(file),
+                                              ),
+                                              _TrackMenuAction(
+                                                label: t('add_to_playlist'),
+                                                icon:
+                                                    Icons.playlist_add_rounded,
+                                                onTap: () =>
+                                                    _addTrackToPlaylist(file),
+                                              ),
+                                              if (_selectedLocalPlaylistId !=
+                                                  LocalMusicProvider
+                                                      .allPlaylistId)
+                                                _TrackMenuAction(
+                                                  label:
+                                                      _selectedLocalPlaylistId ==
+                                                          LocalMusicProvider
+                                                              .likedPlaylistId
+                                                      ? 'Remove like'
+                                                      : 'Remove from playlist',
+                                                  icon: Icons
+                                                      .playlist_remove_rounded,
+                                                  onTap: () =>
+                                                      _removeTrackFromCurrentPlaylist(
+                                                        file,
+                                                      ),
+                                                ),
+                                              _TrackMenuAction(
+                                                label: t('delete'),
+                                                icon: Icons.delete_rounded,
+                                                onTap: () =>
+                                                    _removeLocalTrack(file),
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
                           ),
+                        ] else ...[
+                          if (!isCloudAuthed)
+                            GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onHorizontalDragEnd: _handleCloudTracksSwipe,
+                              child: _CloudLoginCard(
+                                emailController: _emailController,
+                                usernameController: _usernameController,
+                                passwordController: _passwordController,
+                                loading: authProvider.isLoading,
+                                isRegisterMode: _cloudAuthRegisterMode,
+                                onSubmit: () => _cloudAuthRegisterMode
+                                    ? _submitCloudRegister(authProvider)
+                                    : _submitCloudLogin(authProvider),
+                                onToggleMode: () {
+                                  setState(
+                                    () => _cloudAuthRegisterMode =
+                                        !_cloudAuthRegisterMode,
+                                  );
+                                },
+                              ),
+                            )
+                          else ...[
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${cloudPlaylists.length + 1} ${t('playlists')} | ${visibleCloudTracks.length} ${t('tracks')}',
+                                    style: textTheme.bodyMedium?.copyWith(
+                                      color: colorScheme.onSurface.withValues(
+                                        alpha: 0.65,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: _storageHeaderControlWidth,
+                                  height: _storageHeaderControlHeight,
+                                  child: Container(
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: colorScheme.surface,
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: colorScheme.outline,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.cloud_rounded,
+                                          size: 20,
+                                          color: colorScheme.primary,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          _formatStorageUsage(
+                                            cloudMusicProvider.usedBytes,
+                                            cloudMusicProvider.quotaBytes,
+                                          ),
+                                          style: textTheme.labelLarge?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              height: 130,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: cloudPlaylists.length + 1,
+                                separatorBuilder: (context, index) =>
+                                    const SizedBox(width: 10),
+                                itemBuilder: (context, index) {
+                                  if (index == 0) {
+                                    return _PlaylistCard(
+                                      playlistName: t('all_songs'),
+                                      trackCount: cloudTracks.length,
+                                      selected:
+                                          _selectedCloudPlaylistId == null,
+                                      onTap: () => _selectCloudPlaylist(null),
+                                    );
+                                  }
+
+                                  final item = cloudPlaylists[index - 1];
+                                  final downloadingPlaylist =
+                                      _downloadingCloudPlaylistIds.contains(
+                                        item.id,
+                                      );
+                                  final deletingPlaylist =
+                                      _deletingCloudPlaylistIds.contains(
+                                        item.id,
+                                      );
+                                  return _PlaylistCard(
+                                    playlistName: item.name,
+                                    trackCount: item.songCount ?? 0,
+                                    selected:
+                                        _selectedCloudPlaylistId == item.id,
+                                    onTap: () => _selectCloudPlaylist(item.id),
+                                    menuActions: [
+                                      _PlaylistMenuAction(
+                                        label: downloadingPlaylist
+                                            ? 'Downloading...'
+                                            : t('download_to_local'),
+                                        icon: Icons.download_rounded,
+                                        onTap: () =>
+                                            _downloadCloudPlaylistToLocal(
+                                              playlist: item,
+                                              localMusicProvider:
+                                                  localMusicProvider,
+                                              cloudMusicProvider:
+                                                  cloudMusicProvider,
+                                            ),
+                                      ),
+                                      _PlaylistMenuAction(
+                                        label: deletingPlaylist
+                                            ? 'Deleting...'
+                                            : 'Delete',
+                                        icon: Icons.delete_rounded,
+                                        onTap: () => _deleteCloudPlaylist(item),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onHorizontalDragEnd: _handleCloudTracksSwipe,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minHeight:
+                                      MediaQuery.of(context).size.height * 0.34,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          t('tracks'),
+                                          style: textTheme.titleMedium
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: TextField(
+                                            onChanged: (value) {
+                                              setState(
+                                                () => _cloudTracksSearchQuery =
+                                                    value,
+                                              );
+                                            },
+                                            decoration: InputDecoration(
+                                              isDense: true,
+                                              hintText: t('search_track'),
+                                              prefixIcon: Icon(
+                                                Icons.search_rounded,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    if ((cloudMusicProvider.isLoading &&
+                                            cloudTracks.isEmpty) ||
+                                        isCloudPlaylistLoading)
+                                      const Center(
+                                        child: Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            vertical: 28,
+                                          ),
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                      )
+                                    else if (visibleCloudTracks.isEmpty)
+                                      _EmptyInlineState(
+                                        message: t('no_cloud_tracks_yet'),
+                                      )
+                                    else
+                                      ...visibleCloudTracks.map((track) {
+                                        final downloading = _downloadingTrackIds
+                                            .contains(track.id);
+                                        return Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 10,
+                                          ),
+                                          child: _TrackRow(
+                                            title:
+                                                track.originalFilename ??
+                                                track.filename,
+                                            subtitle: _cloudFileSize(track),
+                                            menuItems: [
+                                              _TrackMenuAction(
+                                                label: downloading
+                                                    ? 'Downloading...'
+                                                    : t('download'),
+                                                icon: Icons.download_rounded,
+                                                enabled: !downloading,
+                                                onTap: () =>
+                                                    _downloadTrack(track),
+                                              ),
+                                              _TrackMenuAction(
+                                                label: t('delete'),
+                                                icon: Icons.delete_rounded,
+                                                onTap: () =>
+                                                    _deleteCloudTrack(track),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -2257,7 +2363,14 @@ class _ModeButton extends StatelessWidget {
           children: [
             Icon(icon, size: 18),
             const SizedBox(width: 6),
-            Text(label),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+              ),
+            ),
           ],
         ),
       ),
@@ -2329,7 +2442,7 @@ class _PlaylistCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$trackCount tracks',
+                  '$trackCount ${AppLocalizations.text(context, 'tracks')}',
                   style: textTheme.labelMedium?.copyWith(
                     color: colorScheme.onSurface.withValues(alpha: 0.65),
                   ),
@@ -2380,9 +2493,10 @@ class _PlaylistMenuAction {
 }
 
 class _CreatePlaylistCard extends StatelessWidget {
-  const _CreatePlaylistCard({required this.onTap});
+  const _CreatePlaylistCard({required this.onTap, required this.label});
 
   final VoidCallback onTap;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -2412,7 +2526,7 @@ class _CreatePlaylistCard extends StatelessWidget {
               child: Icon(Icons.add_rounded, color: colorScheme.primary),
             ),
             const SizedBox(height: 10),
-            const Text('Create playlist'),
+            Text(label),
           ],
         ),
       ),
@@ -2483,7 +2597,7 @@ class _SelectablePlaylistCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$trackCount tracks',
+                  '$trackCount ${AppLocalizations.text(context, 'tracks')}',
                   style: textTheme.labelMedium?.copyWith(
                     color: colorScheme.onSurface.withValues(alpha: 0.65),
                   ),
@@ -2718,6 +2832,7 @@ class _CloudLoginCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    String t(String key) => AppLocalizations.text(context, key);
     final textTheme = Theme.of(context).textTheme;
 
     return Container(
@@ -2730,21 +2845,19 @@ class _CloudLoginCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            isRegisterMode ? 'Cloud registration' : 'Cloud login',
+            isRegisterMode ? t('cloud_register') : t('cloud_login'),
             style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 6),
           Text(
-            isRegisterMode
-                ? 'Create account to access cloud playlists and tracks.'
-                : 'Sign in to view cloud playlists and tracks.',
+            isRegisterMode ? t('cloud_register_hint') : t('cloud_login_hint'),
             style: textTheme.bodyMedium,
           ),
           const SizedBox(height: 14),
           TextField(
             controller: emailController,
             keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Email',
               prefixIcon: Icon(Icons.alternate_email_rounded),
             ),
@@ -2753,8 +2866,8 @@ class _CloudLoginCard extends StatelessWidget {
             const SizedBox(height: 10),
             TextField(
               controller: usernameController,
-              decoration: const InputDecoration(
-                labelText: 'Username',
+              decoration: InputDecoration(
+                labelText: t('username'),
                 prefixIcon: Icon(Icons.person_rounded),
               ),
             ),
@@ -2763,8 +2876,8 @@ class _CloudLoginCard extends StatelessWidget {
           TextField(
             controller: passwordController,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Password',
+            decoration: InputDecoration(
+              labelText: t('password'),
               prefixIcon: Icon(Icons.lock_rounded),
             ),
           ),
@@ -2779,7 +2892,7 @@ class _CloudLoginCard extends StatelessWidget {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Text(isRegisterMode ? 'Create account' : 'Sign in'),
+                  : Text(isRegisterMode ? t('create_account') : t('sign_in')),
             ),
           ),
           const SizedBox(height: 8),
@@ -2789,8 +2902,8 @@ class _CloudLoginCard extends StatelessWidget {
               onPressed: loading ? null : onToggleMode,
               child: Text(
                 isRegisterMode
-                    ? 'Already have account? Sign in'
-                    : 'No account? Register',
+                    ? t('already_have_account')
+                    : t('no_account_register'),
               ),
             ),
           ),

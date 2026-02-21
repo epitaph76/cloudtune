@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gabriel-vasile/mimetype"
+	"github.com/gin-gonic/gin"
 )
 
 // UploadSong handles uploading a new song
@@ -105,11 +105,11 @@ func UploadSong(c *gin.Context) {
 	db := database.DB
 	query := `INSERT INTO songs (filename, original_filename, filepath, filesize, mime_type, uploader_id) 
 			  VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
-	
+
 	var songID int
-	err = db.QueryRow(query, song.Filename, song.OriginalFilename, song.Filepath, 
-					 song.Filesize, song.MimeType, song.UploaderID).Scan(&songID)
-	
+	err = db.QueryRow(query, song.Filename, song.OriginalFilename, song.Filepath,
+		song.Filesize, song.MimeType, song.UploaderID).Scan(&songID)
+
 	if err != nil {
 		log.Printf("Error inserting song: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error saving song"})
@@ -131,11 +131,11 @@ func UploadSong(c *gin.Context) {
 		"message": "Song uploaded successfully",
 		"song_id": songID,
 		"song": gin.H{
-			"id":               songID,
-			"filename":         song.Filename,
+			"id":                songID,
+			"filename":          song.Filename,
 			"original_filename": song.OriginalFilename,
-			"filesize":         song.Filesize,
-			"mime_type":        song.MimeType,
+			"filesize":          song.Filesize,
+			"mime_type":         song.MimeType,
 		},
 	})
 }
@@ -156,7 +156,7 @@ func GetUserLibrary(c *gin.Context) {
 	}
 
 	db := database.DB
-	
+
 	// Получаем песни из библиотеки пользователя
 	query := `
 		SELECT s.id, s.filename, s.original_filename, s.filesize, s.artist, s.title, s.album, s.genre, s.year, s.mime_type, s.upload_date
@@ -165,7 +165,7 @@ func GetUserLibrary(c *gin.Context) {
 		WHERE ul.user_id = $1
 		ORDER BY ul.added_at DESC
 	`
-	
+
 	rows, err := db.Query(query, userID)
 	if err != nil {
 		log.Printf("Error retrieving user library: %v", err)
@@ -179,16 +179,16 @@ func GetUserLibrary(c *gin.Context) {
 		var song models.Song
 		var artist, title, album, genre sql.NullString
 		var year sql.NullInt64
-		
-		err := rows.Scan(&song.ID, &song.Filename, &song.OriginalFilename, &song.Filesize, 
-						 &artist, &title, &album, &genre, &year, 
-						 &song.MimeType, &song.UploadDate)
+
+		err := rows.Scan(&song.ID, &song.Filename, &song.OriginalFilename, &song.Filesize,
+			&artist, &title, &album, &genre, &year,
+			&song.MimeType, &song.UploadDate)
 		if err != nil {
 			log.Printf("Error scanning song: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error scanning song"})
 			return
 		}
-		
+
 		// Устанавливаем значения, если они не равны NULL
 		if artist.Valid {
 			song.Artist = &artist.String
@@ -206,7 +206,7 @@ func GetUserLibrary(c *gin.Context) {
 			yearVal := int(year.Int64)
 			song.Year = &yearVal
 		}
-		
+
 		songs = append(songs, song)
 	}
 
@@ -234,9 +234,9 @@ func GetSongByID(c *gin.Context) {
 	var year sql.NullInt64
 
 	err = db.QueryRow(query, songID).Scan(&song.ID, &song.Filename, &song.OriginalFilename,
-										  &song.Filepath, &song.Filesize, &artist,
-										  &title, &album, &genre, &year,
-										  &song.MimeType, &song.UploadDate)
+		&song.Filepath, &song.Filesize, &artist,
+		&title, &album, &genre, &year,
+		&song.MimeType, &song.UploadDate)
 
 	if err != nil {
 		log.Printf("Error retrieving song: %v", err)
@@ -263,6 +263,108 @@ func GetSongByID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"song": song})
+}
+
+// DeleteSong removes song from user's cloud library and deletes file if unused.
+func DeleteSong(c *gin.Context) {
+	userIDInterface, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDInterface.(int)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	songID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid song ID"})
+		return
+	}
+
+	db := database.DB
+	tx, err := db.Begin()
+	if err != nil {
+		log.Printf("Error starting transaction: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Transaction error"})
+		return
+	}
+	defer tx.Rollback()
+
+	var filePath string
+	err = tx.QueryRow(
+		`SELECT s.filepath
+		 FROM songs s
+		 JOIN user_library ul ON ul.song_id = s.id
+		 WHERE s.id = $1 AND ul.user_id = $2`,
+		songID,
+		userID,
+	).Scan(&filePath)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Song not found in your library"})
+			return
+		}
+		log.Printf("Error checking song access: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking song access"})
+		return
+	}
+
+	_, err = tx.Exec(
+		`DELETE FROM playlist_songs ps
+		 USING playlists p
+		 WHERE ps.playlist_id = p.id AND p.owner_id = $1 AND ps.song_id = $2`,
+		userID,
+		songID,
+	)
+	if err != nil {
+		log.Printf("Error deleting song from user playlists: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error deleting song from playlists"})
+		return
+	}
+
+	_, err = tx.Exec(`DELETE FROM user_library WHERE user_id = $1 AND song_id = $2`, userID, songID)
+	if err != nil {
+		log.Printf("Error deleting song from user library: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error deleting song from library"})
+		return
+	}
+
+	var usageCount int
+	err = tx.QueryRow(`SELECT COUNT(*) FROM user_library WHERE song_id = $1`, songID).Scan(&usageCount)
+	if err != nil {
+		log.Printf("Error checking song usage count: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking song usage"})
+		return
+	}
+
+	if usageCount == 0 {
+		_, err = tx.Exec(`DELETE FROM songs WHERE id = $1`, songID)
+		if err != nil {
+			log.Printf("Error deleting song record: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error deleting song"})
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("Error committing transaction: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Commit error"})
+		return
+	}
+
+	if usageCount == 0 {
+		if removeErr := os.Remove(filePath); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Printf("Error deleting song file %s: %v", filePath, removeErr)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Song deleted successfully",
+	})
 }
 
 // DownloadSong handles downloading a song by ID
@@ -296,7 +398,7 @@ func DownloadSong(c *gin.Context) {
 			  WHERE s.id = $1 AND ul.user_id = $2`
 
 	err = db.QueryRow(query, songID, userID).Scan(&song.ID, &song.Filename, &song.OriginalFilename,
-												  &song.Filepath, &song.Filesize, &song.MimeType, &song.UploadDate)
+		&song.Filepath, &song.Filesize, &song.MimeType, &song.UploadDate)
 
 	if err != nil {
 		if err == sql.ErrNoRows {

@@ -5,8 +5,10 @@ import 'package:provider/provider.dart';
 
 import '../providers/audio_player_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/language_provider.dart';
 import '../providers/local_music_provider.dart';
 import '../providers/main_nav_provider.dart';
+import '../utils/app_localizations.dart';
 import '../widgets/theme_settings_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -35,20 +37,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _confirmLogout() async {
     final authProvider = context.read<AuthProvider>();
+    String t(String key) => AppLocalizations.text(context, key);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Logout'),
-          content: const Text('Are you sure you want to logout?'),
+          title: Text(t('logout')),
+          content: Text(t('logout_confirm')),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
+              child: Text(t('cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Logout'),
+              child: Text(t('logout')),
             ),
           ],
         );
@@ -61,11 +64,12 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).pop();
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Logged out')));
+    ).showSnackBar(SnackBar(content: Text(t('logged_out'))));
   }
 
   @override
   Widget build(BuildContext context) {
+    String t(String key) => AppLocalizations.text(context, key);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
@@ -96,10 +100,10 @@ class _HomeScreenState extends State<HomeScreen> {
             : null;
         final currentTitle = currentFile != null
             ? p.basenameWithoutExtension(currentFile.path)
-            : 'No track selected';
+            : t('no_track_selected');
         final currentSubtitle = currentFile != null
             ? p.basename(currentFile.path)
-            : 'Add files in Storage > Local';
+            : t('add_files_storage_hint');
         final isLiked = currentFile != null
             ? localMusicProvider.isTrackLiked(currentFile.path)
             : false;
@@ -178,12 +182,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(height: 14),
                                   Text(
-                                    'No local tracks yet',
+                                    t('no_local_tracks_yet'),
                                     style: textTheme.titleMedium,
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    'Go to Storage tab and add files.',
+                                    t('go_storage_add_files'),
                                     textAlign: TextAlign.center,
                                     style: textTheme.bodyMedium?.copyWith(
                                       color: colorScheme.onSurface.withValues(
@@ -362,6 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
     LocalMusicProvider localMusicProvider,
     String activePlaylistId,
   ) {
+    String t(String key) => AppLocalizations.text(context, key);
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final tracks = localMusicProvider.selectedFiles;
@@ -378,7 +383,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Row(
                 children: [
                   Text(
-                    'Menu',
+                    t('menu'),
                     style: textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -394,7 +399,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                'Playlists',
+                t('playlists'),
                 style: textTheme.labelLarge?.copyWith(
                   color: colorScheme.onSurface.withValues(alpha: 0.65),
                 ),
@@ -406,8 +411,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 children: [
                   _PlaylistMenuCard(
-                    title: 'All songs',
-                    subtitle: '${tracks.length} tracks',
+                    title: t('all_songs'),
+                    subtitle: '${tracks.length} ${t('tracks')}',
                     selected:
                         activePlaylistId == LocalMusicProvider.allPlaylistId,
                     onTap: () => _selectPlaylistAndStart(
@@ -416,8 +421,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   _PlaylistMenuCard(
-                    title: 'Liked songs',
-                    subtitle: '${localMusicProvider.likedTracksCount} tracks',
+                    title: t('liked_songs'),
+                    subtitle:
+                        '${localMusicProvider.likedTracksCount} ${t('tracks')}',
                     selected:
                         activePlaylistId == LocalMusicProvider.likedPlaylistId,
                     onTap: () => _selectPlaylistAndStart(
@@ -428,7 +434,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ...playlists.map(
                     (playlist) => _PlaylistMenuCard(
                       title: playlist.name,
-                      subtitle: '${playlist.trackPaths.length} tracks',
+                      subtitle: '${playlist.trackPaths.length} ${t('tracks')}',
                       selected: activePlaylistId == playlist.id,
                       onTap: () =>
                           _selectPlaylistAndStart(context, playlist.id),
@@ -463,7 +469,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            user?.username ?? 'Guest',
+                            user?.username ?? t('guest'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: textTheme.bodyMedium?.copyWith(
@@ -476,7 +482,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? null
                               : () => _confirmLogout(),
                           icon: const Icon(Icons.logout_rounded, size: 18),
-                          label: const Text('Logout'),
+                          label: Text(t('logout')),
                         ),
                       ],
                     ),
@@ -491,10 +497,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: OutlinedButton.icon(
                   onPressed: () {
                     Navigator.of(context).pop();
+                    _openLanguageSettings(context);
+                  },
+                  icon: const Icon(Icons.language_rounded),
+                  label: Text(t('language')),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
                     _openThemeSettings(context);
                   },
                   icon: const Icon(Icons.settings_rounded),
-                  label: const Text('Settings'),
+                  label: Text(t('settings')),
                 ),
               ),
             ),
@@ -527,6 +547,73 @@ class _HomeScreenState extends State<HomeScreen> {
       isScrollControlled: true,
       showDragHandle: true,
       builder: (context) => const ThemeSettingsSheet(),
+    );
+  }
+
+  void _openLanguageSettings(BuildContext context) {
+    String t(String key) => AppLocalizations.text(context, key);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        final languageProvider = sheetContext.read<LanguageProvider>();
+        final currentCode = languageProvider.locale.languageCode;
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  t('select_language'),
+                  style: Theme.of(
+                    sheetContext,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: Icon(
+                    currentCode == 'ru'
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                  ),
+                  onTap: () {
+                    languageProvider.setLocale(const Locale('ru'));
+                    Navigator.of(sheetContext).pop();
+                  },
+                  title: Text(t('russian')),
+                ),
+                ListTile(
+                  leading: Icon(
+                    currentCode == 'en'
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                  ),
+                  onTap: () {
+                    languageProvider.setLocale(const Locale('en'));
+                    Navigator.of(sheetContext).pop();
+                  },
+                  title: Text(t('english')),
+                ),
+                ListTile(
+                  leading: Icon(
+                    currentCode == 'es'
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                  ),
+                  onTap: () {
+                    languageProvider.setLocale(const Locale('es'));
+                    Navigator.of(sheetContext).pop();
+                  },
+                  title: Text(t('spanish')),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

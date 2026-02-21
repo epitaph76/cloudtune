@@ -3,12 +3,14 @@ import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
+import '../utils/app_localizations.dart';
 
 class ThemeSettingsSheet extends StatelessWidget {
   const ThemeSettingsSheet({super.key});
 
   @override
   Widget build(BuildContext context) {
+    String t(String key) => AppLocalizations.text(context, key);
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -25,7 +27,7 @@ class ThemeSettingsSheet extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      'Settings',
+                      t('settings'),
                       style: textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -38,13 +40,13 @@ class ThemeSettingsSheet extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text('Theme mode', style: textTheme.labelLarge),
+                Text(t('theme_mode'), style: textTheme.labelLarge),
                 const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
                       child: _ModeCard(
-                        label: 'Light',
+                        label: t('light'),
                         icon: Icons.light_mode,
                         selected: themeProvider.mode == AppVisualMode.light,
                         onTap: () => themeProvider.setMode(AppVisualMode.light),
@@ -53,7 +55,7 @@ class ThemeSettingsSheet extends StatelessWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _ModeCard(
-                        label: 'Dark',
+                        label: t('dark'),
                         icon: Icons.dark_mode,
                         selected: themeProvider.mode == AppVisualMode.dark,
                         onTap: () => themeProvider.setMode(AppVisualMode.dark),
@@ -62,7 +64,7 @@ class ThemeSettingsSheet extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 18),
-                Text('Accent', style: textTheme.labelLarge),
+                Text(t('accent'), style: textTheme.labelLarge),
                 const SizedBox(height: 10),
                 GridView.count(
                   crossAxisCount: 2,
@@ -99,7 +101,7 @@ class ThemeSettingsSheet extends StatelessWidget {
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                _schemeLabel(scheme),
+                                _schemeLabelLocalized(context, scheme),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -215,19 +217,20 @@ LinearGradient _previewGradient(AppAccentScheme scheme) {
   }
 }
 
-String _schemeLabel(AppAccentScheme scheme) {
+String _schemeLabelLocalized(BuildContext context, AppAccentScheme scheme) {
+  String t(String key) => AppLocalizations.text(context, key);
   switch (scheme) {
     case AppAccentScheme.green:
-      return 'Green';
+      return t('scheme_green');
     case AppAccentScheme.blue:
-      return 'Blue';
+      return t('scheme_blue');
     case AppAccentScheme.yellow:
-      return 'Yellow';
+      return t('scheme_yellow');
     case AppAccentScheme.pink:
-      return 'Pink';
+      return t('scheme_pink');
     case AppAccentScheme.purple:
-      return 'Purple';
+      return t('scheme_purple');
     case AppAccentScheme.peach:
-      return 'Peach';
+      return t('scheme_peach');
   }
 }

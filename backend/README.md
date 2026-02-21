@@ -106,6 +106,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 - `POST /api/songs/upload`
 - `GET /api/songs/library`
 - `GET /api/songs/:id`
+- `DELETE /api/songs/:id`
 - `GET /api/songs/download/:id`
 - `GET /api/storage/usage`
 - `POST /api/playlists`

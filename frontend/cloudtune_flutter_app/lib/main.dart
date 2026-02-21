@@ -1,10 +1,12 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/audio_player_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/cloud_music_provider.dart';
+import 'providers/language_provider.dart';
 import 'providers/local_music_provider.dart';
 import 'providers/main_nav_provider.dart';
 import 'providers/theme_provider.dart';
@@ -14,6 +16,7 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/server_music_screen.dart';
 import 'services/audio_handler.dart';
+import 'utils/app_localizations.dart';
 
 late final MyAudioHandler audioHandler;
 
@@ -39,6 +42,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => LanguageProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => MainNavProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
@@ -55,14 +59,21 @@ class MyApp extends StatelessWidget {
           },
         ),
       ],
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, child) {
+      child: Consumer2<ThemeProvider, LanguageProvider>(
+        builder: (context, themeProvider, languageProvider, child) {
           return MaterialApp(
             title: 'CloudTune',
             debugShowCheckedModeBanner: false,
             theme: themeProvider.lightTheme,
             darkTheme: themeProvider.darkTheme,
             themeMode: themeProvider.themeMode,
+            locale: languageProvider.locale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
             home: const MainScreen(),
             routes: {
               '/register': (context) => const RegisterScreen(),
@@ -84,10 +95,7 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  static const _navItems = [
-    _MainNavItem(icon: Icons.music_note_rounded, label: 'Player'),
-    _MainNavItem(icon: Icons.storage_rounded, label: 'Storage'),
-  ];
+  static const _navIcons = [Icons.music_note_rounded, Icons.storage_rounded];
 
   static const List<Widget> _screens = [HomeScreen(), ServerMusicScreen()];
 
@@ -141,6 +149,8 @@ class _MainScreenState extends State<MainScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final navProvider = context.watch<MainNavProvider>();
     final selectedIndex = navProvider.selectedIndex;
+    String t(String key) => AppLocalizations.text(context, key);
+    final labels = [t('player_tab'), t('storage_tab')];
 
     return Scaffold(
       body: PageView(
@@ -166,10 +176,13 @@ class _MainScreenState extends State<MainScreen> {
           ),
           child: Row(
             children: List.generate(
-              _navItems.length,
+              _navIcons.length,
               (index) => Expanded(
                 child: _BottomNavButton(
-                  item: _navItems[index],
+                  item: _MainNavItem(
+                    icon: _navIcons[index],
+                    label: labels[index],
+                  ),
                   selected: selectedIndex == index,
                   onTap: () => navProvider.setIndex(index),
                 ),

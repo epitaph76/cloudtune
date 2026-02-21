@@ -304,4 +304,22 @@ class ApiService {
       return {'success': false, 'message': e.toString()};
     }
   }
+
+  Future<Map<String, dynamic>> deleteSong(int songId) async {
+    try {
+      final options = await _getAuthOptions();
+      final response = await _requestWithFallback(
+        method: 'DELETE',
+        path: '/api/songs/$songId',
+        options: options,
+      );
+
+      if (response.statusCode == 200) {
+        return {'success': true, 'data': response.data};
+      }
+      return {'success': false, 'message': 'Failed to delete song'};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
 }
