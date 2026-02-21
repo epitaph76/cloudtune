@@ -6,6 +6,7 @@ CloudTune - fullstack проект музыкального плеера с ло
 
 - `backend/` - API на Go + PostgreSQL (авторизация, загрузка треков, библиотека, плейлисты, скачивание).
 - `frontend/cloudtune_flutter_app/` - Flutter-приложение (Android/iOS/Web/Desktop scaffold).
+- `monitoring/` - Telegram-бот на Python для мониторинга backend через API.
 
 ## Текущее состояние
 
@@ -49,6 +50,14 @@ flutter run
 
 ```bash
 flutter run --dart-define=API_BASE_URL=https://api.your-domain.com
+```
+
+### Monitoring Bot
+
+```bash
+cd monitoring
+pip install -r requirements.txt
+python src/bot.py
 ```
 
 ## Документация по модулям

@@ -82,6 +82,22 @@ bash backend/scripts/deploy-from-github.sh
 - `DB_PASSWORD` (default: `password`)
 - `DB_NAME` (default: `cloudtune`)
 - `JWT_SECRET` (обязательно задать надежное значение для продакшена)
+- `MONITORING_API_KEY` (включает защищенные monitoring endpoints)
+- `CLOUD_UPLOADS_PATH` (опционально, путь до папки uploads, default `./uploads`)
+
+## Monitoring API
+
+При заданном `MONITORING_API_KEY` доступны диагностические эндпоинты:
+
+- `GET /api/monitor/status`
+- `GET /api/monitor/storage`
+- `GET /api/monitor/connections`
+- `GET /api/monitor/users`
+- `GET /api/monitor/users/list?page=1&limit=8`
+- `GET /api/monitor/all`
+
+Все запросы требуют заголовок `X-Monitoring-Key: <MONITORING_API_KEY>`.
+Telegram-бот вынесен в отдельный сервис: `../monitoring`.
 
 ## API
 
@@ -89,6 +105,12 @@ bash backend/scripts/deploy-from-github.sh
 
 - `GET /health`
 - `GET /api/status`
+- `GET /api/monitor/status` (requires `X-Monitoring-Key`)
+- `GET /api/monitor/storage` (requires `X-Monitoring-Key`)
+- `GET /api/monitor/connections` (requires `X-Monitoring-Key`)
+- `GET /api/monitor/users` (requires `X-Monitoring-Key`)
+- `GET /api/monitor/users/list?page=1&limit=8` (requires `X-Monitoring-Key`)
+- `GET /api/monitor/all` (requires `X-Monitoring-Key`)
 - `POST /auth/register`
 - `POST /auth/login`
 

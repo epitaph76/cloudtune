@@ -14,6 +14,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
       JWT_SECRET: ${JWT_SECRET}
+      MONITORING_API_KEY: ${MONITORING_API_KEY}
+      CLOUD_UPLOADS_PATH: ${CLOUD_UPLOADS_PATH:-./uploads}
     depends_on:
       - db
     ports:

@@ -15,6 +15,8 @@ services:
       - DB_PASSWORD=password
       - DB_NAME=cloudtune
       - JWT_SECRET=your-secret-key-change-this-in-production
+      - MONITORING_API_KEY=change-me-monitoring-key
+      - CLOUD_UPLOADS_PATH=./uploads
     depends_on:
       - db
     volumes:
