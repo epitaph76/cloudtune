@@ -53,6 +53,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   final Set<int> _deletingCloudPlaylistIds = <int>{};
   final Set<int> _loadingCloudPlaylistIds = <int>{};
   final Map<int, List<Track>> _cloudPlaylistTracksCache = <int, List<Track>>{};
+  final Map<String, String> _localFileSizeCache = <String, String>{};
 
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
@@ -1401,6 +1402,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   Future<void> _removeLocalTrack(File file) async {
     final localMusicProvider = context.read<LocalMusicProvider>();
     await localMusicProvider.removeFile(file);
+    _localFileSizeCache.remove(file.path);
     final playlists = localMusicProvider.playlists;
     if (_selectedLocalPlaylistId != 'all' &&
         playlists.every((item) => item.id != _selectedLocalPlaylistId)) {
@@ -1503,20 +1505,20 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Consumer4<
-      CloudMusicProvider,
-      LocalMusicProvider,
-      AuthProvider,
-      AudioPlayerProvider
-    >(
+    return Consumer3<CloudMusicProvider, LocalMusicProvider, AuthProvider>(
       builder: (
         context,
         cloudMusicProvider,
         localMusicProvider,
         authProvider,
-        audioPlayerProvider,
         child,
       ) {
+        final currentTrackPath = context.select<AudioPlayerProvider, String?>(
+          (provider) => provider.currentTrackPath,
+        );
+        final isCurrentTrackPlaying = context.select<AudioPlayerProvider, bool>(
+          (provider) => provider.playing,
+        );
         final localTracks = localMusicProvider.selectedFiles;
         final localPlaylists = localMusicProvider.playlists;
         final playlistLocalTracks = _localTracksForSelectedPlaylist(
@@ -1763,68 +1765,80 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                     message: 'No local tracks yet',
                                   )
                                 else
-                                  ...visibleLocalTracks.map((file) {
-                                    final uploading = _uploadingPaths.contains(
-                                      file.path,
-                                    );
-                                    return Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 10,
-                                      ),
-                                      child: _TrackRow(
-                                        title: p.basename(file.path),
-                                        subtitle: _localFileSize(file),
-                                        selected: audioPlayerProvider
-                                            .isCurrentTrackPath(file.path),
-                                        isPlaying:
-                                            audioPlayerProvider.playing &&
-                                            audioPlayerProvider
-                                                .isCurrentTrackPath(file.path),
-                                        onTap: () {
-                                          final targetIndex = playlistLocalTracks
-                                              .indexWhere(
-                                                (item) => item.path == file.path,
-                                              );
-                                          if (targetIndex < 0) return;
-                                          audioPlayerProvider.toggleTrackFromTracks(
-                                            playlistLocalTracks,
-                                            targetIndex,
-                                          );
-                                        },
-                                        menuItems: [
-                                          _TrackMenuAction(
-                                            label: uploading
-                                                ? 'Uploading...'
-                                                : 'Upload',
-                                            icon: Icons.cloud_upload_rounded,
-                                            enabled: !uploading,
-                                            onTap: () =>
-                                                _uploadLocalTrack(file),
-                                          ),
-                                          _TrackMenuAction(
-                                            label: 'Add to playlist',
-                                            icon: Icons.playlist_add_rounded,
-                                            onTap: () => _addTrackToPlaylist(file),
-                                          ),
-                                          if (_selectedLocalPlaylistId != 'all')
+                                  SizedBox(
+                                    height:
+                                        MediaQuery.of(context).size.height *
+                                        0.56,
+                                    child: ListView.separated(
+                                      primary: false,
+                                      itemCount: visibleLocalTracks.length,
+                                      separatorBuilder: (context, index) =>
+                                          const SizedBox(height: 10),
+                                      itemBuilder: (context, index) {
+                                        final file = visibleLocalTracks[index];
+                                        final uploading = _uploadingPaths
+                                            .contains(file.path);
+                                        final selected =
+                                            currentTrackPath == file.path;
+
+                                        return _TrackRow(
+                                          title: p.basename(file.path),
+                                          subtitle: _localFileSize(file),
+                                          selected: selected,
+                                          isPlaying:
+                                              selected &&
+                                              isCurrentTrackPlaying,
+                                          onTap: () {
+                                            final targetIndex =
+                                                playlistLocalTracks.indexWhere(
+                                                  (item) =>
+                                                      item.path == file.path,
+                                                );
+                                            if (targetIndex < 0) return;
+                                            context
+                                                .read<AudioPlayerProvider>()
+                                                .toggleTrackFromTracks(
+                                                  playlistLocalTracks,
+                                                  targetIndex,
+                                                );
+                                          },
+                                          menuItems: [
                                             _TrackMenuAction(
-                                              label: 'Remove from playlist',
-                                              icon: Icons.playlist_remove_rounded,
+                                              label: uploading
+                                                  ? 'Uploading...'
+                                                  : 'Upload',
+                                              icon: Icons.cloud_upload_rounded,
+                                              enabled: !uploading,
                                               onTap: () =>
-                                                  _removeTrackFromCurrentPlaylist(
-                                                    file,
-                                                  ),
+                                                  _uploadLocalTrack(file),
                                             ),
-                                          _TrackMenuAction(
-                                            label: 'Delete',
-                                            icon: Icons.delete_rounded,
-                                            onTap: () =>
-                                                _removeLocalTrack(file),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  }),
+                                            _TrackMenuAction(
+                                              label: 'Add to playlist',
+                                              icon: Icons.playlist_add_rounded,
+                                              onTap: () =>
+                                                  _addTrackToPlaylist(file),
+                                            ),
+                                            if (_selectedLocalPlaylistId !=
+                                                'all')
+                                              _TrackMenuAction(
+                                                label: 'Remove from playlist',
+                                                icon: Icons.playlist_remove_rounded,
+                                                onTap: () =>
+                                                    _removeTrackFromCurrentPlaylist(
+                                                      file,
+                                                    ),
+                                              ),
+                                            _TrackMenuAction(
+                                              label: 'Delete',
+                                              icon: Icons.delete_rounded,
+                                              onTap: () =>
+                                                  _removeLocalTrack(file),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
@@ -2074,10 +2088,14 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   }
 
   String _localFileSize(File file) {
+    final cached = _localFileSizeCache[file.path];
+    if (cached != null) return cached;
     try {
       final bytes = file.lengthSync();
       final mb = bytes / 1024 / 1024;
-      return '${mb.toStringAsFixed(2)} MB';
+      final value = '${mb.toStringAsFixed(2)} MB';
+      _localFileSizeCache[file.path] = value;
+      return value;
     } catch (_) {
       return 'Unknown size';
     }
