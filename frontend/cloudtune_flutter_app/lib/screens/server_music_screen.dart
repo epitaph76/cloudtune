@@ -61,7 +61,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
 
   _StorageType _storageType = _StorageType.local;
   bool _cloudAuthRegisterMode = false;
-  String _selectedLocalPlaylistId = 'all';
+  String _selectedLocalPlaylistId = LocalMusicProvider.allPlaylistId;
   int? _selectedCloudPlaylistId;
   String _localTracksSearchQuery = '';
   String _cloudTracksSearchQuery = '';
@@ -431,9 +431,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
         .where((file) => !existingPaths.contains(file.path))
         .toList();
     if (newFiles.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No new audio files found')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No new audio files found')));
       return;
     }
 
@@ -448,10 +448,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   }
 
   Future<List<File>> _collectAudioFilesFromDevice() async {
-    final rootCandidates = <String>[
-      '/storage/emulated/0',
-      '/sdcard',
-    ];
+    final rootCandidates = <String>['/storage/emulated/0', '/sdcard'];
 
     final collected = <File>[];
     final seenPaths = <String>{};
@@ -485,9 +482,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     }
 
     collected.sort(
-      (a, b) => p.basename(a.path).toLowerCase().compareTo(
-        p.basename(b.path).toLowerCase(),
-      ),
+      (a, b) => p
+          .basename(a.path)
+          .toLowerCase()
+          .compareTo(p.basename(b.path).toLowerCase()),
     );
     return collected;
   }
@@ -1080,7 +1078,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     context.read<LocalMusicProvider>().deletePlaylist(playlistId);
     if (_selectedLocalPlaylistId == playlistId) {
       setState(() {
-        _selectedLocalPlaylistId = 'all';
+        _selectedLocalPlaylistId = LocalMusicProvider.allPlaylistId;
       });
     }
   }
@@ -1090,19 +1088,46 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     required LocalMusicProvider localMusicProvider,
     required CloudMusicProvider cloudMusicProvider,
   }) async {
-    if (_syncingLocalPlaylistIds.contains(playlist.id)) return;
+    final playlistTracks = localMusicProvider.getTracksForPlaylist(playlist.id);
+    await _uploadTracksAsCloudPlaylist(
+      syncKey: playlist.id,
+      playlistName: playlist.name,
+      playlistTracks: playlistTracks,
+      cloudMusicProvider: cloudMusicProvider,
+    );
+  }
 
-    final playlistTracks = localMusicProvider
-        .getTracksForPlaylist(playlist.id)
-        .toList();
+  Future<void> _uploadSystemPlaylistToCloud({
+    required String playlistId,
+    required String playlistName,
+    required LocalMusicProvider localMusicProvider,
+    required CloudMusicProvider cloudMusicProvider,
+  }) async {
+    final playlistTracks = localMusicProvider.getTracksForPlaylist(playlistId);
+    await _uploadTracksAsCloudPlaylist(
+      syncKey: 'system_$playlistId',
+      playlistName: playlistName,
+      playlistTracks: playlistTracks,
+      cloudMusicProvider: cloudMusicProvider,
+    );
+  }
+
+  Future<void> _uploadTracksAsCloudPlaylist({
+    required String syncKey,
+    required String playlistName,
+    required List<File> playlistTracks,
+    required CloudMusicProvider cloudMusicProvider,
+  }) async {
+    if (_syncingLocalPlaylistIds.contains(syncKey)) return;
+
     if (playlistTracks.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Playlist "${playlist.name}" is empty')),
+        SnackBar(content: Text('Playlist "$playlistName" is empty')),
       );
       return;
     }
 
-    setState(() => _syncingLocalPlaylistIds.add(playlist.id));
+    setState(() => _syncingLocalPlaylistIds.add(syncKey));
 
     try {
       // Ensure cloud library is fresh before matching local files.
@@ -1145,7 +1170,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'No tracks from "${playlist.name}" were uploaded/matched in cloud',
+              'No tracks from "$playlistName" were uploaded/matched in cloud',
             ),
           ),
         );
@@ -1153,7 +1178,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
       }
 
       final createResult = await _apiService.createPlaylist(
-        name: playlist.name,
+        name: playlistName,
         description: 'Synced from local',
       );
       if (createResult['success'] != true) {
@@ -1200,11 +1225,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
       await _refreshCloudData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Playlist "${playlist.name}" synced to cloud')),
+        SnackBar(content: Text('Playlist "$playlistName" synced to cloud')),
       );
     } finally {
       if (mounted) {
-        setState(() => _syncingLocalPlaylistIds.remove(playlist.id));
+        setState(() => _syncingLocalPlaylistIds.remove(syncKey));
       }
     }
   }
@@ -1404,10 +1429,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     await localMusicProvider.removeFile(file);
     _localFileSizeCache.remove(file.path);
     final playlists = localMusicProvider.playlists;
-    if (_selectedLocalPlaylistId != 'all' &&
+    if (_selectedLocalPlaylistId != LocalMusicProvider.allPlaylistId &&
+        _selectedLocalPlaylistId != LocalMusicProvider.likedPlaylistId &&
         playlists.every((item) => item.id != _selectedLocalPlaylistId)) {
       setState(() {
-        _selectedLocalPlaylistId = 'all';
+        _selectedLocalPlaylistId = LocalMusicProvider.allPlaylistId;
       });
     }
   }
@@ -1417,9 +1443,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     final playlists = localMusicProvider.playlists;
 
     if (playlists.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Create a playlist first')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Create a playlist first')));
       return;
     }
 
@@ -1479,9 +1505,19 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   }
 
   Future<void> _removeTrackFromCurrentPlaylist(File file) async {
-    if (_selectedLocalPlaylistId == 'all') return;
+    if (_selectedLocalPlaylistId == LocalMusicProvider.allPlaylistId) return;
 
     final localMusicProvider = context.read<LocalMusicProvider>();
+    if (_selectedLocalPlaylistId == LocalMusicProvider.likedPlaylistId) {
+      if (!localMusicProvider.isTrackLiked(file.path)) return;
+      final changed = await localMusicProvider.toggleTrackLike(file.path);
+      if (!mounted || !changed) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Track removed from liked songs')),
+      );
+      return;
+    }
+
     final removed = await localMusicProvider.removeTrackFromPlaylist(
       playlistId: _selectedLocalPlaylistId,
       trackPath: file.path,
@@ -1492,7 +1528,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
       (item) => item.id == _selectedLocalPlaylistId,
     );
     if (!existsSelectedPlaylist) {
-      setState(() => _selectedLocalPlaylistId = 'all');
+      setState(
+        () => _selectedLocalPlaylistId = LocalMusicProvider.allPlaylistId,
+      );
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1506,13 +1544,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     return Consumer3<CloudMusicProvider, LocalMusicProvider, AuthProvider>(
-      builder: (
-        context,
-        cloudMusicProvider,
-        localMusicProvider,
-        authProvider,
-        child,
-      ) {
+      builder: (context, cloudMusicProvider, localMusicProvider, authProvider, child) {
         final currentTrackPath = context.select<AudioPlayerProvider, String?>(
           (provider) => provider.currentTrackPath,
         );
@@ -1546,7 +1578,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
             child: RefreshIndicator(
               onRefresh: () async {
                 if (_storageType == _StorageType.local) {
-                  await context.read<LocalMusicProvider>().refreshLocalLibrary();
+                  await context
+                      .read<LocalMusicProvider>()
+                      .refreshLocalLibrary();
                   return;
                 }
                 if (isCloudAuthed) {
@@ -1622,7 +1656,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                           children: [
                             Expanded(
                               child: Text(
-                                '${localPlaylists.length + 1} playlists • ${visibleLocalTracks.length} tracks',
+                                '${localPlaylists.length + 2} playlists • ${visibleLocalTracks.length} tracks',
                                 style: textTheme.bodyMedium?.copyWith(
                                   color: colorScheme.onSurface.withValues(
                                     alpha: 0.65,
@@ -1653,7 +1687,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                             scrollDirection: Axis.horizontal,
                             separatorBuilder: (context, index) =>
                                 const SizedBox(width: 10),
-                            itemCount: localPlaylists.length + 2,
+                            itemCount: localPlaylists.length + 3,
                             itemBuilder: (context, index) {
                               if (index == 0) {
                                 return _CreatePlaylistCard(
@@ -1668,16 +1702,72 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                 return _SelectablePlaylistCard(
                                   playlistName: 'All songs',
                                   trackCount: localTracks.length,
-                                  selected: _selectedLocalPlaylistId == 'all',
+                                  selected:
+                                      _selectedLocalPlaylistId ==
+                                      LocalMusicProvider.allPlaylistId,
                                   onTap: () {
                                     setState(() {
-                                      _selectedLocalPlaylistId = 'all';
+                                      _selectedLocalPlaylistId =
+                                          LocalMusicProvider.allPlaylistId;
                                     });
                                   },
+                                  menuActions: [
+                                    _PlaylistMenuAction(
+                                      label:
+                                          _syncingLocalPlaylistIds.contains(
+                                            'system_${LocalMusicProvider.allPlaylistId}',
+                                          )
+                                          ? 'Syncing...'
+                                          : 'Upload to cloud',
+                                      icon: Icons.cloud_upload_rounded,
+                                      onTap: () => _uploadSystemPlaylistToCloud(
+                                        playlistId:
+                                            LocalMusicProvider.allPlaylistId,
+                                        playlistName: 'All songs',
+                                        localMusicProvider: localMusicProvider,
+                                        cloudMusicProvider: cloudMusicProvider,
+                                      ),
+                                    ),
+                                  ],
                                 );
                               }
 
-                              final playlist = localPlaylists[index - 2];
+                              if (index == 2) {
+                                return _SelectablePlaylistCard(
+                                  playlistName: 'Liked songs',
+                                  trackCount:
+                                      localMusicProvider.likedTracksCount,
+                                  selected:
+                                      _selectedLocalPlaylistId ==
+                                      LocalMusicProvider.likedPlaylistId,
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedLocalPlaylistId =
+                                          LocalMusicProvider.likedPlaylistId;
+                                    });
+                                  },
+                                  menuActions: [
+                                    _PlaylistMenuAction(
+                                      label:
+                                          _syncingLocalPlaylistIds.contains(
+                                            'system_${LocalMusicProvider.likedPlaylistId}',
+                                          )
+                                          ? 'Syncing...'
+                                          : 'Upload to cloud',
+                                      icon: Icons.cloud_upload_rounded,
+                                      onTap: () => _uploadSystemPlaylistToCloud(
+                                        playlistId:
+                                            LocalMusicProvider.likedPlaylistId,
+                                        playlistName: 'Liked songs',
+                                        localMusicProvider: localMusicProvider,
+                                        cloudMusicProvider: cloudMusicProvider,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }
+
+                              final playlist = localPlaylists[index - 3];
                               final trackCount = playlist.trackPaths
                                   .where(
                                     (path) => localTracks.any(
@@ -1747,13 +1837,16 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                       child: TextField(
                                         onChanged: (value) {
                                           setState(
-                                            () => _localTracksSearchQuery = value,
+                                            () =>
+                                                _localTracksSearchQuery = value,
                                           );
                                         },
                                         decoration: const InputDecoration(
                                           isDense: true,
                                           hintText: 'Search track',
-                                          prefixIcon: Icon(Icons.search_rounded),
+                                          prefixIcon: Icon(
+                                            Icons.search_rounded,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -1786,8 +1879,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                           subtitle: _localFileSize(file),
                                           selected: selected,
                                           isPlaying:
-                                              selected &&
-                                              isCurrentTrackPlaying,
+                                              selected && isCurrentTrackPlaying,
                                           onTap: () {
                                             final targetIndex =
                                                 playlistLocalTracks.indexWhere(
@@ -1819,10 +1911,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                                   _addTrackToPlaylist(file),
                                             ),
                                             if (_selectedLocalPlaylistId !=
-                                                'all')
+                                                LocalMusicProvider
+                                                    .allPlaylistId)
                                               _TrackMenuAction(
-                                                label: 'Remove from playlist',
-                                                icon: Icons.playlist_remove_rounded,
+                                                label:
+                                                    _selectedLocalPlaylistId ==
+                                                        LocalMusicProvider
+                                                            .likedPlaylistId
+                                                    ? 'Remove like'
+                                                    : 'Remove from playlist',
+                                                icon: Icons
+                                                    .playlist_remove_rounded,
                                                 onTap: () =>
                                                     _removeTrackFromCurrentPlaylist(
                                                       file,
@@ -1996,8 +2095,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                         child: TextField(
                                           onChanged: (value) {
                                             setState(
-                                              () =>
-                                                  _cloudTracksSearchQuery = value,
+                                              () => _cloudTracksSearchQuery =
+                                                  value,
                                             );
                                           },
                                           decoration: const InputDecoration(

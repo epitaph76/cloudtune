@@ -1,24 +1,34 @@
-﻿# CloudTune Backend
+﻿# 🛠️ CloudTune Backend
 
-Backend часть CloudTune на Go (Gin + PostgreSQL).
+![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white)
+![Gin](https://img.shields.io/badge/Gin-1.9.1-00A86B?logo=go&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white)
+![JWT](https://img.shields.io/badge/JWT-v5.3.1-000000?logo=jsonwebtokens&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
-## Функциональность
+Backend-часть CloudTune: API для авторизации, треков, плейлистов и мониторинга.
 
-- Регистрация и вход пользователя (JWT).
-- Загрузка аудиофайлов на сервер.
-- Персональная облачная библиотека (`user_library`).
-- Плейлисты: создание, список, добавление треков, просмотр треков.
-- Скачивание треков с проверкой доступа.
+## ✨ Возможности
 
-## Стек
+- 🔐 Регистрация и вход пользователей (JWT)
+- 🎵 Загрузка треков в облако
+- 📚 Персональная библиотека пользователя
+- 🗂️ Плейлисты (создание, чтение, удаление, добавление треков)
+- ⬇️ Скачивание треков с проверкой доступа
+- 📈 Monitoring API для Telegram-бота
 
-- Go `1.24`
-- Gin
-- PostgreSQL
-- JWT (`github.com/golang-jwt/jwt/v5`)
-- Docker / Docker Compose
+## 🏗️ Архитектура
 
-## Структура
+```mermaid
+flowchart TD
+    A[HTTP клиент] --> B[Gin роутер]
+    B --> C[handlers]
+    C --> D[(PostgreSQL)]
+    C --> E[(uploads)]
+    F[Monitoring Bot] -->|X-Monitoring-Key| C
+```
+
+## 📁 Структура
 
 ```text
 backend/
@@ -27,67 +37,53 @@ backend/
   internal/handlers/
   internal/middleware/
   internal/models/
+  internal/monitoring/
   internal/utils/
-  Dockerfile
   docker-compose.yml
   docker-compose.prod.yml
-  Dockerfile.dev
 ```
 
-## Запуск
+## ⚙️ Запуск (локально)
 
 ```bash
 cd backend
 docker compose up --build
 ```
 
-Сервис поднимется на `http://localhost:8080`.
+API по умолчанию: `http://localhost:8080`
 
-## Production Deploy (VDS + Docker)
+## 🚀 Production запуск
 
-1. Подготовьте переменные:
+1. Подготовить переменные:
 
 ```bash
 cd backend
 cp .env.prod.example .env.prod
 ```
 
-2. Заполните `.env.prod` сильными значениями.
-
-3. Запуск production-сборки:
+2. Запустить:
 
 ```bash
-cd backend
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
-API будет слушать `127.0.0.1:8080` (удобно проксировать через Nginx).
+3. При работе через Nginx API слушает: `127.0.0.1:8080`
 
-4. Автодеплой из GitHub:
+## 🌍 Переменные окружения
 
-```bash
-REPO_URL=https://github.com/<user>/<repo>.git \
-BRANCH=master \
-APP_DIR=/opt/cloudtune \
-bash backend/scripts/deploy-from-github.sh
-```
+- `DB_HOST` — хост БД (по умолчанию `localhost`)
+- `DB_PORT` — порт БД (по умолчанию `5432`)
+- `DB_USER` — пользователь БД
+- `DB_PASSWORD` — пароль БД
+- `DB_NAME` — имя БД
+- `JWT_SECRET` — секрет JWT
+- `MONITORING_API_KEY` — ключ для Monitoring API
+- `CLOUD_UPLOADS_PATH` — путь к папке файлов (`./uploads`)
+- `CLOUD_STORAGE_QUOTA_BYTES` — квота облака в байтах (по умолчанию 3 ГБ)
 
-## Переменные окружения
+## 📡 Monitoring API
 
-Используются:
-
-- `DB_HOST` (default: `localhost`)
-- `DB_PORT` (default: `5432`)
-- `DB_USER` (default: `postgres`)
-- `DB_PASSWORD` (default: `password`)
-- `DB_NAME` (default: `cloudtune`)
-- `JWT_SECRET` (обязательно задать надежное значение для продакшена)
-- `MONITORING_API_KEY` (включает защищенные monitoring endpoints)
-- `CLOUD_UPLOADS_PATH` (опционально, путь до папки uploads, default `./uploads`)
-
-## Monitoring API
-
-При заданном `MONITORING_API_KEY` доступны диагностические эндпоинты:
+Все ручки требуют заголовок: `X-Monitoring-Key: <MONITORING_API_KEY>`
 
 - `GET /api/monitor/status`
 - `GET /api/monitor/storage`
@@ -96,42 +92,30 @@ bash backend/scripts/deploy-from-github.sh
 - `GET /api/monitor/users/list?page=1&limit=8`
 - `GET /api/monitor/all`
 
-Все запросы требуют заголовок `X-Monitoring-Key: <MONITORING_API_KEY>`.
-Telegram-бот вынесен в отдельный сервис: `../monitoring`.
+## 🔌 Основные API ручки
 
-## API
-
-### Public
+Публичные:
 
 - `GET /health`
 - `GET /api/status`
-- `GET /api/monitor/status` (requires `X-Monitoring-Key`)
-- `GET /api/monitor/storage` (requires `X-Monitoring-Key`)
-- `GET /api/monitor/connections` (requires `X-Monitoring-Key`)
-- `GET /api/monitor/users` (requires `X-Monitoring-Key`)
-- `GET /api/monitor/users/list?page=1&limit=8` (requires `X-Monitoring-Key`)
-- `GET /api/monitor/all` (requires `X-Monitoring-Key`)
 - `POST /auth/register`
 - `POST /auth/login`
 
-### Protected (`Authorization: Bearer <token>`)
-
-#### Songs
+Защищённые (`Authorization: Bearer <token>`):
 
 - `POST /api/songs/upload`
 - `GET /api/songs/library`
 - `GET /api/songs/:id`
 - `GET /api/songs/download/:id`
-
-#### Playlists
-
+- `GET /api/storage/usage`
 - `POST /api/playlists`
 - `GET /api/playlists`
+- `DELETE /api/playlists/:playlist_id`
 - `POST /api/playlists/:playlist_id/songs/:song_id`
 - `GET /api/playlists/:playlist_id/songs`
 
-## Важно
+## 📝 Примечания
 
 - Таблицы БД создаются автоматически при старте.
-- В текущей версии отсутствует эндпоинт `/api/profile`.
-- Допустимые MIME-типы при загрузке: `audio/mpeg`, `audio/wav`, `audio/mp4`, `audio/flac`.
+- Допустимые MIME-типы загрузки: `audio/mpeg`, `audio/wav`, `audio/mp4`, `audio/flac`.
+- Мониторинг-бот вынесен в отдельный сервис: `../monitoring`.

@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const defaultStorageQuotaBytes int64 = 10 * 1024 * 1024 * 1024 // 10 GB
+const defaultStorageQuotaBytes int64 = 3 * 1024 * 1024 * 1024 // 3 GB
 
 func resolveStorageQuotaBytes() int64 {
 	raw := os.Getenv("CLOUD_STORAGE_QUOTA_BYTES")

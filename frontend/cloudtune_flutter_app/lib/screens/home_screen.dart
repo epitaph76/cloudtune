@@ -17,9 +17,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final Set<String> _likedTracks = <String>{};
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  String _selectedPlaylistId = 'all';
+  String _selectedPlaylistId = LocalMusicProvider.allPlaylistId;
 
   static const double _horizontalSwipeThreshold = 80;
 
@@ -74,13 +73,14 @@ class _HomeScreenState extends State<HomeScreen> {
     return Consumer2<LocalMusicProvider, AudioPlayerProvider>(
       builder: (context, localMusicProvider, audioProvider, child) {
         final hasSelectedPlaylist =
-            _selectedPlaylistId == 'all' ||
+            _selectedPlaylistId == LocalMusicProvider.allPlaylistId ||
+            _selectedPlaylistId == LocalMusicProvider.likedPlaylistId ||
             localMusicProvider.playlists.any(
               (playlist) => playlist.id == _selectedPlaylistId,
             );
         final activePlaylistId = hasSelectedPlaylist
             ? _selectedPlaylistId
-            : 'all';
+            : LocalMusicProvider.allPlaylistId;
         final tracks = localMusicProvider.getTracksForPlaylist(
           activePlaylistId,
         );
@@ -101,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ? p.basename(currentFile.path)
             : 'Add files in Storage > Local';
         final isLiked = currentFile != null
-            ? _likedTracks.contains(currentFile.path)
+            ? localMusicProvider.isTrackLiked(currentFile.path)
             : false;
 
         final durationSeconds = audioProvider.duration.inSeconds;
@@ -128,231 +128,226 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
                 child: Column(
-                children: [
-                  GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onHorizontalDragEnd: _handleTopZoneHorizontalSwipe,
-                    child: Row(
-                      children: [
-                        _TopActionButton(
-                          icon: Icons.menu_rounded,
-                          onTap: () => _scaffoldKey.currentState?.openDrawer(),
-                        ),
-                        const Spacer(),
-                        Text(
-                          'CloudTune',
-                          style: textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onHorizontalDragEnd: _handleTopZoneHorizontalSwipe,
+                      child: Row(
+                        children: [
+                          _TopActionButton(
+                            icon: Icons.menu_rounded,
+                            onTap: () =>
+                                _scaffoldKey.currentState?.openDrawer(),
+                          ),
+                          const Spacer(),
+                          Text(
+                            'CloudTune',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Spacer(),
+                          const SizedBox(width: 42, height: 42),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    if (!hasTracks)
+                      Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onHorizontalDragEnd: _handleTopZoneHorizontalSwipe,
+                          child: Center(
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: colorScheme.surface,
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(color: colorScheme.outline),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.music_off_rounded,
+                                    size: 72,
+                                    color: colorScheme.onSurface.withValues(
+                                      alpha: 0.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Text(
+                                    'No local tracks yet',
+                                    style: textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Go to Storage tab and add files.',
+                                    textAlign: TextAlign.center,
+                                    style: textTheme.bodyMedium?.copyWith(
+                                      color: colorScheme.onSurface.withValues(
+                                        alpha: 0.65,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                        const Spacer(),
-                        const SizedBox(width: 42, height: 42),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  if (!hasTracks)
-                    Expanded(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onHorizontalDragEnd: _handleTopZoneHorizontalSwipe,
-                        child: Center(
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: colorScheme.surface,
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(color: colorScheme.outline),
+                      )
+                    else
+                      Expanded(
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 22),
+                            Container(
+                              width: 312,
+                              height: 312,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(42),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    colorScheme.primary,
+                                    colorScheme.tertiary,
+                                  ],
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.music_note_rounded,
+                                size: 136,
+                                color: colorScheme.onPrimary.withValues(
+                                  alpha: 0.92,
+                                ),
+                              ),
                             ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
+                            const SizedBox(height: 30),
+                            SizedBox(
+                              height: 40,
+                              child: _AutoScrollingText(
+                                text: currentTitle,
+                                textStyle: textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 31,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              currentSubtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurface.withValues(
+                                  alpha: 0.65,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            IconButton(
+                              onPressed: currentFile == null
+                                  ? null
+                                  : () => localMusicProvider.toggleTrackLike(
+                                      currentFile.path,
+                                    ),
+                              icon: Icon(
+                                isLiked
+                                    ? Icons.favorite_rounded
+                                    : Icons.favorite_border_rounded,
+                              ),
+                              color: colorScheme.primary,
+                            ),
+                            const Spacer(),
+                            Slider(
+                              value: sliderValue,
+                              max: sliderMax,
+                              onChanged: !hasKnownDuration
+                                  ? null
+                                  : (value) {
+                                      audioProvider.seek(
+                                        Duration(seconds: value.round()),
+                                      );
+                                    },
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Icon(
-                                  Icons.music_off_rounded,
-                                  size: 72,
-                                  color: colorScheme.onSurface.withValues(
-                                    alpha: 0.5,
+                                Text(
+                                  _formatDuration(audioProvider.position),
+                                  style: textTheme.labelMedium?.copyWith(
+                                    color: colorScheme.onSurface.withValues(
+                                      alpha: 0.6,
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 14),
                                 Text(
-                                  'No local tracks yet',
-                                  style: textTheme.titleMedium,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Go to Storage tab and add files.',
-                                  textAlign: TextAlign.center,
-                                  style: textTheme.bodyMedium?.copyWith(
+                                  _formatDuration(audioProvider.duration),
+                                  style: textTheme.labelMedium?.copyWith(
                                     color: colorScheme.onSurface.withValues(
-                                      alpha: 0.65,
+                                      alpha: 0.6,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    Expanded(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 22),
-                          Container(
-                            width: 312,
-                            height: 312,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(42),
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  colorScheme.primary,
-                                  colorScheme.tertiary,
-                                ],
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.music_note_rounded,
-                              size: 136,
-                              color: colorScheme.onPrimary.withValues(
-                                alpha: 0.92,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 30),
-                          SizedBox(
-                            height: 40,
-                            child: _AutoScrollingText(
-                              text: currentTitle,
-                              textStyle: textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 31,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            currentSubtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurface.withValues(
-                                alpha: 0.65,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          IconButton(
-                            onPressed: currentFile == null
-                                ? null
-                                : () {
-                                    setState(() {
-                                      if (isLiked) {
-                                        _likedTracks.remove(currentFile.path);
-                                      } else {
-                                        _likedTracks.add(currentFile.path);
-                                      }
-                                    });
-                                  },
-                            icon: Icon(
-                              isLiked
-                                  ? Icons.favorite_rounded
-                                  : Icons.favorite_border_rounded,
-                            ),
-                            color: colorScheme.primary,
-                          ),
-                          const Spacer(),
-                          Slider(
-                            value: sliderValue,
-                            max: sliderMax,
-                            onChanged: !hasKnownDuration
-                                ? null
-                                : (value) {
-                                    audioProvider.seek(
-                                      Duration(seconds: value.round()),
-                                    );
-                                  },
-                          ),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _formatDuration(audioProvider.position),
-                                style: textTheme.labelMedium?.copyWith(
-                                  color: colorScheme.onSurface.withValues(
-                                    alpha: 0.6,
-                                  ),
+                            const SizedBox(height: 28),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                _ToggleCircleButton(
+                                  active: audioProvider.shuffleEnabled,
+                                  icon: Icons.shuffle_rounded,
+                                  onTap: audioProvider.toggleShuffle,
                                 ),
-                              ),
-                              Text(
-                                _formatDuration(audioProvider.duration),
-                                style: textTheme.labelMedium?.copyWith(
-                                  color: colorScheme.onSurface.withValues(
-                                    alpha: 0.6,
-                                  ),
+                                IconButton(
+                                  onPressed: hasTracks
+                                      ? () => audioProvider
+                                            .skipToPreviousFromTracks(tracks)
+                                      : null,
+                                  icon: const Icon(Icons.skip_previous_rounded),
+                                  iconSize: 34,
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 28),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _ToggleCircleButton(
-                                active: audioProvider.shuffleEnabled,
-                                icon: Icons.shuffle_rounded,
-                                onTap: audioProvider.toggleShuffle,
-                              ),
-                              IconButton(
-                                onPressed: hasTracks
-                                    ? () => audioProvider.skipToPreviousFromTracks(
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  onPressed: hasTracks
+                                      ? () => audioProvider.playPauseFromTracks(
                                           tracks,
                                         )
-                                    : null,
-                                icon: const Icon(Icons.skip_previous_rounded),
-                                iconSize: 34,
-                              ),
-                              const SizedBox(width: 8),
-                              FilledButton(
-                                onPressed: hasTracks
-                                    ? () =>
-                                        audioProvider.playPauseFromTracks(tracks)
-                                    : null,
-                                style: FilledButton.styleFrom(
-                                  shape: const CircleBorder(),
-                                  padding: const EdgeInsets.all(18),
+                                      : null,
+                                  style: FilledButton.styleFrom(
+                                    shape: const CircleBorder(),
+                                    padding: const EdgeInsets.all(18),
+                                  ),
+                                  child: Icon(
+                                    audioProvider.playing
+                                        ? Icons.pause_rounded
+                                        : Icons.play_arrow_rounded,
+                                    size: 34,
+                                  ),
                                 ),
-                                child: Icon(
-                                  audioProvider.playing
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  size: 34,
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  onPressed: hasTracks
+                                      ? () => audioProvider
+                                            .skipToNextFromTracks(tracks)
+                                      : null,
+                                  icon: const Icon(Icons.skip_next_rounded),
+                                  iconSize: 34,
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                onPressed: hasTracks
-                                    ? () =>
-                                        audioProvider.skipToNextFromTracks(tracks)
-                                    : null,
-                                icon: const Icon(Icons.skip_next_rounded),
-                                iconSize: 34,
-                              ),
-                              _ToggleCircleButton(
-                                active: audioProvider.repeatOneEnabled,
-                                icon: Icons.repeat_rounded,
-                                onTap: audioProvider.toggleRepeatOne,
-                              ),
-                            ],
-                          ),
-                        ],
+                                _ToggleCircleButton(
+                                  active: audioProvider.repeatOneEnabled,
+                                  icon: Icons.repeat_rounded,
+                                  onTap: audioProvider.toggleRepeatOne,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                ],
+                  ],
                 ),
               ),
             ),
@@ -413,8 +408,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   _PlaylistMenuCard(
                     title: 'All songs',
                     subtitle: '${tracks.length} tracks',
-                    selected: activePlaylistId == 'all',
-                    onTap: () => _selectPlaylistAndStart(context, 'all'),
+                    selected:
+                        activePlaylistId == LocalMusicProvider.allPlaylistId,
+                    onTap: () => _selectPlaylistAndStart(
+                      context,
+                      LocalMusicProvider.allPlaylistId,
+                    ),
+                  ),
+                  _PlaylistMenuCard(
+                    title: 'Liked songs',
+                    subtitle: '${localMusicProvider.likedTracksCount} tracks',
+                    selected:
+                        activePlaylistId == LocalMusicProvider.likedPlaylistId,
+                    onTap: () => _selectPlaylistAndStart(
+                      context,
+                      LocalMusicProvider.likedPlaylistId,
+                    ),
                   ),
                   ...playlists.map(
                     (playlist) => _PlaylistMenuCard(
@@ -599,11 +608,7 @@ class _AutoScrollingTextState extends State<_AutoScrollingText> {
       controller: _scrollController,
       scrollDirection: Axis.horizontal,
       physics: const NeverScrollableScrollPhysics(),
-      child: Text(
-        widget.text,
-        maxLines: 1,
-        style: widget.textStyle,
-      ),
+      child: Text(widget.text, maxLines: 1, style: widget.textStyle),
     );
   }
 }
