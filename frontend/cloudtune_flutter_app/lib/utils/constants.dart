@@ -6,7 +6,10 @@ class Constants {
     'API_BASE_URL',
     defaultValue: 'https://api-mp3-player.ru',
   );
-  static const List<String> fallbackBaseUrls = [];
+  static const List<String> fallbackBaseUrls = [
+    'http://168.222.252.159',
+    'http://168.222.252.159:8080',
+  ];
 
   // Storage Keys
   static const String tokenKey = 'cloudtune_token';

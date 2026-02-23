@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import '../utils/constants.dart';
@@ -76,7 +77,7 @@ class ApiService {
     try {
       Options options = await _getAuthOptions();
 
-      String fileName = file.path.split('/').last;
+      String fileName = p.basename(file.path);
 
       FormData formData = FormData.fromMap({
         'file': await MultipartFile.fromFile(file.path, filename: fileName),
@@ -149,13 +150,21 @@ class ApiService {
     required String name,
     String? description,
     bool isPublic = false,
+    bool isFavorite = false,
+    bool replaceExisting = false,
   }) async {
     try {
       final options = await _getAuthOptions();
       final response = await _requestWithFallback(
         method: 'POST',
         path: '/api/playlists',
-        data: {'name': name, 'description': description, 'is_public': isPublic},
+        data: {
+          'name': name,
+          'description': description,
+          'is_public': isPublic,
+          'is_favorite': isFavorite,
+          'replace_existing': replaceExisting,
+        },
         options: options,
       );
 

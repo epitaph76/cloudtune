@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
@@ -88,16 +89,16 @@ class _HomeScreenState extends State<HomeScreen> {
         final tracks = localMusicProvider.getTracksForPlaylist(
           activePlaylistId,
         );
+        final allLocalTracks = localMusicProvider.selectedFiles;
         final hasTracks = tracks.isNotEmpty;
         final currentTrackPath = audioProvider.currentTrackPath;
-        final currentTrackIndex = currentTrackPath == null
-            ? -1
-            : tracks.indexWhere((track) => track.path == currentTrackPath);
-        final currentFile = hasTracks
-            ? (currentTrackIndex >= 0
-                  ? tracks[currentTrackIndex]
-                  : tracks.first)
-            : null;
+        final currentFile = currentTrackPath == null
+            ? (hasTracks ? tracks.first : null)
+            : allLocalTracks.cast<File?>().firstWhere(
+                (track) => track?.path == currentTrackPath,
+                orElse: () => hasTracks ? tracks.first : null,
+              );
+        final canControlPlayback = audioProvider.hasActiveQueue || hasTracks;
         final currentTitle = currentFile != null
             ? p.basenameWithoutExtension(currentFile.path)
             : t('no_track_selected');
@@ -203,152 +204,36 @@ class _HomeScreenState extends State<HomeScreen> {
                       )
                     else
                       Expanded(
-                        child: Column(
-                          children: [
-                            const SizedBox(height: 22),
-                            Container(
-                              width: 312,
-                              height: 312,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(42),
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    colorScheme.primary,
-                                    colorScheme.tertiary,
-                                  ],
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.music_note_rounded,
-                                size: 136,
-                                color: colorScheme.onPrimary.withValues(
-                                  alpha: 0.92,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 30),
-                            SizedBox(
-                              height: 40,
-                              child: _AutoScrollingText(
-                                text: currentTitle,
-                                textStyle: textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 31,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              currentSubtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: textTheme.bodyMedium?.copyWith(
-                                color: colorScheme.onSurface.withValues(
-                                  alpha: 0.65,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            IconButton(
-                              onPressed: currentFile == null
-                                  ? null
-                                  : () => localMusicProvider.toggleTrackLike(
-                                      currentFile.path,
-                                    ),
-                              icon: Icon(
-                                isLiked
-                                    ? Icons.favorite_rounded
-                                    : Icons.favorite_border_rounded,
-                              ),
-                              color: colorScheme.primary,
-                            ),
-                            const Spacer(),
-                            Slider(
-                              value: sliderValue,
-                              max: sliderMax,
-                              onChanged: !hasKnownDuration
-                                  ? null
-                                  : (value) {
-                                      audioProvider.seek(
-                                        Duration(seconds: value.round()),
-                                      );
-                                    },
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  _formatDuration(audioProvider.position),
-                                  style: textTheme.labelMedium?.copyWith(
-                                    color: colorScheme.onSurface.withValues(
-                                      alpha: 0.6,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  _formatDuration(audioProvider.duration),
-                                  style: textTheme.labelMedium?.copyWith(
-                                    color: colorScheme.onSurface.withValues(
-                                      alpha: 0.6,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 28),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _ToggleCircleButton(
-                                  active: audioProvider.shuffleEnabled,
-                                  icon: Icons.shuffle_rounded,
-                                  onTap: audioProvider.toggleShuffle,
-                                ),
-                                IconButton(
-                                  onPressed: hasTracks
-                                      ? () => audioProvider
-                                            .skipToPreviousFromTracks(tracks)
-                                      : null,
-                                  icon: const Icon(Icons.skip_previous_rounded),
-                                  iconSize: 34,
-                                ),
-                                const SizedBox(width: 8),
-                                FilledButton(
-                                  onPressed: hasTracks
-                                      ? () => audioProvider.playPauseFromTracks(
-                                          tracks,
-                                        )
-                                      : null,
-                                  style: FilledButton.styleFrom(
-                                    shape: const CircleBorder(),
-                                    padding: const EdgeInsets.all(18),
-                                  ),
-                                  child: Icon(
-                                    audioProvider.playing
-                                        ? Icons.pause_rounded
-                                        : Icons.play_arrow_rounded,
-                                    size: 34,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  onPressed: hasTracks
-                                      ? () => audioProvider
-                                            .skipToNextFromTracks(tracks)
-                                      : null,
-                                  icon: const Icon(Icons.skip_next_rounded),
-                                  iconSize: 34,
-                                ),
-                                _ToggleCircleButton(
-                                  active: audioProvider.repeatOneEnabled,
-                                  icon: Icons.repeat_rounded,
-                                  onTap: audioProvider.toggleRepeatOne,
-                                ),
-                              ],
-                            ),
-                          ],
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isCompactHeight = constraints.maxHeight < 640;
+                            final artworkSize = isCompactHeight
+                                ? (constraints.maxHeight * 0.38).clamp(
+                                    176.0,
+                                    280.0,
+                                  )
+                                : 312.0;
+                            final titleSize = isCompactHeight ? 24.0 : 31.0;
+
+                            return _buildTrackPlayerContent(
+                              colorScheme: colorScheme,
+                              textTheme: textTheme,
+                              localMusicProvider: localMusicProvider,
+                              audioProvider: audioProvider,
+                              tracks: tracks,
+                              currentFile: currentFile,
+                              isLiked: isLiked,
+                              currentTitle: currentTitle,
+                              currentSubtitle: currentSubtitle,
+                              sliderValue: sliderValue,
+                              sliderMax: sliderMax,
+                              hasKnownDuration: hasKnownDuration,
+                              canControlPlayback: canControlPlayback,
+                              isCompactHeight: isCompactHeight,
+                              artworkSize: artworkSize,
+                              titleSize: titleSize,
+                            );
+                          },
                         ),
                       ),
                   ],
@@ -359,6 +244,165 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
+  }
+
+  Widget _buildTrackPlayerContent({
+    required ColorScheme colorScheme,
+    required TextTheme textTheme,
+    required LocalMusicProvider localMusicProvider,
+    required AudioPlayerProvider audioProvider,
+    required List<File> tracks,
+    required File? currentFile,
+    required bool isLiked,
+    required String currentTitle,
+    required String currentSubtitle,
+    required double sliderValue,
+    required double sliderMax,
+    required bool hasKnownDuration,
+    required bool canControlPlayback,
+    required bool isCompactHeight,
+    required double artworkSize,
+    required double titleSize,
+  }) {
+    final header = <Widget>[
+      SizedBox(height: isCompactHeight ? 12 : 22),
+      Center(
+        child: Container(
+          width: artworkSize,
+          height: artworkSize,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(42),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [colorScheme.primary, colorScheme.tertiary],
+            ),
+          ),
+          child: Icon(
+            Icons.music_note_rounded,
+            size: artworkSize * 0.44,
+            color: colorScheme.onPrimary.withValues(alpha: 0.92),
+          ),
+        ),
+      ),
+      SizedBox(height: isCompactHeight ? 16 : 30),
+      SizedBox(
+        height: 40,
+        child: _AutoScrollingText(
+          text: currentTitle,
+          textStyle: textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            fontSize: titleSize,
+          ),
+        ),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        currentSubtitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: isCompactHeight ? TextAlign.center : TextAlign.start,
+        style: textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurface.withValues(alpha: 0.65),
+        ),
+      ),
+      const SizedBox(height: 14),
+      IconButton(
+        onPressed: currentFile == null
+            ? null
+            : () => localMusicProvider.toggleTrackLike(currentFile.path),
+        icon: Icon(
+          isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+        ),
+        color: colorScheme.primary,
+      ),
+    ];
+
+    final controls = <Widget>[
+      Slider(
+        value: sliderValue,
+        max: sliderMax,
+        onChanged: !hasKnownDuration
+            ? null
+            : (value) {
+                audioProvider.seek(Duration(seconds: value.round()));
+              },
+      ),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            _formatDuration(audioProvider.position),
+            style: textTheme.labelMedium?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+          Text(
+            _formatDuration(audioProvider.duration),
+            style: textTheme.labelMedium?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+        ],
+      ),
+      SizedBox(height: isCompactHeight ? 14 : 28),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _ToggleCircleButton(
+            active: audioProvider.shuffleEnabled,
+            icon: Icons.shuffle_rounded,
+            onTap: audioProvider.toggleShuffle,
+          ),
+          IconButton(
+            onPressed: canControlPlayback
+                ? () => audioProvider.skipToPreviousFromTracks(tracks)
+                : null,
+            icon: const Icon(Icons.skip_previous_rounded),
+            iconSize: 34,
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: canControlPlayback
+                ? () => audioProvider.playPauseFromTracks(tracks)
+                : null,
+            style: FilledButton.styleFrom(
+              shape: const CircleBorder(),
+              padding: const EdgeInsets.all(18),
+            ),
+            child: Icon(
+              audioProvider.playing
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded,
+              size: 34,
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            onPressed: canControlPlayback
+                ? () => audioProvider.skipToNextFromTracks(tracks)
+                : null,
+            icon: const Icon(Icons.skip_next_rounded),
+            iconSize: 34,
+          ),
+          _ToggleCircleButton(
+            active: audioProvider.repeatOneEnabled,
+            icon: Icons.repeat_rounded,
+            onTap: audioProvider.toggleRepeatOne,
+          ),
+        ],
+      ),
+      SizedBox(height: isCompactHeight ? 10 : 0),
+    ];
+
+    if (isCompactHeight) {
+      return ListView(
+        padding: EdgeInsets.zero,
+        children: [...header, const SizedBox(height: 8), ...controls],
+      );
+    }
+
+    return Column(children: [...header, const Spacer(), ...controls]);
   }
 
   Widget _buildSideMenu(
@@ -523,21 +567,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _selectPlaylistAndStart(
-    BuildContext context,
-    String playlistId,
-  ) async {
-    final localMusicProvider = context.read<LocalMusicProvider>();
-    final audioProvider = context.read<AudioPlayerProvider>();
-
+  void _selectPlaylistAndStart(BuildContext context, String playlistId) {
     setState(() {
       _selectedPlaylistId = playlistId;
     });
     Navigator.of(context).pop();
-
-    final tracks = localMusicProvider.getTracksForPlaylist(playlistId);
-    if (tracks.isEmpty) return;
-    await audioProvider.playFromTracks(tracks, initialIndex: 0);
   }
 
   void _openThemeSettings(BuildContext context) {

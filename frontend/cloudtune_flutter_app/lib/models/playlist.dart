@@ -4,6 +4,7 @@ class Playlist {
   final String? description;
   final int ownerID;
   final bool isPublic;
+  final bool isFavorite;
   final DateTime createdAt;
   final DateTime updatedAt;
   final int? songCount;
@@ -14,6 +15,7 @@ class Playlist {
     this.description,
     required this.ownerID,
     this.isPublic = false,
+    this.isFavorite = false,
     required this.createdAt,
     required this.updatedAt,
     this.songCount,
@@ -26,8 +28,13 @@ class Playlist {
       description: json['description'],
       ownerID: json['owner_id'] ?? 0,
       isPublic: json['is_public'] ?? false,
-      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
-      updatedAt: DateTime.parse(json['updated_at'] ?? DateTime.now().toIso8601String()),
+      isFavorite: json['is_favorite'] ?? false,
+      createdAt: DateTime.parse(
+        json['created_at'] ?? DateTime.now().toIso8601String(),
+      ),
+      updatedAt: DateTime.parse(
+        json['updated_at'] ?? DateTime.now().toIso8601String(),
+      ),
       songCount: json['song_count'], // Может быть null, если не передается
     );
   }
@@ -39,6 +46,7 @@ class Playlist {
       'description': description,
       'owner_id': ownerID,
       'is_public': isPublic,
+      'is_favorite': isFavorite,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'song_count': songCount,

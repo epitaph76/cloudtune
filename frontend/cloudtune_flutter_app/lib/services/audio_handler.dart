@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
@@ -7,6 +8,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final AudioPlayer _player = AudioPlayer();
   bool _hasPreparedShuffleForCurrentQueue = false;
   bool _isDelayedAdvanceInProgress = false;
+  Future<void> _opChain = Future<void>.value();
+  DateTime? _lastSpeedAuditAt;
+  Duration? _lastSpeedAuditPosition;
+  int _speedDriftStrikes = 0;
 
   bool get shuffleEnabled => _player.shuffleModeEnabled;
   Stream<bool> get shuffleEnabledStream => _player.shuffleModeEnabledStream;
@@ -17,14 +22,23 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   int? get currentQueueIndex => _player.currentIndex;
   bool get hasQueue => queue.value.isNotEmpty;
 
+  Future<T> _runSerialized<T>(Future<T> Function() action) {
+    if (!Platform.isWindows) {
+      return action();
+    }
+    final run = _opChain.then((_) => action());
+    _opChain = run.then((_) {}).catchError((_) {});
+    return run;
+  }
+
   MyAudioHandler() {
     // Keep playback rate stable even if platform media session requests speed changes.
     _player.setSpeed(1.0);
 
-    _player.playbackEventStream.listen(
-      (_) => playbackState.add(_mapPlaybackState(_player)),
-      onError: (Object error, StackTrace stackTrace) {},
-    );
+    _player.playbackEventStream.listen((_) {
+      _auditPlaybackSpeed();
+      playbackState.add(_mapPlaybackState(_player));
+    }, onError: (Object error, StackTrace stackTrace) {});
 
     _player.processingStateStream.listen((_) {
       unawaited(_handleDelayedAdvanceIfNeeded());
@@ -53,138 +67,208 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> play() async {
-    if (_player.speed != 1.0) {
-      await _player.setSpeed(1.0);
-    }
-    await _player.play();
+    await _runSerialized(() async {
+      if (_player.speed != 1.0) {
+        await _player.setSpeed(1.0);
+      }
+      // just_audio play() may complete only when playback ends; do not block
+      // serialized command queue on this future.
+      unawaited(_player.play());
+    });
   }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() => _runSerialized(() => _player.pause());
 
   @override
-  Future<void> stop() => _player.stop();
+  Future<void> stop() => _runSerialized(() => _player.stop());
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) =>
+      _runSerialized(() => _player.seek(position));
 
   @override
   Future<void> skipToNext() async {
-    final total = queue.value.length;
-    if (total == 0) return;
-    await _player.setSpeed(1.0);
+    await _runSerialized(() async {
+      final total = queue.value.length;
+      if (total == 0) return;
+      await _player.setSpeed(1.0);
 
-    if (_player.hasNext) {
-      await _player.seekToNext();
-    } else {
-      final fallbackIndex = _player.shuffleModeEnabled
-          ? (_player.effectiveIndices?.first ?? 0)
-          : 0;
-      await _player.seek(Duration.zero, index: fallbackIndex);
-    }
-    playbackState.add(_mapPlaybackState(_player));
+      if (_player.hasNext) {
+        await _player.seekToNext();
+      } else {
+        final fallbackIndex = _player.shuffleModeEnabled
+            ? (_player.effectiveIndices?.first ?? 0)
+            : 0;
+        await _player.seek(null, index: fallbackIndex);
+      }
+      playbackState.add(_mapPlaybackState(_player));
+    });
   }
 
   @override
   Future<void> skipToPrevious() async {
-    final total = queue.value.length;
-    if (total == 0) return;
-    await _player.setSpeed(1.0);
+    await _runSerialized(() async {
+      final total = queue.value.length;
+      if (total == 0) return;
+      await _player.setSpeed(1.0);
 
-    if (_player.hasPrevious) {
-      await _player.seekToPrevious();
-    } else {
-      final fallbackIndex = _player.shuffleModeEnabled
-          ? (_player.effectiveIndices?.last ?? (total - 1))
-          : (total - 1);
-      await _player.seek(Duration.zero, index: fallbackIndex);
-    }
-    playbackState.add(_mapPlaybackState(_player));
+      if (_player.hasPrevious) {
+        await _player.seekToPrevious();
+      } else {
+        final fallbackIndex = _player.shuffleModeEnabled
+            ? (_player.effectiveIndices?.last ?? (total - 1))
+            : (total - 1);
+        await _player.seek(null, index: fallbackIndex);
+      }
+      playbackState.add(_mapPlaybackState(_player));
+    });
   }
 
   @override
   Future<void> skipToQueueItem(int index) async {
-    if (index < 0 || index >= queue.value.length) return;
-    await _player.setSpeed(1.0);
-    await _player.seek(Duration.zero, index: index);
+    await _runSerialized(() async {
+      if (index < 0 || index >= queue.value.length) return;
+      await _player.setSpeed(1.0);
+      await _player.seek(null, index: index);
+    });
   }
 
   @override
   Future<void> setSpeed(double speed) async {
-    await _player.setSpeed(1.0);
-    playbackState.add(_mapPlaybackState(_player));
+    await _runSerialized(() async {
+      await _player.setSpeed(1.0);
+      playbackState.add(_mapPlaybackState(_player));
+    });
   }
 
   Future<void> setVolumeLevel(double value) async {
-    final safeValue = value.clamp(0.0, 1.0);
-    await _player.setVolume(safeValue);
-    playbackState.add(_mapPlaybackState(_player));
+    await _runSerialized(() async {
+      final safeValue = value.clamp(0.0, 1.0);
+      await _player.setVolume(safeValue);
+      playbackState.add(_mapPlaybackState(_player));
+    });
   }
 
   Future<void> toggleShuffleMode() async {
-    final nextState = !_player.shuffleModeEnabled;
-    await _player.setShuffleModeEnabled(nextState);
-    if (nextState &&
-        !_hasPreparedShuffleForCurrentQueue &&
-        _player.audioSource is ConcatenatingAudioSource) {
-      await _player.shuffle();
-      _hasPreparedShuffleForCurrentQueue = true;
-    }
-    playbackState.add(_mapPlaybackState(_player));
+    await _runSerialized(() async {
+      final nextState = !_player.shuffleModeEnabled;
+      await _player.setShuffleModeEnabled(nextState);
+      if (nextState &&
+          !_hasPreparedShuffleForCurrentQueue &&
+          _player.audioSource is ConcatenatingAudioSource) {
+        await _player.shuffle();
+        _hasPreparedShuffleForCurrentQueue = true;
+      }
+      playbackState.add(_mapPlaybackState(_player));
+    });
   }
 
   Future<void> toggleRepeatOneMode() async {
-    final nextMode = _player.loopMode == LoopMode.one
-        ? LoopMode.off
-        : LoopMode.one;
-    await _player.setLoopMode(nextMode);
-    playbackState.add(_mapPlaybackState(_player));
+    await _runSerialized(() async {
+      final nextMode = _player.loopMode == LoopMode.one
+          ? LoopMode.off
+          : LoopMode.one;
+      await _player.setLoopMode(nextMode);
+      playbackState.add(_mapPlaybackState(_player));
+    });
   }
 
   Future<void> setQueue(List<MediaItem> items, {int initialIndex = 0}) async {
-    if (items.isEmpty) return;
+    await _runSerialized(() async {
+      if (items.isEmpty) return;
 
-    final safeInitialIndex = initialIndex.clamp(0, items.length - 1);
-    _hasPreparedShuffleForCurrentQueue = false;
-    queue.add(items);
-    await _player.setSpeed(1.0);
+      final safeInitialIndex = initialIndex.clamp(0, items.length - 1);
+      _hasPreparedShuffleForCurrentQueue = false;
+      if (_player.shuffleModeEnabled) {
+        await _player.setShuffleModeEnabled(false);
+      }
+      queue.add(items);
+      await _player.setSpeed(1.0);
 
-    await _player.setAudioSource(
-      ConcatenatingAudioSource(
-        children: items
-            .map((item) => AudioSource.file(item.id, tag: item))
-            .toList(),
-      ),
-      initialIndex: safeInitialIndex,
-      initialPosition: Duration.zero,
-    );
+      await _player.setAudioSource(
+        ConcatenatingAudioSource(
+          children: items
+              .map((item) => AudioSource.file(item.id, tag: item))
+              .toList(),
+        ),
+        initialIndex: safeInitialIndex,
+        initialPosition: Duration.zero,
+      );
 
-    if (_player.shuffleModeEnabled && !_hasPreparedShuffleForCurrentQueue) {
-      await _player.shuffle();
-      _hasPreparedShuffleForCurrentQueue = true;
-    }
-
-    mediaItem.add(items[safeInitialIndex]);
-    playbackState.add(_mapPlaybackState(_player));
+      mediaItem.add(items[safeInitialIndex]);
+      playbackState.add(_mapPlaybackState(_player));
+    });
   }
 
   Future<void> _handleDelayedAdvanceIfNeeded() async {
     if (_isDelayedAdvanceInProgress) return;
     if (_player.processingState != ProcessingState.completed) return;
     if (_player.loopMode == LoopMode.one) return;
-    if (!_player.playing) return;
-    if (!_player.hasNext) return;
+    final total = queue.value.length;
+    if (total <= 1) return;
 
     _isDelayedAdvanceInProgress = true;
     try {
       await Future<void>.delayed(const Duration(milliseconds: 500));
       if (_player.processingState != ProcessingState.completed) return;
-      if (!_player.hasNext) return;
-      await _player.seekToNext();
-      await _player.play();
+      if (_player.hasNext) {
+        await _player.seekToNext();
+      } else {
+        final fallbackIndex = _player.shuffleModeEnabled
+            ? (_player.effectiveIndices?.first ?? 0)
+            : 0;
+        await _player.seek(null, index: fallbackIndex);
+      }
+      unawaited(_player.play());
     } finally {
       _isDelayedAdvanceInProgress = false;
     }
+  }
+
+  void _auditPlaybackSpeed() {
+    if (!Platform.isWindows) return;
+    if (!_player.playing || _player.processingState != ProcessingState.ready) {
+      _lastSpeedAuditAt = null;
+      _lastSpeedAuditPosition = null;
+      _speedDriftStrikes = 0;
+      return;
+    }
+
+    final now = DateTime.now();
+    final currentPosition = _player.position;
+    final previousAuditAt = _lastSpeedAuditAt;
+    final previousAuditPosition = _lastSpeedAuditPosition;
+
+    _lastSpeedAuditAt = now;
+    _lastSpeedAuditPosition = currentPosition;
+
+    if (previousAuditAt == null || previousAuditPosition == null) return;
+
+    final elapsedMs = now.difference(previousAuditAt).inMilliseconds;
+    if (elapsedMs < 1000) return;
+
+    final advancedMs =
+        currentPosition.inMilliseconds - previousAuditPosition.inMilliseconds;
+
+    // Ignore manual seeks and track changes.
+    if (advancedMs < 0 || advancedMs.abs() > elapsedMs * 5) {
+      _speedDriftStrikes = 0;
+      return;
+    }
+
+    final ratio = advancedMs / elapsedMs;
+    final unstable = ratio < 0.7 || ratio > 1.3;
+    if (!unstable) {
+      _speedDriftStrikes = 0;
+      return;
+    }
+
+    _speedDriftStrikes += 1;
+    if (_speedDriftStrikes < 2) return;
+
+    _speedDriftStrikes = 0;
+    unawaited(_player.setSpeed(1.0));
   }
 
   PlaybackState _mapPlaybackState(AudioPlayer player) {

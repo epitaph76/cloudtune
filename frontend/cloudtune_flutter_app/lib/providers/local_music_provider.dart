@@ -167,6 +167,35 @@ class LocalMusicProvider with ChangeNotifier {
     return id;
   }
 
+  Future<String?> upsertPlaylistByName({
+    required String name,
+    required Set<String> trackPaths,
+  }) async {
+    final trimmedName = name.trim();
+    final cleanedPaths = _validTrackPaths(trackPaths);
+    if (trimmedName.isEmpty || cleanedPaths.isEmpty) {
+      return null;
+    }
+
+    final normalizedName = _normalizePlaylistName(trimmedName);
+    final existing = _playlists.cast<LocalPlaylist?>().firstWhere(
+      (item) =>
+          item != null && _normalizePlaylistName(item.name) == normalizedName,
+      orElse: () => null,
+    );
+
+    if (existing == null) {
+      return createPlaylist(name: trimmedName, trackPaths: cleanedPaths);
+    }
+
+    existing.trackPaths
+      ..clear()
+      ..addAll(cleanedPaths);
+    await _savePlaylists();
+    notifyListeners();
+    return existing.id;
+  }
+
   Future<void> deletePlaylist(String playlistId) async {
     _playlists.removeWhere((item) => item.id == playlistId);
     await _savePlaylists();
@@ -250,6 +279,44 @@ class LocalMusicProvider with ChangeNotifier {
     return true;
   }
 
+  Future<void> ensureTracksLiked(Iterable<String> trackPaths) async {
+    final existing = _selectedFiles.map((file) => file.path).toSet();
+    var changed = false;
+    for (final path in trackPaths) {
+      if (!existing.contains(path)) continue;
+      if (_likedTrackPaths.add(path)) {
+        changed = true;
+      }
+    }
+
+    if (!changed) return;
+    await _saveLikedTracks();
+    notifyListeners();
+  }
+
+  Future<void> syncLikedTracksForCandidates({
+    required Set<String> likedTrackPaths,
+    required Set<String> candidateTrackPaths,
+  }) async {
+    final existing = _selectedFiles.map((file) => file.path).toSet();
+    final normalizedLiked = likedTrackPaths.where(existing.contains).toSet();
+    final normalizedCandidates = candidateTrackPaths
+        .where(existing.contains)
+        .toSet();
+
+    final before = Set<String>.from(_likedTrackPaths);
+    _likedTrackPaths.removeWhere(
+      (path) =>
+          normalizedCandidates.contains(path) &&
+          !normalizedLiked.contains(path),
+    );
+    _likedTrackPaths.addAll(normalizedLiked);
+
+    if (setEquals(before, _likedTrackPaths)) return;
+    await _saveLikedTracks();
+    notifyListeners();
+  }
+
   Set<String> _validTrackPaths(Set<String> rawPaths) {
     final existing = _selectedFiles.map((file) => file.path).toSet();
     return rawPaths.where(existing.contains).toSet();
@@ -303,6 +370,8 @@ class LocalMusicProvider with ChangeNotifier {
     } catch (_) {}
     return '$base|$size';
   }
+
+  String _normalizePlaylistName(String name) => name.trim().toLowerCase();
 
   Future<void> _saveFiles() async {
     try {

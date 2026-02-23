@@ -43,8 +43,8 @@ class ServerMusicScreen extends StatefulWidget {
 }
 
 class _ServerMusicScreenState extends State<ServerMusicScreen> {
-  static const double _storageHeaderControlWidth = 130;
-  static const double _storageHeaderControlHeight = 40;
+  static const double _storageHeaderControlWidth = 156;
+  static const double _storageHeaderControlHeight = 46;
 
   final ApiService _apiService = ApiService();
   final Set<int> _downloadingTrackIds = <int>{};
@@ -55,10 +55,13 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   final Set<int> _loadingCloudPlaylistIds = <int>{};
   final Map<int, List<Track>> _cloudPlaylistTracksCache = <int, List<Track>>{};
   final Map<String, String> _localFileSizeCache = <String, String>{};
+  final Map<String, ({int uploaded, int total})> _playlistUploadProgress =
+      <String, ({int uploaded, int total})>{};
 
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final ScrollController _localTracksScrollController = ScrollController();
 
   _StorageType _storageType = _StorageType.local;
   bool _cloudAuthRegisterMode = false;
@@ -66,6 +69,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   int? _selectedCloudPlaylistId;
   String _localTracksSearchQuery = '';
   String _cloudTracksSearchQuery = '';
+  final Set<String> _selectedLocalTrackPaths = <String>{};
+  String? _lastLocalTracksAutoScrollKey;
   static const double _storageSwipeVelocityThreshold = 280;
 
   static const List<String> _supportedAudioExtensions = <String>[
@@ -81,7 +86,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshCloudData());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final navProvider = context.read<MainNavProvider>();
+      if (_selectedLocalPlaylistId != navProvider.selectedLocalPlaylistId) {
+        _setSelectedLocalPlaylist(
+          navProvider.selectedLocalPlaylistId,
+          syncNav: false,
+        );
+      }
+      _refreshCloudData();
+    });
   }
 
   @override
@@ -89,12 +104,14 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     _emailController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _localTracksScrollController.dispose();
     super.dispose();
   }
 
   Future<void> _refreshCloudData() async {
     if (!mounted) return;
     final cloudMusicProvider = context.read<CloudMusicProvider>();
+    final localMusicProvider = context.read<LocalMusicProvider>();
     await Future.wait([
       cloudMusicProvider.fetchUserLibrary(),
       cloudMusicProvider.fetchUserPlaylists(),
@@ -122,6 +139,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                 .toList();
       }
     }
+
+    await _syncCloudFavoritesLikesToLocal(
+      cloudMusicProvider: cloudMusicProvider,
+      localMusicProvider: localMusicProvider,
+    );
   }
 
   Future<void> _pickLocalFiles() async {
@@ -139,6 +161,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
 
   Future<void> _showUploadOptions() async {
     String t(String key) => AppLocalizations.text(context, key);
+    final showFolderImportOption = Platform.isAndroid;
+    final showAutoScanOption = Platform.isAndroid;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -159,24 +183,26 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                     await _pickLocalFiles();
                   },
                 ),
-                ListTile(
-                  leading: const Icon(Icons.folder_rounded),
-                  title: Text(t('pick_folder')),
-                  subtitle: Text(t('import_from_folder_with_filters')),
-                  onTap: () async {
-                    Navigator.of(sheetContext).pop();
-                    await _pickLocalFolderWithFilters();
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.manage_search_rounded),
-                  title: Text(t('auto_scan_device')),
-                  subtitle: Text(t('find_new_audio_on_device')),
-                  onTap: () async {
-                    Navigator.of(sheetContext).pop();
-                    await _scanDeviceForNewAudioFiles();
-                  },
-                ),
+                if (showFolderImportOption)
+                  ListTile(
+                    leading: const Icon(Icons.folder_rounded),
+                    title: Text(t('pick_folder')),
+                    subtitle: Text(t('import_from_folder_with_filters')),
+                    onTap: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _pickLocalFolderWithFilters();
+                    },
+                  ),
+                if (showAutoScanOption)
+                  ListTile(
+                    leading: const Icon(Icons.manage_search_rounded),
+                    title: Text(t('auto_scan_device')),
+                    subtitle: Text(t('find_new_audio_on_device')),
+                    onTap: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _scanDeviceForNewAudioFiles();
+                    },
+                  ),
               ],
             ),
           ),
@@ -782,14 +808,292 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   }
 
   Future<Directory> _getPersistentDownloadDir() async {
-    final baseExternalDir = await getExternalStorageDirectory();
-    final baseDir = baseExternalDir ?? await getApplicationDocumentsDirectory();
+    Directory baseDir;
+    if (Platform.isAndroid) {
+      final baseExternalDir = await getExternalStorageDirectory();
+      baseDir = baseExternalDir ?? await getApplicationDocumentsDirectory();
+    } else {
+      baseDir = await getApplicationDocumentsDirectory();
+    }
     final cloudTuneDir = Directory(p.join(baseDir.path, 'CloudTune'));
 
     if (!await cloudTuneDir.exists()) {
       await cloudTuneDir.create(recursive: true);
     }
     return cloudTuneDir;
+  }
+
+  String _sanitizeFileName(String name) {
+    final sanitized = name
+        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_')
+        .trim();
+    if (sanitized.isEmpty) {
+      return 'track_${DateTime.now().millisecondsSinceEpoch}.bin';
+    }
+    return sanitized;
+  }
+
+  Future<String> _resolveUniquePath({
+    required Directory dir,
+    required String fileName,
+  }) async {
+    final sanitizedName = _sanitizeFileName(fileName);
+    var candidatePath = p.join(dir.path, sanitizedName);
+    var counter = 1;
+
+    while (await File(candidatePath).exists()) {
+      final base = p.basenameWithoutExtension(sanitizedName);
+      final ext = p.extension(sanitizedName);
+      candidatePath = p.join(dir.path, '$base ($counter)$ext');
+      counter++;
+    }
+    return candidatePath;
+  }
+
+  bool _pathsEqual(String left, String right) {
+    if (Platform.isWindows) {
+      return left.toLowerCase() == right.toLowerCase();
+    }
+    return left == right;
+  }
+
+  bool _isCurrentTrackPath(String? currentPath, String targetPath) {
+    if (currentPath == null) return false;
+    return _pathsEqual(currentPath, targetPath);
+  }
+
+  String _pathSelectionKey(String path) {
+    return Platform.isWindows ? path.toLowerCase() : path;
+  }
+
+  bool _isLocalTrackSelectionMode() => _selectedLocalTrackPaths.isNotEmpty;
+
+  void _clearLocalTrackSelection() {
+    if (_selectedLocalTrackPaths.isEmpty || !mounted) return;
+    setState(() => _selectedLocalTrackPaths.clear());
+  }
+
+  void _startLocalTrackSelection(String trackPath) {
+    if (!mounted) return;
+    setState(() {
+      _selectedLocalTrackPaths
+        ..clear()
+        ..add(trackPath);
+    });
+  }
+
+  void _toggleLocalTrackSelection(String trackPath) {
+    if (!mounted) return;
+    setState(() {
+      if (_selectedLocalTrackPaths.contains(trackPath)) {
+        _selectedLocalTrackPaths.remove(trackPath);
+      } else {
+        _selectedLocalTrackPaths.add(trackPath);
+      }
+    });
+  }
+
+  List<File> _resolveTrackActionTargets({
+    required File anchorTrack,
+    required List<File> playlistTracks,
+  }) {
+    if (_selectedLocalTrackPaths.isEmpty ||
+        !_selectedLocalTrackPaths.contains(anchorTrack.path)) {
+      return <File>[anchorTrack];
+    }
+
+    final selectedKeys = _selectedLocalTrackPaths
+        .map(_pathSelectionKey)
+        .toSet();
+    final uniqueByPath = <String, File>{};
+    for (final file in playlistTracks) {
+      final key = _pathSelectionKey(file.path);
+      if (!selectedKeys.contains(key)) continue;
+      uniqueByPath.putIfAbsent(key, () => file);
+    }
+
+    if (uniqueByPath.isEmpty) {
+      return <File>[anchorTrack];
+    }
+    return uniqueByPath.values.toList();
+  }
+
+  void _setSelectedLocalPlaylist(String playlistId, {bool syncNav = true}) {
+    if (_selectedLocalPlaylistId != playlistId && mounted) {
+      setState(() {
+        _selectedLocalPlaylistId = playlistId;
+        _selectedLocalTrackPaths.clear();
+      });
+    }
+    if (syncNav) {
+      context.read<MainNavProvider>().setSelectedLocalPlaylistId(playlistId);
+    }
+  }
+
+  void _maybeAutoScrollToCurrentLocalTrack({
+    required List<File> visibleLocalTracks,
+    required String? currentTrackPath,
+  }) {
+    if (_storageType != _StorageType.local) return;
+    if (currentTrackPath == null || visibleLocalTracks.isEmpty) return;
+
+    final targetIndex = visibleLocalTracks.indexWhere(
+      (item) => _pathsEqual(item.path, currentTrackPath),
+    );
+    if (targetIndex < 0) return;
+
+    final key =
+        '$_selectedLocalPlaylistId|$currentTrackPath|$targetIndex|${visibleLocalTracks.length}';
+    if (_lastLocalTracksAutoScrollKey == key) return;
+    _lastLocalTracksAutoScrollKey = key;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_localTracksScrollController.hasClients) return;
+      final position = _localTracksScrollController.position;
+      final itemExtent = 84.0;
+      final viewportHeight = position.viewportDimension;
+      final targetOffset =
+          ((targetIndex * itemExtent) - (viewportHeight * 0.35)).clamp(
+            0.0,
+            position.maxScrollExtent,
+          );
+      if ((position.pixels - targetOffset).abs() < 20) return;
+
+      _localTracksScrollController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  bool _isCloudFavoritesPlaylist(Playlist playlist) {
+    if (playlist.isFavorite) return true;
+
+    final normalized = playlist.name.trim().toLowerCase();
+    if (normalized.isEmpty) return false;
+
+    final localizedLiked = AppLocalizations.text(
+      context,
+      'liked_songs',
+    ).trim().toLowerCase();
+
+    return normalized == localizedLiked ||
+        normalized == 'liked songs' ||
+        normalized == 'любимые';
+  }
+
+  String _cloudPlaylistDisplayName(Playlist playlist) {
+    if (_isCloudFavoritesPlaylist(playlist)) {
+      return AppLocalizations.text(context, 'liked_songs');
+    }
+    return playlist.name;
+  }
+
+  String _trackLookupName(String value) {
+    return p.basename(value).trim().toLowerCase();
+  }
+
+  String _normalizePlaylistName(String value) => value.trim().toLowerCase();
+
+  int? _extractSongIdFromUploadResult(Map<String, dynamic> uploadResult) {
+    final rawSongID = uploadResult['data']?['song_id'];
+    if (rawSongID is int) return rawSongID;
+    if (rawSongID is num) return rawSongID.toInt();
+    if (rawSongID is String) return int.tryParse(rawSongID);
+    return null;
+  }
+
+  String _playlistTrackCounterLabel({
+    required String syncKey,
+    required int trackCount,
+  }) {
+    final progress = _playlistUploadProgress[syncKey];
+    if (progress != null) {
+      return '${progress.uploaded}/${progress.total} ${AppLocalizations.text(context, 'tracks')}';
+    }
+    return '$trackCount ${AppLocalizations.text(context, 'tracks')}';
+  }
+
+  Future<void> _syncCloudFavoritesLikesToLocal({
+    required CloudMusicProvider cloudMusicProvider,
+    required LocalMusicProvider localMusicProvider,
+  }) async {
+    final favoritePlaylist = cloudMusicProvider.playlists
+        .cast<Playlist?>()
+        .firstWhere(
+          (item) => item != null && _isCloudFavoritesPlaylist(item),
+          orElse: () => null,
+        );
+    if (favoritePlaylist == null) return;
+
+    final favoriteSongsResult = await _apiService.getPlaylistSongs(
+      favoritePlaylist.id,
+    );
+    if (favoriteSongsResult['success'] != true) return;
+
+    final favoriteSongs = (favoriteSongsResult['songs'] as List<dynamic>)
+        .map((item) => Track.fromJson(item as Map<String, dynamic>))
+        .toList();
+    _cloudPlaylistTracksCache[favoritePlaylist.id] = favoriteSongs;
+
+    final cloudLibraryNames = cloudMusicProvider.tracks
+        .map((item) => _trackLookupName(item.originalFilename ?? item.filename))
+        .toSet();
+    final likedNames = favoriteSongs
+        .map((item) => _trackLookupName(item.originalFilename ?? item.filename))
+        .toSet();
+
+    final candidatePaths = <String>{};
+    final likedPaths = <String>{};
+    for (final file in localMusicProvider.selectedFiles) {
+      final localName = _trackLookupName(file.path);
+      if (!cloudLibraryNames.contains(localName)) continue;
+      candidatePaths.add(file.path);
+      if (likedNames.contains(localName)) {
+        likedPaths.add(file.path);
+      }
+    }
+
+    await localMusicProvider.syncLikedTracksForCandidates(
+      likedTrackPaths: likedPaths,
+      candidateTrackPaths: candidatePaths,
+    );
+  }
+
+  Future<File?> _ensureCloudTrackDownloaded(
+    Track track,
+    CloudMusicProvider cloudMusicProvider,
+  ) async {
+    final fileName = track.originalFilename ?? track.filename;
+    final targetDir = await _getPersistentDownloadDir();
+    final sanitizedName = _sanitizeFileName(fileName);
+    final existingPath = p.join(targetDir.path, sanitizedName);
+    final existingFile = File(existingPath);
+    if (await existingFile.exists()) {
+      final expectedSize = track.filesize;
+      if (expectedSize != null) {
+        final actualSize = await existingFile.length();
+        if (actualSize != expectedSize) {
+          final refreshed = await cloudMusicProvider.downloadTrack(
+            track.id,
+            existingPath,
+          );
+          if (!refreshed) return null;
+        }
+      }
+      return existingFile;
+    }
+
+    final savePath = await _resolveUniquePath(
+      dir: targetDir,
+      fileName: fileName,
+    );
+    final success = await cloudMusicProvider.downloadTrack(track.id, savePath);
+    if (!success) return null;
+    final downloadedFile = File(savePath);
+    if (!await downloadedFile.exists()) return null;
+    return downloadedFile;
   }
 
   Future<void> _downloadTrack(Track track) async {
@@ -801,17 +1105,14 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
 
     try {
       final fileName = track.originalFilename ?? track.filename;
-      final targetDir = await _getPersistentDownloadDir();
-      final savePath = p.join(targetDir.path, fileName);
-
-      final success = await cloudMusicProvider.downloadTrack(
-        track.id,
-        savePath,
+      final downloadedFile = await _ensureCloudTrackDownloaded(
+        track,
+        cloudMusicProvider,
       );
       if (!mounted) return;
 
-      if (success) {
-        await localMusicProvider.addFiles([File(savePath)]);
+      if (downloadedFile != null) {
+        await localMusicProvider.addFiles([downloadedFile]);
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,
@@ -828,21 +1129,25 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     }
   }
 
-  Future<void> _uploadLocalTrack(File file) async {
-    if (_uploadingPaths.contains(file.path)) return;
+  Future<bool> _uploadLocalTrack(File file, {bool silent = false}) async {
+    if (_uploadingPaths.contains(file.path)) return false;
     setState(() => _uploadingPaths.add(file.path));
 
+    var uploaded = false;
     try {
       final result = await _apiService.uploadFile(file);
-      if (!mounted) return;
+      if (!mounted) return false;
 
       if (result['success'] == true) {
+        uploaded = true;
         await _refreshCloudData();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Uploaded: ${p.basename(file.path)}')),
-        );
-      } else {
+        if (!mounted) return uploaded;
+        if (!silent) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Uploaded: ${p.basename(file.path)}')),
+          );
+        }
+      } else if (!silent) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Upload failed: ${result['message']}')),
         );
@@ -852,6 +1157,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
         setState(() => _uploadingPaths.remove(file.path));
       }
     }
+    return uploaded;
   }
 
   Future<void> _submitCloudLogin(AuthProvider authProvider) async {
@@ -976,41 +1282,45 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Text(
-                        t('select_tracks'),
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              t('select_tracks'),
+                              style: textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              setModalState(() {
+                                if (selectedPaths.length ==
+                                    localTracks.length) {
+                                  selectedPaths.clear();
+                                } else {
+                                  selectedPaths
+                                    ..clear()
+                                    ..addAll(
+                                      localTracks.map((file) => file.path),
+                                    );
+                                }
+                              });
+                            },
+                            icon: Icon(
+                              selectedPaths.length == localTracks.length
+                                  ? Icons.deselect_rounded
+                                  : Icons.done_all_rounded,
+                            ),
+                            label: Text(
+                              selectedPaths.length == localTracks.length
+                                  ? t('clear_selection')
+                                  : t('select_all'),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            setModalState(() {
-                              if (selectedPaths.length == localTracks.length) {
-                                selectedPaths.clear();
-                              } else {
-                                selectedPaths
-                                  ..clear()
-                                  ..addAll(
-                                    localTracks.map((file) => file.path),
-                                  );
-                              }
-                            });
-                          },
-                          icon: Icon(
-                            selectedPaths.length == localTracks.length
-                                ? Icons.deselect_rounded
-                                : Icons.done_all_rounded,
-                          ),
-                          label: Text(
-                            selectedPaths.length == localTracks.length
-                                ? t('clear_selection')
-                                : t('select_all'),
-                          ),
-                        ),
-                      ),
                       Expanded(
                         child: ListView.separated(
                           itemCount: localTracks.length,
@@ -1033,7 +1343,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                   }
                                 });
                               },
-                              child: Container(
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOutCubic,
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
                                   color: isSelected
@@ -1067,11 +1379,31 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                         ),
                                       ),
                                     ),
-                                    if (isSelected)
-                                      Icon(
-                                        Icons.check_rounded,
-                                        color: colorScheme.onPrimary,
+                                    AnimatedSwitcher(
+                                      duration: const Duration(
+                                        milliseconds: 180,
                                       ),
+                                      transitionBuilder: (child, animation) {
+                                        return ScaleTransition(
+                                          scale: animation,
+                                          child: FadeTransition(
+                                            opacity: animation,
+                                            child: child,
+                                          ),
+                                        );
+                                      },
+                                      child: isSelected
+                                          ? Icon(
+                                              Icons.check_rounded,
+                                              key: const ValueKey('selected'),
+                                              color: colorScheme.onPrimary,
+                                            )
+                                          : const SizedBox(
+                                              key: ValueKey('not_selected'),
+                                              width: 20,
+                                              height: 20,
+                                            ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -1119,9 +1451,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                 )
                                 .then((playlistId) {
                                   if (!mounted || playlistId == null) return;
-                                  setState(() {
-                                    _selectedLocalPlaylistId = playlistId;
-                                  });
+                                  _setSelectedLocalPlaylist(playlistId);
                                 });
 
                             Navigator.of(sheetContext).pop();
@@ -1143,23 +1473,20 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   void _deleteLocalPlaylist(String playlistId) {
     context.read<LocalMusicProvider>().deletePlaylist(playlistId);
     if (_selectedLocalPlaylistId == playlistId) {
-      setState(() {
-        _selectedLocalPlaylistId = LocalMusicProvider.allPlaylistId;
-      });
+      _setSelectedLocalPlaylist(LocalMusicProvider.allPlaylistId);
     }
   }
 
   Future<void> _uploadLocalPlaylistToCloud({
     required LocalPlaylist playlist,
     required LocalMusicProvider localMusicProvider,
-    required CloudMusicProvider cloudMusicProvider,
   }) async {
     final playlistTracks = localMusicProvider.getTracksForPlaylist(playlist.id);
     await _uploadTracksAsCloudPlaylist(
       syncKey: playlist.id,
       playlistName: playlist.name,
       playlistTracks: playlistTracks,
-      cloudMusicProvider: cloudMusicProvider,
+      isFavorite: false,
     );
   }
 
@@ -1167,14 +1494,15 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     required String playlistId,
     required String playlistName,
     required LocalMusicProvider localMusicProvider,
-    required CloudMusicProvider cloudMusicProvider,
+    bool silent = false,
   }) async {
     final playlistTracks = localMusicProvider.getTracksForPlaylist(playlistId);
     await _uploadTracksAsCloudPlaylist(
       syncKey: 'system_$playlistId',
       playlistName: playlistName,
       playlistTracks: playlistTracks,
-      cloudMusicProvider: cloudMusicProvider,
+      isFavorite: playlistId == LocalMusicProvider.likedPlaylistId,
+      silent: silent,
     );
   }
 
@@ -1182,80 +1510,129 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     required String syncKey,
     required String playlistName,
     required List<File> playlistTracks,
-    required CloudMusicProvider cloudMusicProvider,
+    required bool isFavorite,
+    bool silent = false,
   }) async {
     if (_syncingLocalPlaylistIds.contains(syncKey)) return;
 
     if (playlistTracks.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Playlist "$playlistName" is empty')),
-      );
+      if (!silent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Playlist "$playlistName" is empty')),
+        );
+      }
       return;
     }
 
-    setState(() => _syncingLocalPlaylistIds.add(syncKey));
+    setState(() {
+      _syncingLocalPlaylistIds.add(syncKey);
+      _playlistUploadProgress.remove(syncKey);
+    });
 
     try {
-      // Ensure cloud library is fresh before matching local files.
+      final cloudMusicProvider = context.read<CloudMusicProvider>();
       await cloudMusicProvider.fetchUserLibrary();
-      final cloudByOriginalName = <String, int>{};
-      for (final item in cloudMusicProvider.tracks) {
-        final key = (item.originalFilename ?? item.filename).toLowerCase();
-        cloudByOriginalName[key] = item.id;
+      await cloudMusicProvider.fetchUserPlaylists();
+
+      final cloudSongIdByName = <String, int>{};
+      for (final track in cloudMusicProvider.tracks) {
+        final key = _trackLookupName(track.originalFilename ?? track.filename);
+        cloudSongIdByName.putIfAbsent(key, () => track.id);
       }
 
-      final songIDsInOrder = <int>[];
+      final missingFilesByName = <String, File>{};
       for (final file in playlistTracks) {
-        final fileName = p.basename(file.path).toLowerCase();
-        int? songId = cloudByOriginalName[fileName];
+        final key = _trackLookupName(file.path);
+        if (cloudSongIdByName.containsKey(key)) continue;
+        missingFilesByName.putIfAbsent(key, () => file);
+      }
 
-        if (songId == null) {
-          final uploadResult = await _apiService.uploadFile(file);
-          if (uploadResult['success'] == true) {
-            final rawSongID = uploadResult['data']?['song_id'];
-            if (rawSongID is int) {
-              songId = rawSongID;
-            } else if (rawSongID is num) {
-              songId = rawSongID.toInt();
-            } else if (rawSongID is String) {
-              songId = int.tryParse(rawSongID);
-            }
-            if (songId != null) {
-              cloudByOriginalName[fileName] = songId;
-            }
+      final totalMissing = missingFilesByName.length;
+      if (mounted) {
+        setState(() {
+          _playlistUploadProgress[syncKey] = (uploaded: 0, total: totalMissing);
+        });
+      }
+
+      var uploadedMissing = 0;
+      for (final entry in missingFilesByName.entries) {
+        final uploadResult = await _apiService.uploadFile(entry.value);
+        if (uploadResult['success'] == true) {
+          final uploadedSongId = _extractSongIdFromUploadResult(uploadResult);
+          if (uploadedSongId != null) {
+            cloudSongIdByName[entry.key] = uploadedSongId;
+            uploadedMissing += 1;
           }
         }
-
-        if (songId != null) {
-          songIDsInOrder.add(songId);
+        if (mounted) {
+          setState(() {
+            _playlistUploadProgress[syncKey] = (
+              uploaded: uploadedMissing,
+              total: totalMissing,
+            );
+          });
         }
       }
 
-      if (songIDsInOrder.isEmpty) {
+      final desiredSongIDsInOrder = <int>[];
+      for (final file in playlistTracks) {
+        final key = _trackLookupName(file.path);
+        final songId = cloudSongIdByName[key];
+        if (songId == null) continue;
+        desiredSongIDsInOrder.add(songId);
+      }
+
+      if (desiredSongIDsInOrder.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'No tracks from "$playlistName" were uploaded/matched in cloud',
+        if (!silent) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'No tracks from "$playlistName" were matched in cloud library',
+              ),
             ),
-          ),
-        );
+          );
+        }
         return;
+      }
+
+      final normalizedName = _normalizePlaylistName(playlistName);
+      final existingPlaylist = cloudMusicProvider.playlists
+          .cast<Playlist?>()
+          .firstWhere((item) {
+            if (item == null) return false;
+            if (isFavorite && _isCloudFavoritesPlaylist(item)) return true;
+            return _normalizePlaylistName(item.name) == normalizedName;
+          }, orElse: () => null);
+      if (existingPlaylist != null) {
+        final existingSongsResult = await _apiService.getPlaylistSongs(
+          existingPlaylist.id,
+        );
+        if (existingSongsResult['success'] == true) {
+          _cloudPlaylistTracksCache[existingPlaylist.id] =
+              (existingSongsResult['songs'] as List<dynamic>)
+                  .map((item) => Track.fromJson(item as Map<String, dynamic>))
+                  .toList();
+        }
       }
 
       final createResult = await _apiService.createPlaylist(
         name: playlistName,
         description: 'Synced from local',
+        isFavorite: isFavorite,
+        replaceExisting: true,
       );
       if (createResult['success'] != true) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Cloud playlist create failed: ${createResult['message']}',
+        if (!silent) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Cloud playlist create failed: ${createResult['message']}',
+              ),
             ),
-          ),
-        );
+          );
+        }
         return;
       }
 
@@ -1270,16 +1647,18 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
       }
       if (cloudPlaylistID == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cloud playlist id missing in response'),
-          ),
-        );
+        if (!silent) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cloud playlist id missing in response'),
+            ),
+          );
+        }
         return;
       }
 
       final added = <int>{};
-      for (final songID in songIDsInOrder) {
+      for (final songID in desiredSongIDsInOrder) {
         if (added.contains(songID)) continue;
         added.add(songID);
         await _apiService.addSongToPlaylist(
@@ -1290,12 +1669,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
 
       await _refreshCloudData();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Playlist "$playlistName" synced to cloud')),
-      );
+      if (!silent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Playlist "$playlistName" synced to cloud')),
+        );
+      }
     } finally {
       if (mounted) {
-        setState(() => _syncingLocalPlaylistIds.remove(syncKey));
+        setState(() {
+          _syncingLocalPlaylistIds.remove(syncKey);
+          _playlistUploadProgress.remove(syncKey);
+        });
       }
     }
   }
@@ -1309,6 +1693,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     setState(() => _downloadingCloudPlaylistIds.add(playlist.id));
 
     try {
+      final playlistDisplayName = _cloudPlaylistDisplayName(playlist);
       final result = await _apiService.getPlaylistSongs(playlist.id);
       if (result['success'] != true) {
         if (!mounted) return;
@@ -1328,46 +1713,52 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
       if (songs.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cloud playlist "${playlist.name}" is empty')),
+          SnackBar(
+            content: Text('Cloud playlist "$playlistDisplayName" is empty'),
+          ),
         );
         return;
       }
 
-      final targetDir = await _getPersistentDownloadDir();
       final downloadedFiles = <File>[];
       for (final song in songs) {
-        final fileName = song.originalFilename ?? song.filename;
-        final savePath = p.join(targetDir.path, fileName);
-        final file = File(savePath);
-        if (await file.exists()) {
-          downloadedFiles.add(file);
-          continue;
-        }
-
-        final ok = await cloudMusicProvider.downloadTrack(song.id, savePath);
-        if (ok) {
-          downloadedFiles.add(File(savePath));
-        }
+        final downloaded = await _ensureCloudTrackDownloaded(
+          song,
+          cloudMusicProvider,
+        );
+        if (downloaded == null) continue;
+        downloadedFiles.add(downloaded);
       }
 
       if (downloadedFiles.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('No tracks downloaded from "${playlist.name}"'),
+            content: Text('No tracks downloaded from "$playlistDisplayName"'),
           ),
         );
         return;
       }
 
       await localMusicProvider.addFiles(downloadedFiles);
-      final localPlaylistId = await localMusicProvider.createPlaylist(
-        name: playlist.name,
-        trackPaths: downloadedFiles.map((file) => file.path).toSet(),
-      );
-      if (localPlaylistId != null && mounted) {
+      final downloadedPaths = downloadedFiles.map((file) => file.path).toSet();
+
+      String? localPlaylistId;
+      if (_isCloudFavoritesPlaylist(playlist)) {
+        await localMusicProvider.ensureTracksLiked(downloadedPaths);
+        localPlaylistId = LocalMusicProvider.likedPlaylistId;
+      } else {
+        localPlaylistId = await localMusicProvider.upsertPlaylistByName(
+          name: playlistDisplayName,
+          trackPaths: downloadedPaths,
+        );
+      }
+
+      if (mounted) {
+        _setSelectedLocalPlaylist(
+          localPlaylistId ?? LocalMusicProvider.allPlaylistId,
+        );
         setState(() {
-          _selectedLocalPlaylistId = localPlaylistId;
           _storageType = _StorageType.local;
         });
       }
@@ -1376,7 +1767,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Downloaded "${playlist.name}" (${downloadedFiles.length} tracks)',
+            'Downloaded "$playlistDisplayName" (${downloadedFiles.length} tracks)',
           ),
         ),
       );
@@ -1428,7 +1819,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
         await _refreshCloudData();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Deleted cloud playlist "${playlist.name}"')),
+          SnackBar(
+            content: Text(
+              'Deleted cloud playlist "${_cloudPlaylistDisplayName(playlist)}"',
+            ),
+          ),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1505,7 +1900,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   Future<void> _switchStorageType(_StorageType nextType) async {
     if (_storageType == nextType) return;
 
-    setState(() => _storageType = nextType);
+    setState(() {
+      _storageType = nextType;
+      _selectedLocalTrackPaths.clear();
+    });
 
     final isCloudAuthed = context.read<AuthProvider>().currentUser != null;
     if (nextType == _StorageType.cloud && isCloudAuthed) {
@@ -1513,22 +1911,82 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     }
   }
 
-  Future<void> _removeLocalTrack(File file) async {
+  List<File> _uniqueFilesByPath(Iterable<File> files) {
+    final unique = <String, File>{};
+    for (final file in files) {
+      unique.putIfAbsent(_pathSelectionKey(file.path), () => file);
+    }
+    return unique.values.toList();
+  }
+
+  Future<void> _uploadLocalTracks(List<File> files) async {
+    final uniqueFiles = _uniqueFilesByPath(files);
+    if (uniqueFiles.isEmpty) return;
+
+    var successCount = 0;
+    for (final file in uniqueFiles) {
+      final uploaded = await _uploadLocalTrack(file, silent: true);
+      if (uploaded) successCount += 1;
+    }
+    if (!mounted) return;
+
+    if (uniqueFiles.length == 1) {
+      final fileName = p.basename(uniqueFiles.first.path);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            successCount == 1
+                ? 'Uploaded: $fileName'
+                : 'Upload failed: $fileName',
+          ),
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Uploaded $successCount/${uniqueFiles.length} tracks'),
+      ),
+    );
+    _clearLocalTrackSelection();
+  }
+
+  Future<void> _removeLocalTracks(
+    List<File> files, {
+    bool showSummary = true,
+  }) async {
     final localMusicProvider = context.read<LocalMusicProvider>();
-    await localMusicProvider.removeFile(file);
-    _localFileSizeCache.remove(file.path);
+    final uniqueFiles = _uniqueFilesByPath(files);
+    if (uniqueFiles.isEmpty) return;
+
+    for (final file in uniqueFiles) {
+      await localMusicProvider.removeFile(file);
+      _localFileSizeCache.remove(file.path);
+      _selectedLocalTrackPaths.remove(file.path);
+    }
+
     final playlists = localMusicProvider.playlists;
     if (_selectedLocalPlaylistId != LocalMusicProvider.allPlaylistId &&
         _selectedLocalPlaylistId != LocalMusicProvider.likedPlaylistId &&
         playlists.every((item) => item.id != _selectedLocalPlaylistId)) {
-      setState(() {
-        _selectedLocalPlaylistId = LocalMusicProvider.allPlaylistId;
-      });
+      _setSelectedLocalPlaylist(LocalMusicProvider.allPlaylistId);
+    }
+
+    if (!mounted) return;
+    if (showSummary && uniqueFiles.length > 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deleted ${uniqueFiles.length} tracks')),
+      );
+      _clearLocalTrackSelection();
     }
   }
 
-  Future<void> _addTrackToPlaylist(File file) async {
+  Future<void> _addTracksToPlaylist(List<File> files) async {
     final localMusicProvider = context.read<LocalMusicProvider>();
+    final uniqueFiles = _uniqueFilesByPath(files);
+    if (uniqueFiles.isEmpty) return;
+
     final playlists = localMusicProvider.playlists;
 
     if (playlists.isEmpty) {
@@ -1551,7 +2009,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
             separatorBuilder: (context, index) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final playlist = playlists[index];
-              final alreadyAdded = playlist.trackPaths.contains(file.path);
+              final alreadyAddedCount = uniqueFiles
+                  .where((file) => playlist.trackPaths.contains(file.path))
+                  .length;
               final navigator = Navigator.of(sheetContext);
               final scaffoldMessenger = ScaffoldMessenger.of(this.context);
               return ListTile(
@@ -1564,28 +2024,40 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                 subtitle: Text(
                   '${playlist.trackPaths.length} ${AppLocalizations.text(context, 'tracks')}',
                 ),
-                trailing: alreadyAdded
+                trailing: alreadyAddedCount == uniqueFiles.length
                     ? const Icon(Icons.check_rounded)
                     : const Icon(Icons.add_rounded),
-                onTap: () {
-                  localMusicProvider
-                      .addTrackToPlaylist(
-                        playlistId: playlist.id,
-                        trackPath: file.path,
-                      )
-                      .then((ok) {
-                        if (!mounted) return;
-                        navigator.pop();
-                        scaffoldMessenger.showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              ok
-                                  ? 'Added to "${playlist.name}"'
-                                  : 'Track already in "${playlist.name}"',
-                            ),
-                          ),
-                        );
-                      });
+                onTap: () async {
+                  var addedCount = 0;
+                  for (final file in uniqueFiles) {
+                    final ok = await localMusicProvider.addTrackToPlaylist(
+                      playlistId: playlist.id,
+                      trackPath: file.path,
+                    );
+                    if (ok) addedCount += 1;
+                  }
+                  if (!mounted) return;
+                  navigator.pop();
+                  if (uniqueFiles.length == 1) {
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          addedCount == 1
+                              ? 'Added to "${playlist.name}"'
+                              : 'Track already in "${playlist.name}"',
+                        ),
+                      ),
+                    );
+                  } else {
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Added $addedCount/${uniqueFiles.length} to "${playlist.name}"',
+                        ),
+                      ),
+                    );
+                    _clearLocalTrackSelection();
+                  }
                 },
               );
             },
@@ -1595,38 +2067,76 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     );
   }
 
-  Future<void> _removeTrackFromCurrentPlaylist(File file) async {
+  Future<void> _removeTracksFromCurrentPlaylist(List<File> files) async {
     if (_selectedLocalPlaylistId == LocalMusicProvider.allPlaylistId) return;
 
     final localMusicProvider = context.read<LocalMusicProvider>();
+    final uniqueFiles = _uniqueFilesByPath(files);
+    if (uniqueFiles.isEmpty) return;
+
     if (_selectedLocalPlaylistId == LocalMusicProvider.likedPlaylistId) {
-      if (!localMusicProvider.isTrackLiked(file.path)) return;
-      final changed = await localMusicProvider.toggleTrackLike(file.path);
-      if (!mounted || !changed) return;
+      var changedCount = 0;
+      for (final file in uniqueFiles) {
+        if (!localMusicProvider.isTrackLiked(file.path)) continue;
+        final changed = await localMusicProvider.toggleTrackLike(file.path);
+        if (changed) changedCount += 1;
+      }
+      if (!mounted || changedCount == 0) return;
+
+      final authProvider = context.read<AuthProvider>();
+      if (authProvider.currentUser != null) {
+        await _uploadSystemPlaylistToCloud(
+          playlistId: LocalMusicProvider.likedPlaylistId,
+          playlistName: AppLocalizations.text(context, 'liked_songs'),
+          localMusicProvider: localMusicProvider,
+          silent: true,
+        );
+      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Track removed from liked songs')),
+        SnackBar(
+          content: Text(
+            uniqueFiles.length == 1
+                ? 'Track removed from liked songs'
+                : 'Removed like from $changedCount tracks',
+          ),
+        ),
       );
+      if (uniqueFiles.length > 1) {
+        _clearLocalTrackSelection();
+      }
       return;
     }
 
-    final removed = await localMusicProvider.removeTrackFromPlaylist(
-      playlistId: _selectedLocalPlaylistId,
-      trackPath: file.path,
-    );
-    if (!mounted || !removed) return;
+    var removedCount = 0;
+    for (final file in uniqueFiles) {
+      final removed = await localMusicProvider.removeTrackFromPlaylist(
+        playlistId: _selectedLocalPlaylistId,
+        trackPath: file.path,
+      );
+      if (removed) removedCount += 1;
+    }
+    if (!mounted || removedCount == 0) return;
 
     final existsSelectedPlaylist = localMusicProvider.playlists.any(
       (item) => item.id == _selectedLocalPlaylistId,
     );
     if (!existsSelectedPlaylist) {
-      setState(
-        () => _selectedLocalPlaylistId = LocalMusicProvider.allPlaylistId,
-      );
+      _setSelectedLocalPlaylist(LocalMusicProvider.allPlaylistId);
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Track removed from playlist')),
+      SnackBar(
+        content: Text(
+          uniqueFiles.length == 1
+              ? 'Track removed from playlist'
+              : 'Removed $removedCount tracks from playlist',
+        ),
+      ),
     );
+    if (uniqueFiles.length > 1) {
+      _clearLocalTrackSelection();
+    }
   }
 
   @override
@@ -1635,8 +2145,20 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     final textTheme = Theme.of(context).textTheme;
     String t(String key) => AppLocalizations.text(context, key);
 
-    return Consumer3<CloudMusicProvider, LocalMusicProvider, AuthProvider>(
-      builder: (context, cloudMusicProvider, localMusicProvider, authProvider, child) {
+    return Consumer4<
+      CloudMusicProvider,
+      LocalMusicProvider,
+      AuthProvider,
+      MainNavProvider
+    >(
+      builder: (context, cloudMusicProvider, localMusicProvider, authProvider, navProvider, child) {
+        final navSelectedPlaylistId = navProvider.selectedLocalPlaylistId;
+        if (navSelectedPlaylistId != _selectedLocalPlaylistId) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _setSelectedLocalPlaylist(navSelectedPlaylistId, syncNav: false);
+          });
+        }
         final currentTrackPath = context.select<AudioPlayerProvider, String?>(
           (provider) => provider.currentTrackPath,
         );
@@ -1651,6 +2173,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
         final visibleLocalTracks = playlistLocalTracks
             .where(_matchesLocalTrackSearch)
             .toList();
+        _maybeAutoScrollToCurrentLocalTrack(
+          visibleLocalTracks: visibleLocalTracks,
+          currentTrackPath: currentTrackPath,
+        );
         final cloudTracks = cloudMusicProvider.tracks;
         final cloudPlaylists = cloudMusicProvider.playlists;
         final baseCloudTracks = _selectedCloudPlaylistId == null
@@ -1664,6 +2190,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
             _selectedCloudPlaylistId != null &&
             _loadingCloudPlaylistIds.contains(_selectedCloudPlaylistId);
         final isCloudAuthed = authProvider.currentUser != null;
+        final isWindowsDesktop =
+            Theme.of(context).platform == TargetPlatform.windows &&
+            MediaQuery.of(context).size.width >= 920;
 
         return Scaffold(
           body: SafeArea(
@@ -1704,6 +2233,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                         ? _handleLocalTracksSwipe
                         : _handleCloudTracksSwipe,
                     child: ListView(
+                      physics: isWindowsDesktop
+                          ? const NeverScrollableScrollPhysics()
+                          : const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
                       children: [
                         Row(
@@ -1761,19 +2293,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                   ),
                                 ),
                               ),
-                              FilledButton(
-                                onPressed: _showUploadOptions,
-                                style: FilledButton.styleFrom(
-                                  minimumSize: const Size(
-                                    _storageHeaderControlWidth,
-                                    _storageHeaderControlHeight,
-                                  ),
-                                  maximumSize: const Size(
-                                    _storageHeaderControlWidth,
-                                    _storageHeaderControlHeight,
-                                  ),
-                                ),
-                                child: Text(t('upload')),
+                              _GradientHeaderButton(
+                                width: _storageHeaderControlWidth,
+                                height: _storageHeaderControlHeight,
+                                label: t('upload'),
+                                onTap: _showUploadOptions,
                               ),
                             ],
                           ),
@@ -1800,15 +2324,21 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                   return _SelectablePlaylistCard(
                                     playlistName: t('all_songs'),
                                     trackCount: localTracks.length,
+                                    trackCounterText: _playlistTrackCounterLabel(
+                                      syncKey:
+                                          'system_${LocalMusicProvider.allPlaylistId}',
+                                      trackCount: localTracks.length,
+                                    ),
+                                    isTransferring: _syncingLocalPlaylistIds
+                                        .contains(
+                                          'system_${LocalMusicProvider.allPlaylistId}',
+                                        ),
                                     selected:
                                         _selectedLocalPlaylistId ==
                                         LocalMusicProvider.allPlaylistId,
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedLocalPlaylistId =
-                                            LocalMusicProvider.allPlaylistId;
-                                      });
-                                    },
+                                    onTap: () => _setSelectedLocalPlaylist(
+                                      LocalMusicProvider.allPlaylistId,
+                                    ),
                                     menuActions: [
                                       _PlaylistMenuAction(
                                         label:
@@ -1825,8 +2355,6 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                               playlistName: t('all_songs'),
                                               localMusicProvider:
                                                   localMusicProvider,
-                                              cloudMusicProvider:
-                                                  cloudMusicProvider,
                                             ),
                                       ),
                                     ],
@@ -1838,15 +2366,22 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                     playlistName: t('liked_songs'),
                                     trackCount:
                                         localMusicProvider.likedTracksCount,
+                                    trackCounterText: _playlistTrackCounterLabel(
+                                      syncKey:
+                                          'system_${LocalMusicProvider.likedPlaylistId}',
+                                      trackCount:
+                                          localMusicProvider.likedTracksCount,
+                                    ),
+                                    isTransferring: _syncingLocalPlaylistIds
+                                        .contains(
+                                          'system_${LocalMusicProvider.likedPlaylistId}',
+                                        ),
                                     selected:
                                         _selectedLocalPlaylistId ==
                                         LocalMusicProvider.likedPlaylistId,
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedLocalPlaylistId =
-                                            LocalMusicProvider.likedPlaylistId;
-                                      });
-                                    },
+                                    onTap: () => _setSelectedLocalPlaylist(
+                                      LocalMusicProvider.likedPlaylistId,
+                                    ),
                                     menuActions: [
                                       _PlaylistMenuAction(
                                         label:
@@ -1863,8 +2398,6 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                               playlistName: t('liked_songs'),
                                               localMusicProvider:
                                                   localMusicProvider,
-                                              cloudMusicProvider:
-                                                  cloudMusicProvider,
                                             ),
                                       ),
                                     ],
@@ -1883,13 +2416,16 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                 return _SelectablePlaylistCard(
                                   playlistName: playlist.name,
                                   trackCount: trackCount,
+                                  trackCounterText: _playlistTrackCounterLabel(
+                                    syncKey: playlist.id,
+                                    trackCount: trackCount,
+                                  ),
+                                  isTransferring: _syncingLocalPlaylistIds
+                                      .contains(playlist.id),
                                   selected:
                                       _selectedLocalPlaylistId == playlist.id,
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedLocalPlaylistId = playlist.id;
-                                    });
-                                  },
+                                  onTap: () =>
+                                      _setSelectedLocalPlaylist(playlist.id),
                                   menuActions: [
                                     _PlaylistMenuAction(
                                       label:
@@ -1902,7 +2438,6 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                       onTap: () => _uploadLocalPlaylistToCloud(
                                         playlist: playlist,
                                         localMusicProvider: localMusicProvider,
-                                        cloudMusicProvider: cloudMusicProvider,
                                       ),
                                     ),
                                     _PlaylistMenuAction(
@@ -1931,11 +2466,22 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                   Row(
                                     children: [
                                       Text(
-                                        t('tracks'),
+                                        _isLocalTrackSelectionMode()
+                                            ? '${_selectedLocalTrackPaths.length} ${t('tracks')}'
+                                            : t('tracks'),
                                         style: textTheme.titleMedium?.copyWith(
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
+                                      if (_isLocalTrackSelectionMode()) ...[
+                                        const SizedBox(width: 6),
+                                        IconButton(
+                                          onPressed: _clearLocalTrackSelection,
+                                          visualDensity: VisualDensity.compact,
+                                          icon: const Icon(Icons.close_rounded),
+                                          tooltip: 'Clear selection',
+                                        ),
+                                      ],
                                       const SizedBox(width: 10),
                                       Expanded(
                                         child: TextField(
@@ -1967,6 +2513,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                           MediaQuery.of(context).size.height *
                                           0.56,
                                       child: ListView.separated(
+                                        controller:
+                                            _localTracksScrollController,
                                         primary: false,
                                         itemCount: visibleLocalTracks.length,
                                         separatorBuilder: (context, index) =>
@@ -1976,23 +2524,41 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                               visibleLocalTracks[index];
                                           final uploading = _uploadingPaths
                                               .contains(file.path);
-                                          final selected =
-                                              currentTrackPath == file.path;
+                                          final isCurrentTrack =
+                                              _isCurrentTrackPath(
+                                                currentTrackPath,
+                                                file.path,
+                                              );
+                                          final isSelectionMode =
+                                              _isLocalTrackSelectionMode();
+                                          final isSelectionChecked =
+                                              _selectedLocalTrackPaths.contains(
+                                                file.path,
+                                              );
 
                                           return _TrackRow(
                                             title: p.basename(file.path),
                                             subtitle: _localFileSize(file),
-                                            selected: selected,
+                                            isUploading: uploading,
+                                            selected: isCurrentTrack,
+                                            batchSelected: isSelectionChecked,
                                             isPlaying:
-                                                selected &&
+                                                isCurrentTrack &&
                                                 isCurrentTrackPlaying,
                                             onTap: () {
+                                              if (isSelectionMode) {
+                                                _toggleLocalTrackSelection(
+                                                  file.path,
+                                                );
+                                                return;
+                                              }
                                               final targetIndex =
                                                   playlistLocalTracks
                                                       .indexWhere(
-                                                        (item) =>
-                                                            item.path ==
-                                                            file.path,
+                                                        (item) => _pathsEqual(
+                                                          item.path,
+                                                          file.path,
+                                                        ),
                                                       );
                                               if (targetIndex < 0) return;
                                               context
@@ -2002,6 +2568,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                                     targetIndex,
                                                   );
                                             },
+                                            onLongPress: () =>
+                                                _startLocalTrackSelection(
+                                                  file.path,
+                                                ),
                                             menuItems: [
                                               _TrackMenuAction(
                                                 label: uploading
@@ -2010,15 +2580,33 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                                 icon:
                                                     Icons.cloud_upload_rounded,
                                                 enabled: !uploading,
-                                                onTap: () =>
-                                                    _uploadLocalTrack(file),
+                                                onTap: () async {
+                                                  final targets =
+                                                      _resolveTrackActionTargets(
+                                                        anchorTrack: file,
+                                                        playlistTracks:
+                                                            playlistLocalTracks,
+                                                      );
+                                                  await _uploadLocalTracks(
+                                                    targets,
+                                                  );
+                                                },
                                               ),
                                               _TrackMenuAction(
                                                 label: t('add_to_playlist'),
                                                 icon:
                                                     Icons.playlist_add_rounded,
-                                                onTap: () =>
-                                                    _addTrackToPlaylist(file),
+                                                onTap: () async {
+                                                  final targets =
+                                                      _resolveTrackActionTargets(
+                                                        anchorTrack: file,
+                                                        playlistTracks:
+                                                            playlistLocalTracks,
+                                                      );
+                                                  await _addTracksToPlaylist(
+                                                    targets,
+                                                  );
+                                                },
                                               ),
                                               if (_selectedLocalPlaylistId !=
                                                   LocalMusicProvider
@@ -2032,16 +2620,32 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                                       : 'Remove from playlist',
                                                   icon: Icons
                                                       .playlist_remove_rounded,
-                                                  onTap: () =>
-                                                      _removeTrackFromCurrentPlaylist(
-                                                        file,
-                                                      ),
+                                                  onTap: () async {
+                                                    final targets =
+                                                        _resolveTrackActionTargets(
+                                                          anchorTrack: file,
+                                                          playlistTracks:
+                                                              playlistLocalTracks,
+                                                        );
+                                                    await _removeTracksFromCurrentPlaylist(
+                                                      targets,
+                                                    );
+                                                  },
                                                 ),
                                               _TrackMenuAction(
                                                 label: t('delete'),
                                                 icon: Icons.delete_rounded,
-                                                onTap: () =>
-                                                    _removeLocalTrack(file),
+                                                onTap: () async {
+                                                  final targets =
+                                                      _resolveTrackActionTargets(
+                                                        anchorTrack: file,
+                                                        playlistTracks:
+                                                            playlistLocalTracks,
+                                                      );
+                                                  await _removeLocalTracks(
+                                                    targets,
+                                                  );
+                                                },
                                               ),
                                             ],
                                           );
@@ -2094,7 +2698,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                     alignment: Alignment.center,
                                     decoration: BoxDecoration(
                                       color: colorScheme.surface,
-                                      borderRadius: BorderRadius.circular(20),
+                                      borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
                                         color: colorScheme.outline,
                                       ),
@@ -2104,7 +2708,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                       children: [
                                         Icon(
                                           Icons.cloud_rounded,
-                                          size: 20,
+                                          size: 22,
                                           color: colorScheme.primary,
                                         ),
                                         const SizedBox(width: 8),
@@ -2152,8 +2756,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                         item.id,
                                       );
                                   return _PlaylistCard(
-                                    playlistName: item.name,
+                                    playlistName: _cloudPlaylistDisplayName(
+                                      item,
+                                    ),
                                     trackCount: item.songCount ?? 0,
+                                    isTransferring: downloadingPlaylist,
                                     selected:
                                         _selectedCloudPlaylistId == item.id,
                                     onTap: () => _selectCloudPlaylist(item.id),
@@ -2242,38 +2849,48 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
                                         message: t('no_cloud_tracks_yet'),
                                       )
                                     else
-                                      ...visibleCloudTracks.map((track) {
-                                        final downloading = _downloadingTrackIds
-                                            .contains(track.id);
-                                        return Padding(
-                                          padding: const EdgeInsets.only(
-                                            bottom: 10,
-                                          ),
-                                          child: _TrackRow(
-                                            title:
-                                                track.originalFilename ??
-                                                track.filename,
-                                            subtitle: _cloudFileSize(track),
-                                            menuItems: [
-                                              _TrackMenuAction(
-                                                label: downloading
-                                                    ? 'Downloading...'
-                                                    : t('download'),
-                                                icon: Icons.download_rounded,
-                                                enabled: !downloading,
-                                                onTap: () =>
-                                                    _downloadTrack(track),
-                                              ),
-                                              _TrackMenuAction(
-                                                label: t('delete'),
-                                                icon: Icons.delete_rounded,
-                                                onTap: () =>
-                                                    _deleteCloudTrack(track),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      }),
+                                      SizedBox(
+                                        height:
+                                            MediaQuery.of(context).size.height *
+                                            0.56,
+                                        child: ListView.separated(
+                                          primary: false,
+                                          itemCount: visibleCloudTracks.length,
+                                          separatorBuilder: (context, index) =>
+                                              const SizedBox(height: 10),
+                                          itemBuilder: (context, index) {
+                                            final track =
+                                                visibleCloudTracks[index];
+                                            final downloading =
+                                                _downloadingTrackIds.contains(
+                                                  track.id,
+                                                );
+                                            return _TrackRow(
+                                              title:
+                                                  track.originalFilename ??
+                                                  track.filename,
+                                              subtitle: _cloudFileSize(track),
+                                              menuItems: [
+                                                _TrackMenuAction(
+                                                  label: downloading
+                                                      ? 'Downloading...'
+                                                      : t('download'),
+                                                  icon: Icons.download_rounded,
+                                                  enabled: !downloading,
+                                                  onTap: () =>
+                                                      _downloadTrack(track),
+                                                ),
+                                                _TrackMenuAction(
+                                                  label: t('delete'),
+                                                  icon: Icons.delete_rounded,
+                                                  onTap: () =>
+                                                      _deleteCloudTrack(track),
+                                                ),
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -2378,11 +2995,53 @@ class _ModeButton extends StatelessWidget {
   }
 }
 
-class _PlaylistCard extends StatelessWidget {
+class _GradientHeaderButton extends StatelessWidget {
+  const _GradientHeaderButton({
+    required this.width,
+    required this.height,
+    required this.label,
+    required this.onTap,
+  });
+
+  final double width;
+  final double height;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: width,
+        height: height,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          gradient: LinearGradient(
+            colors: [colorScheme.primary, colorScheme.tertiary],
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: colorScheme.onPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaylistCard extends StatefulWidget {
   const _PlaylistCard({
     required this.playlistName,
     required this.trackCount,
     this.selected = false,
+    this.isTransferring = false,
     this.onTap,
     this.menuActions,
   });
@@ -2390,90 +3049,119 @@ class _PlaylistCard extends StatelessWidget {
   final String playlistName;
   final int trackCount;
   final bool selected;
+  final bool isTransferring;
   final VoidCallback? onTap;
   final List<_PlaylistMenuAction>? menuActions;
+
+  @override
+  State<_PlaylistCard> createState() => _PlaylistCardState();
+}
+
+class _PlaylistCardState extends State<_PlaylistCard> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Container(
-        width: 150,
-        margin: const EdgeInsets.only(right: 10),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: selected ? colorScheme.secondary : colorScheme.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: selected ? colorScheme.primary : colorScheme.outline,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 150,
+          margin: const EdgeInsets.only(right: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: widget.selected
+                ? colorScheme.secondary
+                : colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: widget.selected || _hovered
+                  ? colorScheme.primary
+                  : colorScheme.outline,
+            ),
           ),
-        ),
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: LinearGradient(
-                      colors: [colorScheme.primary, colorScheme.tertiary],
+          child: Stack(
+            children: [
+              if (widget.isTransferring)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: _PlaylistTransferWaveFill(
+                        primaryColor: colorScheme.primary,
+                        secondaryColor: colorScheme.tertiary,
+                      ),
                     ),
                   ),
-                  child: Icon(
-                    Icons.queue_music_rounded,
-                    color: colorScheme.onPrimary,
+                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      gradient: LinearGradient(
+                        colors: [colorScheme.primary, colorScheme.tertiary],
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.queue_music_rounded,
+                      color: colorScheme.onPrimary,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                Text(
-                  playlistName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                  const Spacer(),
+                  Text(
+                    widget.playlistName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '$trackCount ${AppLocalizations.text(context, 'tracks')}',
-                  style: textTheme.labelMedium?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.65),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${widget.trackCount} ${AppLocalizations.text(context, 'tracks')}',
+                    style: textTheme.labelMedium?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.65),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            if (menuActions != null && menuActions!.isNotEmpty)
-              Positioned(
-                right: -6,
-                top: -6,
-                child: PopupMenuButton<int>(
-                  icon: const Icon(Icons.more_vert_rounded, size: 18),
-                  onSelected: (index) => menuActions![index].onTap(),
-                  itemBuilder: (context) {
-                    return List.generate(menuActions!.length, (index) {
-                      final action = menuActions![index];
-                      return PopupMenuItem<int>(
-                        value: index,
-                        child: Row(
-                          children: [
-                            Icon(action.icon, size: 18),
-                            const SizedBox(width: 8),
-                            Text(action.label),
-                          ],
-                        ),
-                      );
-                    });
-                  },
-                ),
+                ],
               ),
-          ],
+              if (widget.menuActions != null && widget.menuActions!.isNotEmpty)
+                Positioned(
+                  right: -6,
+                  top: -6,
+                  child: PopupMenuButton<int>(
+                    icon: const Icon(Icons.more_vert_rounded, size: 18),
+                    onSelected: (index) => widget.menuActions![index].onTap(),
+                    itemBuilder: (context) {
+                      return List.generate(widget.menuActions!.length, (index) {
+                        final action = widget.menuActions![index];
+                        return PopupMenuItem<int>(
+                          value: index,
+                          child: Row(
+                            children: [
+                              Icon(action.icon, size: 18),
+                              const SizedBox(width: 8),
+                              Text(action.label),
+                            ],
+                          ),
+                        );
+                      });
+                    },
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -2492,143 +3180,321 @@ class _PlaylistMenuAction {
   final VoidCallback onTap;
 }
 
-class _CreatePlaylistCard extends StatelessWidget {
+class _CreatePlaylistCard extends StatefulWidget {
   const _CreatePlaylistCard({required this.onTap, required this.label});
 
   final VoidCallback onTap;
   final String label;
 
   @override
+  State<_CreatePlaylistCard> createState() => _CreatePlaylistCardState();
+}
+
+class _CreatePlaylistCardState extends State<_CreatePlaylistCard> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Container(
-        width: 150,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: colorScheme.outline),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: colorScheme.secondary,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(Icons.add_rounded, color: colorScheme.primary),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 150,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: _hovered ? colorScheme.primary : colorScheme.outline,
             ),
-            const SizedBox(height: 10),
-            Text(label),
-          ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: colorScheme.secondary,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.add_rounded, color: colorScheme.primary),
+              ),
+              const SizedBox(height: 10),
+              Text(widget.label),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _SelectablePlaylistCard extends StatelessWidget {
+class _PlaylistTransferWaveFill extends StatefulWidget {
+  const _PlaylistTransferWaveFill({
+    required this.primaryColor,
+    required this.secondaryColor,
+  });
+
+  final Color primaryColor;
+  final Color secondaryColor;
+
+  @override
+  State<_PlaylistTransferWaveFill> createState() =>
+      _PlaylistTransferWaveFillState();
+}
+
+class _PlaylistTransferWaveFillState extends State<_PlaylistTransferWaveFill>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3600),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final wavePhase = _controller.value * 2 * math.pi;
+        final fillLevel =
+            0.15 + Curves.easeInOut.transform(_controller.value) * 0.85;
+
+        return FractionallySizedBox(
+          alignment: Alignment.bottomCenter,
+          heightFactor: fillLevel.clamp(0.0, 1.0),
+          child: CustomPaint(
+            painter: _PlaylistTransferWavePainter(
+              phase: wavePhase,
+              baseColor: widget.primaryColor.withValues(alpha: 0.14),
+              waveColor: widget.primaryColor.withValues(alpha: 0.22),
+              crestColor: widget.secondaryColor.withValues(alpha: 0.30),
+            ),
+            child: const SizedBox.expand(),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PlaylistTransferWavePainter extends CustomPainter {
+  const _PlaylistTransferWavePainter({
+    required this.phase,
+    required this.baseColor,
+    required this.waveColor,
+    required this.crestColor,
+  });
+
+  final double phase;
+  final Color baseColor;
+  final Color waveColor;
+  final Color crestColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+
+    canvas.drawRect(Offset.zero & size, Paint()..color = baseColor);
+
+    final crestY = size.height * 0.16;
+    final firstAmplitude = math.max(2.0, size.height * 0.08);
+    final secondAmplitude = math.max(1.6, size.height * 0.055);
+
+    Path buildWave(double phaseShift, double amplitude) {
+      final path = Path();
+      final startY = crestY + math.sin(phaseShift) * amplitude;
+      path.moveTo(0, startY);
+
+      final width = size.width;
+      for (double x = 0; x <= width; x += 4) {
+        final normalized = width == 0 ? 0.0 : x / width;
+        final y =
+            crestY +
+            math.sin((normalized * 2 * math.pi) + phaseShift) * amplitude;
+        path.lineTo(x, y);
+      }
+      path.lineTo(width, size.height);
+      path.lineTo(0, size.height);
+      path.close();
+      return path;
+    }
+
+    canvas.drawPath(
+      buildWave(phase, firstAmplitude),
+      Paint()..color = waveColor,
+    );
+    canvas.drawPath(
+      buildWave(phase + (math.pi / 1.8), secondAmplitude),
+      Paint()..color = crestColor,
+    );
+
+    final sheenPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Colors.white.withValues(alpha: 0.16), Colors.transparent],
+        stops: const [0.0, 0.55],
+      ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, sheenPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PlaylistTransferWavePainter oldDelegate) {
+    return oldDelegate.phase != phase ||
+        oldDelegate.baseColor != baseColor ||
+        oldDelegate.waveColor != waveColor ||
+        oldDelegate.crestColor != crestColor;
+  }
+}
+
+class _SelectablePlaylistCard extends StatefulWidget {
   const _SelectablePlaylistCard({
     required this.playlistName,
     required this.trackCount,
+    this.trackCounterText,
     required this.selected,
+    this.isTransferring = false,
     required this.onTap,
     this.menuActions,
   });
 
   final String playlistName;
   final int trackCount;
+  final String? trackCounterText;
   final bool selected;
+  final bool isTransferring;
   final VoidCallback onTap;
   final List<_PlaylistMenuAction>? menuActions;
+
+  @override
+  State<_SelectablePlaylistCard> createState() =>
+      _SelectablePlaylistCardState();
+}
+
+class _SelectablePlaylistCardState extends State<_SelectablePlaylistCard> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Container(
-        width: 150,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: selected ? colorScheme.secondary : colorScheme.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: selected ? colorScheme.primary : colorScheme.outline,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 150,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: widget.selected
+                ? colorScheme.secondary
+                : colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: widget.selected || _hovered
+                  ? colorScheme.primary
+                  : colorScheme.outline,
+            ),
           ),
-        ),
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: LinearGradient(
-                      colors: [colorScheme.primary, colorScheme.tertiary],
+          child: Stack(
+            children: [
+              if (widget.isTransferring)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: _PlaylistTransferWaveFill(
+                        primaryColor: colorScheme.primary,
+                        secondaryColor: colorScheme.tertiary,
+                      ),
                     ),
                   ),
-                  child: Icon(
-                    Icons.queue_music_rounded,
-                    color: colorScheme.onPrimary,
+                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      gradient: LinearGradient(
+                        colors: [colorScheme.primary, colorScheme.tertiary],
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.queue_music_rounded,
+                      color: colorScheme.onPrimary,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                Text(
-                  playlistName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                  const Spacer(),
+                  Text(
+                    widget.playlistName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '$trackCount ${AppLocalizations.text(context, 'tracks')}',
-                  style: textTheme.labelMedium?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.65),
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.trackCounterText ??
+                        '${widget.trackCount} ${AppLocalizations.text(context, 'tracks')}',
+                    style: textTheme.labelMedium?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.65),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            if (menuActions != null && menuActions!.isNotEmpty)
-              Positioned(
-                right: -6,
-                top: -6,
-                child: PopupMenuButton<int>(
-                  icon: const Icon(Icons.more_vert_rounded, size: 18),
-                  onSelected: (index) => menuActions![index].onTap(),
-                  itemBuilder: (context) {
-                    return List.generate(menuActions!.length, (index) {
-                      final action = menuActions![index];
-                      return PopupMenuItem<int>(
-                        value: index,
-                        child: Row(
-                          children: [
-                            Icon(action.icon, size: 18),
-                            const SizedBox(width: 8),
-                            Text(action.label),
-                          ],
-                        ),
-                      );
-                    });
-                  },
-                ),
+                ],
               ),
-          ],
+              if (widget.menuActions != null && widget.menuActions!.isNotEmpty)
+                Positioned(
+                  right: -6,
+                  top: -6,
+                  child: PopupMenuButton<int>(
+                    icon: const Icon(Icons.more_vert_rounded, size: 18),
+                    onSelected: (index) => widget.menuActions![index].onTap(),
+                    itemBuilder: (context) {
+                      return List.generate(widget.menuActions!.length, (index) {
+                        final action = widget.menuActions![index];
+                        return PopupMenuItem<int>(
+                          value: index,
+                          child: Row(
+                            children: [
+                              Icon(action.icon, size: 18),
+                              const SizedBox(width: 8),
+                              Text(action.label),
+                            ],
+                          ),
+                        );
+                      });
+                    },
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -2649,98 +3515,277 @@ class _TrackMenuAction {
   final bool enabled;
 }
 
-class _TrackRow extends StatelessWidget {
+class _TrackRow extends StatefulWidget {
   const _TrackRow({
     required this.title,
     required this.subtitle,
     required this.menuItems,
     this.selected = false,
+    this.batchSelected = false,
+    this.isUploading = false,
     this.isPlaying = false,
     this.onTap,
+    this.onLongPress,
   });
 
   final String title;
   final String subtitle;
   final List<_TrackMenuAction> menuItems;
   final bool selected;
+  final bool batchSelected;
+  final bool isUploading;
   final bool isPlaying;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  State<_TrackRow> createState() => _TrackRowState();
+}
+
+class _TrackRowState extends State<_TrackRow> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: selected ? colorScheme.secondary : colorScheme.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: selected ? colorScheme.primary : colorScheme.outline,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                gradient: LinearGradient(
-                  colors: [colorScheme.primary, colorScheme.tertiary],
-                ),
-              ),
-              child: isPlaying
-                  ? _AnimatedPlayingBars(color: colorScheme.onPrimary)
-                  : Icon(
-                      Icons.music_note_rounded,
-                      color: colorScheme.onPrimary,
-                    ),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 170),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: widget.batchSelected
+                ? colorScheme.primary.withValues(alpha: 0.14)
+                : widget.selected
+                ? colorScheme.secondary
+                : colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: widget.batchSelected
+                  ? colorScheme.primary
+                  : widget.selected || _hovered
+                  ? colorScheme.primary
+                  : colorScheme.outline,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: textTheme.labelMedium?.copyWith(
-                      color: colorScheme.onSurface.withValues(alpha: 0.65),
+          ),
+          child: Stack(
+            children: [
+              if (widget.isUploading)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: _TrackUploadWaveFill(
+                        primaryColor: colorScheme.primary,
+                        secondaryColor: colorScheme.tertiary,
+                      ),
                     ),
+                  ),
+                ),
+              Row(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      gradient: LinearGradient(
+                        colors: [colorScheme.primary, colorScheme.tertiary],
+                      ),
+                    ),
+                    child: widget.isPlaying
+                        ? _AnimatedPlayingBars(color: colorScheme.onPrimary)
+                        : Icon(
+                            Icons.music_note_rounded,
+                            color: colorScheme.onPrimary,
+                          ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.subtitle,
+                          style: textTheme.labelMedium?.copyWith(
+                            color: colorScheme.onSurface.withValues(
+                              alpha: 0.65,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (widget.batchSelected)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 2),
+                      child: Icon(
+                        Icons.check_circle_rounded,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  PopupMenuButton<int>(
+                    icon: const Icon(Icons.more_vert_rounded),
+                    onSelected: (index) => widget.menuItems[index].onTap(),
+                    itemBuilder: (context) {
+                      return List.generate(widget.menuItems.length, (index) {
+                        final item = widget.menuItems[index];
+                        return PopupMenuItem<int>(
+                          value: index,
+                          enabled: item.enabled,
+                          child: Row(
+                            children: [
+                              Icon(item.icon, size: 18),
+                              const SizedBox(width: 8),
+                              Text(item.label),
+                            ],
+                          ),
+                        );
+                      });
+                    },
                   ),
                 ],
               ),
-            ),
-            PopupMenuButton<int>(
-              icon: const Icon(Icons.more_vert_rounded),
-              onSelected: (index) => menuItems[index].onTap(),
-              itemBuilder: (context) {
-                return List.generate(menuItems.length, (index) {
-                  final item = menuItems[index];
-                  return PopupMenuItem<int>(
-                    value: index,
-                    enabled: item.enabled,
-                    child: Row(
-                      children: [
-                        Icon(item.icon, size: 18),
-                        const SizedBox(width: 8),
-                        Text(item.label),
-                      ],
-                    ),
-                  );
-                });
-              },
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+}
+
+class _TrackUploadWaveFill extends StatefulWidget {
+  const _TrackUploadWaveFill({
+    required this.primaryColor,
+    required this.secondaryColor,
+  });
+
+  final Color primaryColor;
+  final Color secondaryColor;
+
+  @override
+  State<_TrackUploadWaveFill> createState() => _TrackUploadWaveFillState();
+}
+
+class _TrackUploadWaveFillState extends State<_TrackUploadWaveFill>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = Curves.easeInOut.transform(_controller.value);
+        final widthFactor = 0.2 + (t * 0.8);
+        final phase = _controller.value * 2 * math.pi;
+        return FractionallySizedBox(
+          alignment: Alignment.centerLeft,
+          widthFactor: widthFactor.clamp(0.0, 1.0),
+          child: CustomPaint(
+            painter: _TrackUploadWavePainter(
+              phase: phase,
+              baseColor: widget.primaryColor.withValues(alpha: 0.1),
+              waveColor: widget.primaryColor.withValues(alpha: 0.17),
+              crestColor: widget.secondaryColor.withValues(alpha: 0.24),
+            ),
+            child: const SizedBox.expand(),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TrackUploadWavePainter extends CustomPainter {
+  const _TrackUploadWavePainter({
+    required this.phase,
+    required this.baseColor,
+    required this.waveColor,
+    required this.crestColor,
+  });
+
+  final double phase;
+  final Color baseColor;
+  final Color waveColor;
+  final Color crestColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+
+    canvas.drawRect(Offset.zero & size, Paint()..color = baseColor);
+
+    Path buildVerticalWave(double localPhase, double baseX, double amp) {
+      final path = Path();
+      final startX = baseX + (math.sin(localPhase) * amp);
+      path.moveTo(startX, 0);
+
+      final height = size.height;
+      for (double y = 0; y <= height; y += 3) {
+        final normalized = height == 0 ? 0.0 : y / height;
+        final x =
+            baseX + (math.sin((normalized * 2 * math.pi) + localPhase) * amp);
+        path.lineTo(x, y);
+      }
+      path.lineTo(0, size.height);
+      path.lineTo(0, 0);
+      path.close();
+      return path;
+    }
+
+    canvas.drawPath(
+      buildVerticalWave(
+        phase,
+        size.width * 0.78,
+        math.max(1.3, size.width * 0.06),
+      ),
+      Paint()..color = waveColor,
+    );
+    canvas.drawPath(
+      buildVerticalWave(
+        phase + (math.pi / 1.5),
+        size.width * 0.62,
+        math.max(1.0, size.width * 0.045),
+      ),
+      Paint()..color = crestColor,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrackUploadWavePainter oldDelegate) {
+    return oldDelegate.phase != phase ||
+        oldDelegate.baseColor != baseColor ||
+        oldDelegate.waveColor != waveColor ||
+        oldDelegate.crestColor != crestColor;
   }
 }
 

@@ -43,6 +43,7 @@ func createSongsTable() {
 		original_filename VARCHAR(255) NOT NULL,
 		filepath VARCHAR(500) NOT NULL,
 		filesize BIGINT NOT NULL,
+		content_hash VARCHAR(64),
 		duration INTEGER,
 		artist VARCHAR(255),
 		title VARCHAR(255),
@@ -60,6 +61,7 @@ func createSongsTable() {
 		log.Fatal("Failed to create songs table:", err)
 	}
 
+	ensureSongsSchema()
 	fmt.Println("Songs table created successfully")
 }
 
@@ -71,6 +73,7 @@ func createPlaylistsTable() {
 		description TEXT,
 		owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 		is_public BOOLEAN DEFAULT FALSE,
+		is_favorite BOOLEAN DEFAULT FALSE,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
@@ -81,6 +84,7 @@ func createPlaylistsTable() {
 		log.Fatal("Failed to create playlists table:", err)
 	}
 
+	ensurePlaylistsSchema()
 	fmt.Println("Playlists table created successfully")
 }
 
@@ -122,4 +126,28 @@ func createUserLibraryTable() {
 	}
 
 	fmt.Println("User_library table created successfully")
+}
+
+func ensureSongsSchema() {
+	if _, err := DB.Exec(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)`); err != nil {
+		log.Fatal("Failed to ensure songs.content_hash column:", err)
+	}
+
+	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS songs_content_hash_idx ON songs(content_hash)`); err != nil {
+		log.Fatal("Failed to ensure songs content hash index:", err)
+	}
+}
+
+func ensurePlaylistsSchema() {
+	if _, err := DB.Exec(`ALTER TABLE playlists ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE`); err != nil {
+		log.Fatal("Failed to ensure playlists.is_favorite column:", err)
+	}
+
+	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS playlists_owner_normalized_name_idx ON playlists(owner_id, lower(name))`); err != nil {
+		log.Fatal("Failed to ensure playlists normalized-name index:", err)
+	}
+
+	if _, err := DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS playlists_owner_favorite_unique ON playlists(owner_id) WHERE is_favorite = TRUE`); err != nil {
+		log.Fatal("Failed to ensure playlists favorite uniqueness index:", err)
+	}
 }

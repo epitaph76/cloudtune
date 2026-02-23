@@ -7,9 +7,48 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+const (
+	defaultFavoritesPlaylistName        = "Liked songs"
+	defaultFavoritesPlaylistDescription = "System favorites playlist"
+)
+
+func ensureFavoritesPlaylist(userID int) error {
+	db := database.DB
+
+	var existingID int
+	err := db.QueryRow(
+		`SELECT id FROM playlists WHERE owner_id = $1 AND is_favorite = TRUE ORDER BY id ASC LIMIT 1`,
+		userID,
+	).Scan(&existingID)
+	if err == nil {
+		return nil
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+
+	_, err = db.Exec(
+		`INSERT INTO playlists (name, description, owner_id, is_public, is_favorite)
+		 VALUES ($1, $2, $3, FALSE, TRUE)`,
+		defaultFavoritesPlaylistName,
+		defaultFavoritesPlaylistDescription,
+		userID,
+	)
+	if err == nil {
+		return nil
+	}
+
+	// Handle a possible race from another concurrent request.
+	return db.QueryRow(
+		`SELECT id FROM playlists WHERE owner_id = $1 AND is_favorite = TRUE ORDER BY id ASC LIMIT 1`,
+		userID,
+	).Scan(&existingID)
+}
 
 // CreatePlaylist creates a new playlist
 func CreatePlaylist(c *gin.Context) {
@@ -27,9 +66,11 @@ func CreatePlaylist(c *gin.Context) {
 	}
 
 	var req struct {
-		Name        string  `json:"name" binding:"required"`
-		Description *string `json:"description"`
-		IsPublic    *bool   `json:"is_public"`
+		Name            string  `json:"name"`
+		Description     *string `json:"description"`
+		IsPublic        *bool   `json:"is_public"`
+		IsFavorite      *bool   `json:"is_favorite"`
+		ReplaceExisting *bool   `json:"replace_existing"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -37,32 +78,174 @@ func CreatePlaylist(c *gin.Context) {
 		return
 	}
 
+	playlistName := strings.TrimSpace(req.Name)
 	isPublic := false
 	if req.IsPublic != nil {
 		isPublic = *req.IsPublic
 	}
 
-	db := database.DB
-	query := `INSERT INTO playlists (name, description, owner_id, is_public) 
-			  VALUES ($1, $2, $3, $4) RETURNING id`
-	
-	var playlistID int
-	err := db.QueryRow(query, req.Name, req.Description, userID, isPublic).Scan(&playlistID)
-	if err != nil {
-		log.Printf("Error creating playlist: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating playlist"})
+	isFavorite := req.IsFavorite != nil && *req.IsFavorite
+	replaceExisting := req.ReplaceExisting != nil && *req.ReplaceExisting
+
+	if playlistName == "" && isFavorite {
+		playlistName = defaultFavoritesPlaylistName
+	}
+	if playlistName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Playlist name is required"})
 		return
 	}
 
+	db := database.DB
+
+	var existingPlaylistID int
+	playlistExists := false
+
+	if isFavorite {
+		err := db.QueryRow(
+			`SELECT id FROM playlists WHERE owner_id = $1 AND is_favorite = TRUE ORDER BY id ASC LIMIT 1`,
+			userID,
+		).Scan(&existingPlaylistID)
+		if err != nil && err != sql.ErrNoRows {
+			log.Printf("Error looking up favorite playlist: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking existing playlist"})
+			return
+		}
+		if err == nil {
+			playlistExists = true
+		}
+	}
+
+	if !playlistExists {
+		err := db.QueryRow(
+			`SELECT id
+			 FROM playlists
+			 WHERE owner_id = $1 AND lower(name) = lower($2)
+			 ORDER BY id ASC
+			 LIMIT 1`,
+			userID,
+			playlistName,
+		).Scan(&existingPlaylistID)
+		if err != nil && err != sql.ErrNoRows {
+			log.Printf("Error looking up playlist by name: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking existing playlist"})
+			return
+		}
+		if err == nil {
+			playlistExists = true
+		}
+	}
+
+	var playlist models.Playlist
+	var description sql.NullString
+
+	if playlistExists {
+		tx, err := db.Begin()
+		if err != nil {
+			log.Printf("Error starting playlist transaction: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error updating playlist"})
+			return
+		}
+		defer tx.Rollback()
+
+		updateQuery := `
+			UPDATE playlists
+			SET
+				name = $1,
+				description = COALESCE($2, description),
+				is_public = $3,
+				is_favorite = is_favorite OR $4,
+				updated_at = CURRENT_TIMESTAMP
+			WHERE id = $5
+			RETURNING id, name, description, owner_id, is_public, is_favorite, created_at, updated_at
+		`
+		err = tx.QueryRow(
+			updateQuery,
+			playlistName,
+			req.Description,
+			isPublic,
+			isFavorite,
+			existingPlaylistID,
+		).Scan(
+			&playlist.ID,
+			&playlist.Name,
+			&description,
+			&playlist.OwnerID,
+			&playlist.IsPublic,
+			&playlist.IsFavorite,
+			&playlist.CreatedAt,
+			&playlist.UpdatedAt,
+		)
+		if err != nil {
+			log.Printf("Error updating playlist: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error updating playlist"})
+			return
+		}
+
+		if replaceExisting {
+			if _, err := tx.Exec(`DELETE FROM playlist_songs WHERE playlist_id = $1`, playlist.ID); err != nil {
+				log.Printf("Error clearing existing playlist songs: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error replacing playlist songs"})
+				return
+			}
+		}
+
+		if err := tx.Commit(); err != nil {
+			log.Printf("Error committing playlist transaction: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error updating playlist"})
+			return
+		}
+	} else {
+		insertQuery := `
+			INSERT INTO playlists (name, description, owner_id, is_public, is_favorite)
+			VALUES ($1, $2, $3, $4, $5)
+			RETURNING id, name, description, owner_id, is_public, is_favorite, created_at, updated_at
+		`
+		err := db.QueryRow(
+			insertQuery,
+			playlistName,
+			req.Description,
+			userID,
+			isPublic,
+			isFavorite,
+		).Scan(
+			&playlist.ID,
+			&playlist.Name,
+			&description,
+			&playlist.OwnerID,
+			&playlist.IsPublic,
+			&playlist.IsFavorite,
+			&playlist.CreatedAt,
+			&playlist.UpdatedAt,
+		)
+		if err != nil {
+			log.Printf("Error creating playlist: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating playlist"})
+			return
+		}
+	}
+
+	if description.Valid {
+		playlist.Description = &description.String
+	}
+
+	message := "Playlist created successfully"
+	if playlistExists {
+		message = "Playlist updated successfully"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"message":     "Playlist created successfully",
-		"playlist_id": playlistID,
+		"message":     message,
+		"playlist_id": playlist.ID,
+		"created":     !playlistExists,
 		"playlist": gin.H{
-			"id":          playlistID,
-			"name":        req.Name,
-			"description": req.Description,
-			"is_public":   isPublic,
-			"owner_id":    userID,
+			"id":          playlist.ID,
+			"name":        playlist.Name,
+			"description": playlist.Description,
+			"is_public":   playlist.IsPublic,
+			"is_favorite": playlist.IsFavorite,
+			"owner_id":    playlist.OwnerID,
+			"created_at":  playlist.CreatedAt,
+			"updated_at":  playlist.UpdatedAt,
 		},
 	})
 }
@@ -83,17 +266,23 @@ func GetUserPlaylists(c *gin.Context) {
 	}
 
 	db := database.DB
-	
+
+	if err := ensureFavoritesPlaylist(userID); err != nil {
+		log.Printf("Error ensuring favorites playlist: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error ensuring favorites playlist"})
+		return
+	}
+
 	query := `
-		SELECT p.id, p.name, p.description, p.owner_id, p.is_public, p.created_at, p.updated_at,
+		SELECT p.id, p.name, p.description, p.owner_id, p.is_public, p.is_favorite, p.created_at, p.updated_at,
 		       COUNT(ps.song_id)::int AS song_count
 		FROM playlists p
 		LEFT JOIN playlist_songs ps ON ps.playlist_id = p.id
 		WHERE p.owner_id = $1
-		GROUP BY p.id, p.name, p.description, p.owner_id, p.is_public, p.created_at, p.updated_at
-		ORDER BY p.created_at DESC
+		GROUP BY p.id, p.name, p.description, p.owner_id, p.is_public, p.is_favorite, p.created_at, p.updated_at
+		ORDER BY p.is_favorite DESC, p.created_at DESC
 	`
-	
+
 	rows, err := db.Query(query, userID)
 	if err != nil {
 		log.Printf("Error retrieving playlists: %v", err)
@@ -107,13 +296,14 @@ func GetUserPlaylists(c *gin.Context) {
 		var playlist models.Playlist
 		var description sql.NullString
 		var songCount int
-		
+
 		err := rows.Scan(
 			&playlist.ID,
 			&playlist.Name,
 			&description,
 			&playlist.OwnerID,
 			&playlist.IsPublic,
+			&playlist.IsFavorite,
 			&playlist.CreatedAt,
 			&playlist.UpdatedAt,
 			&songCount,
@@ -123,12 +313,12 @@ func GetUserPlaylists(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error scanning playlist"})
 			return
 		}
-		
+
 		if description.Valid {
 			playlist.Description = &description.String
 		}
 		playlist.SongCount = &songCount
-		
+
 		playlists = append(playlists, playlist)
 	}
 
@@ -161,8 +351,9 @@ func DeletePlaylist(c *gin.Context) {
 	db := database.DB
 
 	var ownerID int
-	checkQuery := `SELECT owner_id FROM playlists WHERE id = $1`
-	err = db.QueryRow(checkQuery, playlistID).Scan(&ownerID)
+	var isFavorite bool
+	checkQuery := `SELECT owner_id, is_favorite FROM playlists WHERE id = $1`
+	err = db.QueryRow(checkQuery, playlistID).Scan(&ownerID, &isFavorite)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})
@@ -175,6 +366,11 @@ func DeletePlaylist(c *gin.Context) {
 
 	if ownerID != userID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to delete this playlist"})
+		return
+	}
+
+	if isFavorite {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "System favorites playlist cannot be deleted"})
 		return
 	}
 
@@ -361,22 +557,22 @@ func GetPlaylistSongs(c *gin.Context) {
 		models.Song
 		Position int `json:"position"`
 	}
-	
+
 	var songs []PlaylistSongWithDetails
 	for rows.Next() {
 		var song PlaylistSongWithDetails
 		var artist, title, album, genre sql.NullString
 		var year sql.NullInt64
-		
-		err := rows.Scan(&song.ID, &song.Filename, &song.OriginalFilename, &song.Filesize, 
-						 &artist, &title, &album, &genre, &year, 
-						 &song.MimeType, &song.UploadDate, &song.Position)
+
+		err := rows.Scan(&song.ID, &song.Filename, &song.OriginalFilename, &song.Filesize,
+			&artist, &title, &album, &genre, &year,
+			&song.MimeType, &song.UploadDate, &song.Position)
 		if err != nil {
 			log.Printf("Error scanning playlist song: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error scanning playlist song"})
 			return
 		}
-		
+
 		// Устанавливаем значения, если они не равны NULL
 		if artist.Valid {
 			song.Artist = &artist.String
@@ -394,7 +590,7 @@ func GetPlaylistSongs(c *gin.Context) {
 			yearVal := int(year.Int64)
 			song.Year = &yearVal
 		}
-		
+
 		songs = append(songs, song)
 	}
 

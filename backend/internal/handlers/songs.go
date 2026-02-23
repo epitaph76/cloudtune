@@ -3,7 +3,9 @@ package handlers
 import (
 	"cloudtune/internal/database"
 	"cloudtune/internal/models"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -17,23 +19,55 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func linkSongToUserLibrary(db *sql.DB, userID int, songID int) (bool, error) {
+	result, err := db.Exec(
+		`INSERT INTO user_library (user_id, song_id)
+		 VALUES ($1, $2)
+		 ON CONFLICT (user_id, song_id) DO NOTHING`,
+		userID,
+		songID,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, nil
+	}
+
+	return rowsAffected > 0, nil
+}
+
+func computeFileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
 // UploadSong handles uploading a new song
 func UploadSong(c *gin.Context) {
-	// Получаем ID пользователя из контекста
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 
-	// userID уже преобразован в int в middleware
 	userID, ok := userIDInterface.(int)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
 		return
 	}
 
-	// Получаем загруженный файл
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "File is required"})
@@ -41,7 +75,6 @@ func UploadSong(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// Проверяем тип файла
 	buffer := make([]byte, 512)
 	_, err = file.Read(buffer)
 	if err != nil {
@@ -49,7 +82,6 @@ func UploadSong(c *gin.Context) {
 		return
 	}
 
-	// Сбросим указатель файла обратно к началу
 	_, err = file.Seek(0, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error resetting file pointer"})
@@ -62,7 +94,149 @@ func UploadSong(c *gin.Context) {
 		return
 	}
 
-	// Создаем директорию для хранения файлов, если не существует
+	// Hash the content first. If the song already exists on server, only grant access.
+	hasher := sha256.New()
+	fileSize, err := io.Copy(hasher, file)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Error reading file for deduplication"})
+		return
+	}
+	contentHash := hex.EncodeToString(hasher.Sum(nil))
+
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error resetting file pointer"})
+		return
+	}
+
+	db := database.DB
+	var existingSong models.Song
+	existingSongQuery := `
+		SELECT id, filename, original_filename, filepath, filesize, mime_type
+		FROM songs
+		WHERE content_hash = $1
+		ORDER BY id ASC
+		LIMIT 1
+	`
+	err = db.QueryRow(existingSongQuery, contentHash).Scan(
+		&existingSong.ID,
+		&existingSong.Filename,
+		&existingSong.OriginalFilename,
+		&existingSong.Filepath,
+		&existingSong.Filesize,
+		&existingSong.MimeType,
+	)
+	if err == nil {
+		addedToLibrary, linkErr := linkSongToUserLibrary(db, userID, existingSong.ID)
+		if linkErr != nil {
+			log.Printf("Error linking existing song to user library: %v", linkErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error linking song to user library"})
+			return
+		}
+
+		message := "Song already exists on server. Access granted"
+		if !addedToLibrary {
+			message = "Song already exists in your library"
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":      message,
+			"song_id":      existingSong.ID,
+			"deduplicated": true,
+			"song": gin.H{
+				"id":                existingSong.ID,
+				"filename":          existingSong.Filename,
+				"original_filename": existingSong.OriginalFilename,
+				"filesize":          existingSong.Filesize,
+				"mime_type":         existingSong.MimeType,
+			},
+		})
+		return
+	}
+	if err != sql.ErrNoRows {
+		log.Printf("Error checking song deduplication: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking existing song"})
+		return
+	}
+
+	// Fallback for legacy rows where content_hash is still empty.
+	legacyRows, err := db.Query(
+		`SELECT id, filename, original_filename, filepath, filesize, mime_type, COALESCE(content_hash, '')
+		 FROM songs
+		 WHERE filesize = $1
+		 ORDER BY id ASC`,
+		fileSize,
+	)
+	if err != nil {
+		log.Printf("Error loading legacy dedupe candidates: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking legacy songs"})
+		return
+	}
+	defer legacyRows.Close()
+
+	legacyFound := false
+	for legacyRows.Next() {
+		var candidate models.Song
+		var candidateHash string
+
+		if err := legacyRows.Scan(
+			&candidate.ID,
+			&candidate.Filename,
+			&candidate.OriginalFilename,
+			&candidate.Filepath,
+			&candidate.Filesize,
+			&candidate.MimeType,
+			&candidateHash,
+		); err != nil {
+			log.Printf("Error scanning legacy dedupe candidate: %v", err)
+			continue
+		}
+
+		if candidateHash == "" {
+			computedHash, hashErr := computeFileSHA256(candidate.Filepath)
+			if hashErr != nil {
+				log.Printf("Error hashing legacy file %s: %v", candidate.Filepath, hashErr)
+				continue
+			}
+			candidateHash = computedHash
+			_, _ = db.Exec(`UPDATE songs SET content_hash = $1 WHERE id = $2`, candidateHash, candidate.ID)
+		}
+
+		if candidateHash != contentHash {
+			continue
+		}
+
+		addedToLibrary, linkErr := linkSongToUserLibrary(db, userID, candidate.ID)
+		if linkErr != nil {
+			log.Printf("Error linking legacy song to user library: %v", linkErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error linking song to user library"})
+			return
+		}
+
+		message := "Song already exists on server. Access granted"
+		if !addedToLibrary {
+			message = "Song already exists in your library"
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":      message,
+			"song_id":      candidate.ID,
+			"deduplicated": true,
+			"song": gin.H{
+				"id":                candidate.ID,
+				"filename":          candidate.Filename,
+				"original_filename": candidate.OriginalFilename,
+				"filesize":          candidate.Filesize,
+				"mime_type":         candidate.MimeType,
+			},
+		})
+		legacyFound = true
+		break
+	}
+	if legacyFound {
+		return
+	}
+
 	uploadDir := "./uploads/songs/"
 	err = os.MkdirAll(uploadDir, os.ModePerm)
 	if err != nil {
@@ -70,13 +244,11 @@ func UploadSong(c *gin.Context) {
 		return
 	}
 
-	// Генерируем уникальное имя файла
-	timestamp := time.Now().Unix()
+	timestamp := time.Now().UnixNano()
 	extension := filepath.Ext(header.Filename)
 	uniqueFilename := fmt.Sprintf("%d_%d%s", userID, timestamp, extension)
 	filePath := filepath.Join(uploadDir, uniqueFilename)
 
-	// Сохраняем файл на диск
 	out, err := os.Create(filePath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error saving file"})
@@ -84,43 +256,47 @@ func UploadSong(c *gin.Context) {
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, file)
-	if err != nil {
+	if _, err = io.Copy(out, file); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error copying file"})
 		return
 	}
 
-	// Сохраняем информацию о песне в базе данных
 	song := models.Song{
 		Filename:         uniqueFilename,
 		OriginalFilename: header.Filename,
 		Filepath:         filePath,
-		Filesize:         header.Size,
+		Filesize:         fileSize,
+		ContentHash:      &contentHash,
 		MimeType:         mimeType,
 		UploaderID:       &userID,
 		UploadDate:       time.Now(),
 	}
 
-	// Вставка в базу данных
-	db := database.DB
-	query := `INSERT INTO songs (filename, original_filename, filepath, filesize, mime_type, uploader_id) 
-			  VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
+	insertSongQuery := `
+		INSERT INTO songs (filename, original_filename, filepath, filesize, content_hash, mime_type, uploader_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id
+	`
 
 	var songID int
-	err = db.QueryRow(query, song.Filename, song.OriginalFilename, song.Filepath,
-		song.Filesize, song.MimeType, song.UploaderID).Scan(&songID)
-
+	err = db.QueryRow(
+		insertSongQuery,
+		song.Filename,
+		song.OriginalFilename,
+		song.Filepath,
+		song.Filesize,
+		song.ContentHash,
+		song.MimeType,
+		song.UploaderID,
+	).Scan(&songID)
 	if err != nil {
 		log.Printf("Error inserting song: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error saving song"})
-		// Удаляем файл, если не удалось сохранить в базу
-		os.Remove(filePath)
+		_ = os.Remove(filePath)
 		return
 	}
 
-	// Добавляем песню в библиотеку пользователя
-	addToUserLibraryQuery := `INSERT INTO user_library (user_id, song_id) VALUES ($1, $2)`
-	_, err = db.Exec(addToUserLibraryQuery, userID, songID)
+	_, err = linkSongToUserLibrary(db, userID, songID)
 	if err != nil {
 		log.Printf("Error adding song to user library: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error adding song to user library"})

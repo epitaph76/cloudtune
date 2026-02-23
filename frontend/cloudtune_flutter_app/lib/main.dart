@@ -1,6 +1,9 @@
 import 'package:audio_service/audio_service.dart';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/audio_player_provider.dart';
@@ -15,13 +18,22 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/server_music_screen.dart';
+import 'screens/windows_desktop_shell.dart';
 import 'services/audio_handler.dart';
 import 'utils/app_localizations.dart';
+import 'widgets/now_playing_wave_background.dart';
 
 late final MyAudioHandler audioHandler;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+    JustAudioMediaKit.ensureInitialized(
+      windows: true,
+      linux: true,
+      macOS: true,
+    );
+  }
 
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
@@ -62,7 +74,7 @@ class MyApp extends StatelessWidget {
       child: Consumer2<ThemeProvider, LanguageProvider>(
         builder: (context, themeProvider, languageProvider, child) {
           return MaterialApp(
-            title: 'CloudTune',
+            title: 'Cloudtune',
             debugShowCheckedModeBanner: false,
             theme: themeProvider.lightTheme,
             darkTheme: themeProvider.darkTheme,
@@ -146,23 +158,29 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final navProvider = context.watch<MainNavProvider>();
+    final isNowPlaying = context.select<AudioPlayerProvider, bool>(
+      (provider) => provider.playing,
+    );
     final selectedIndex = navProvider.selectedIndex;
     String t(String key) => AppLocalizations.text(context, key);
     final labels = [t('player_tab'), t('storage_tab')];
+    final navItems = List.generate(
+      _navIcons.length,
+      (index) => _MainNavItem(icon: _navIcons[index], label: labels[index]),
+    );
+    final useWindowsLayout = _useWindowsLayout(context);
+
+    if (useWindowsLayout) {
+      return const WindowsDesktopShell();
+    }
 
     return Scaffold(
-      body: PageView(
-        controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(),
-        onPageChanged: (index) {
-          final provider = context.read<MainNavProvider>();
-          if (provider.selectedIndex != index) {
-            provider.setIndex(index);
-          }
-        },
-        children: _screens,
+      body: NowPlayingWaveBackground(
+        isActive: isNowPlaying,
+        child: _buildPageView(),
       ),
       bottomNavigationBar: SafeArea(
         top: false,
@@ -176,13 +194,10 @@ class _MainScreenState extends State<MainScreen> {
           ),
           child: Row(
             children: List.generate(
-              _navIcons.length,
+              navItems.length,
               (index) => Expanded(
                 child: _BottomNavButton(
-                  item: _MainNavItem(
-                    icon: _navIcons[index],
-                    label: labels[index],
-                  ),
+                  item: navItems[index],
                   selected: selectedIndex == index,
                   onTap: () => navProvider.setIndex(index),
                 ),
@@ -191,6 +206,25 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  bool _useWindowsLayout(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    return defaultTargetPlatform == TargetPlatform.windows && width >= 920;
+  }
+
+  Widget _buildPageView() {
+    return PageView(
+      controller: _pageController,
+      physics: const NeverScrollableScrollPhysics(),
+      onPageChanged: (index) {
+        final provider = context.read<MainNavProvider>();
+        if (provider.selectedIndex != index) {
+          provider.setIndex(index);
+        }
+      },
+      children: _screens,
     );
   }
 }
