@@ -59,6 +59,7 @@ func main() {
 		protectedRoutes.GET("/playlists", handlers.GetUserPlaylists)
 		protectedRoutes.DELETE("/playlists/:playlist_id", handlers.DeletePlaylist)
 		protectedRoutes.POST("/playlists/:playlist_id/songs/:song_id", handlers.AddSongToPlaylist)
+		protectedRoutes.POST("/playlists/:playlist_id/songs/bulk", handlers.AddSongsToPlaylistBulk)
 		protectedRoutes.GET("/playlists/:playlist_id/songs", handlers.GetPlaylistSongs)
 	}
 

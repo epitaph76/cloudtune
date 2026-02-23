@@ -205,6 +205,55 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> addSongsToPlaylistBulk({
+    required int playlistId,
+    required List<int> songIds,
+  }) async {
+    final normalized = <int>[];
+    final seen = <int>{};
+    for (final id in songIds) {
+      if (id <= 0 || !seen.add(id)) continue;
+      normalized.add(id);
+    }
+    if (normalized.isEmpty) {
+      return {
+        'success': false,
+        'message': 'No valid songs to add',
+      };
+    }
+
+    try {
+      final options = await _getAuthOptions();
+      final response = await _requestWithFallback(
+        method: 'POST',
+        path: '/api/playlists/$playlistId/songs/bulk',
+        data: {'song_ids': normalized},
+        options: options,
+      );
+
+      final data = _mapOrEmpty(response.data);
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'added_count': data['added_count'] ?? 0,
+          'skipped_existing': data['skipped_existing'] ?? 0,
+          'skipped_not_in_library': data['skipped_not_in_library'] ?? 0,
+          'data': data,
+        };
+      }
+
+      return {'success': false, 'message': 'Failed to add songs to playlist'};
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Failed to add songs to playlist',
+        ),
+      };
+    }
+  }
+
   Future<Map<String, dynamic>> getPlaylistSongs(int playlistId) async {
     try {
       final options = await _getAuthOptions();

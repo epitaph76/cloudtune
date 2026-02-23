@@ -3,7 +3,7 @@
 Telegram-бот для мониторинга CloudTune backend через защищенные Monitoring API-эндпоинты.
 
 ## Что умеет
-- Команды: `/status`, `/storage`, `/connections`, `/runtime`, `/users`, `/snapshot`, `/all`, `/help`.
+- Команды: `/status`, `/storage`, `/connections`, `/runtime`, `/users`, `/user <email>`, `/snapshot`, `/all`, `/help`.
 - Кнопочное меню в Telegram.
 - Пагинация пользователей через inline-кнопки.
 - Watchdog backend по `/health`.
@@ -23,6 +23,9 @@ Telegram-бот для мониторинга CloudTune backend через за�
 - `ALERT_NOTIFY_ON_START` - отправлять стартовое уведомление (`true/false`).
 - `ALERT_CHECK_INTERVAL_SECONDS` - интервал проверок.
 - `USERS_PAGE_SIZE` - размер страницы `/users`.
+- `DB_CONTAINER_NAME` - имя контейнера postgres для запросов user-сводки (по умолчанию `cloudtune-db`).
+- `DB_NAME` - имя базы (по умолчанию `cloudtune`).
+- `DB_USER` - пользователь базы (по умолчанию `cloudtune`).
 - `ALERT_MAX_ACTIVE_HTTP_REQUESTS` - порог active HTTP requests.
 - `ALERT_MAX_DB_IN_USE_CONNECTIONS` - порог DB in_use.
 - `ALERT_MAX_GOROUTINES` - порог goroutines.

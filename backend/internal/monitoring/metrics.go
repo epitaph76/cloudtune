@@ -19,27 +19,31 @@ type Service struct {
 }
 
 type Snapshot struct {
-	TimestampUTC        string `json:"timestamp_utc"`
-	UptimeSeconds       int64  `json:"uptime_seconds"`
-	HTTPActiveRequests  int64  `json:"http_active_requests"`
-	HTTPTotalRequests   uint64 `json:"http_total_requests"`
-	DBOpenConnections   int    `json:"db_open_connections"`
-	DBInUseConnections  int    `json:"db_in_use_connections"`
-	DBWaitCount         int64  `json:"db_wait_count"`
-	Goroutines          int    `json:"goroutines"`
-	GoMemoryAllocBytes  uint64 `json:"go_memory_alloc_bytes"`
-	GoMemorySysBytes    uint64 `json:"go_memory_sys_bytes"`
-	GoHeapInUseBytes    uint64 `json:"go_heap_in_use_bytes"`
-	GoGCCount           uint32 `json:"go_gc_count"`
-	UsersTotal          int64  `json:"users_total"`
-	SongsTotal          int64  `json:"songs_total"`
-	PlaylistsTotal      int64  `json:"playlists_total"`
-	SongsTotalSizeBytes int64  `json:"songs_total_size_bytes"`
-	DBSizeBytes         int64  `json:"db_size_bytes"`
-	UploadsSizeBytes    int64  `json:"uploads_size_bytes"`
-	UploadsFilesCount   int64  `json:"uploads_files_count"`
-	UploadsFSTotalBytes uint64 `json:"uploads_fs_total_bytes"`
-	UploadsFSFreeBytes  uint64 `json:"uploads_fs_free_bytes"`
+	TimestampUTC        string  `json:"timestamp_utc"`
+	UptimeSeconds       int64   `json:"uptime_seconds"`
+	HTTPActiveRequests  int64   `json:"http_active_requests"`
+	HTTPTotalRequests   uint64  `json:"http_total_requests"`
+	DBOpenConnections   int     `json:"db_open_connections"`
+	DBInUseConnections  int     `json:"db_in_use_connections"`
+	DBWaitCount         int64   `json:"db_wait_count"`
+	Goroutines          int     `json:"goroutines"`
+	GoMemoryAllocBytes  uint64  `json:"go_memory_alloc_bytes"`
+	GoMemorySysBytes    uint64  `json:"go_memory_sys_bytes"`
+	GoHeapInUseBytes    uint64  `json:"go_heap_in_use_bytes"`
+	GoGCCount           uint32  `json:"go_gc_count"`
+	UsersTotal          int64   `json:"users_total"`
+	SongsTotal          int64   `json:"songs_total"`
+	PlaylistsTotal      int64   `json:"playlists_total"`
+	SongsTotalSizeBytes int64   `json:"songs_total_size_bytes"`
+	DBSizeBytes         int64   `json:"db_size_bytes"`
+	UploadsSizeBytes    int64   `json:"uploads_size_bytes"`
+	UploadsFilesCount   int64   `json:"uploads_files_count"`
+	UploadsFSTotalBytes uint64  `json:"uploads_fs_total_bytes"`
+	UploadsFSFreeBytes  uint64  `json:"uploads_fs_free_bytes"`
+	UploadRequestsTotal uint64  `json:"upload_requests_total"`
+	UploadFailedTotal   uint64  `json:"upload_failed_total"`
+	UploadBytesInTotal  int64   `json:"upload_bytes_in_total"`
+	UploadAvgDurationMS float64 `json:"upload_avg_duration_ms"`
 }
 
 func NewService(startedAt time.Time) *Service {
@@ -54,6 +58,7 @@ func (s *Service) StatusText() string {
 
 	uptime := time.Since(s.startedAt).Round(time.Second)
 	activeHTTP, totalHTTP := getHTTPStats()
+	uploadStats := getUploadStats()
 	generic := database.DB.Stats()
 
 	return strings.Join([]string{
@@ -62,6 +67,8 @@ func (s *Service) StatusText() string {
 		fmt.Sprintf("DB: %s", dbState),
 		fmt.Sprintf("HTTP active requests: %d", activeHTTP),
 		fmt.Sprintf("HTTP total requests: %d", totalHTTP),
+		fmt.Sprintf("Upload requests total: %d", uploadStats.RequestsTotal),
+		fmt.Sprintf("Upload failed total: %d", uploadStats.FailedTotal),
 		fmt.Sprintf("DB open connections: %d", generic.OpenConnections),
 		fmt.Sprintf("Go goroutines: %d", runtime.NumGoroutine()),
 	}, "\n")
@@ -109,6 +116,7 @@ func (s *Service) ConnectionsText() string {
 func (s *Service) RuntimeText() string {
 	var memory runtime.MemStats
 	runtime.ReadMemStats(&memory)
+	uploadStats := getUploadStats()
 
 	return strings.Join([]string{
 		"CloudTune Runtime",
@@ -119,6 +127,10 @@ func (s *Service) RuntimeText() string {
 		fmt.Sprintf("Memory sys: %s", formatBytes(int64(memory.Sys))),
 		fmt.Sprintf("Heap in use: %s", formatBytes(int64(memory.HeapInuse))),
 		fmt.Sprintf("GC cycles: %d", memory.NumGC),
+		fmt.Sprintf("Upload requests: %d", uploadStats.RequestsTotal),
+		fmt.Sprintf("Upload failed: %d", uploadStats.FailedTotal),
+		fmt.Sprintf("Upload avg duration: %.2f ms", uploadStats.AvgDurationMS),
+		fmt.Sprintf("Upload bytes in: %s", formatBytes(uploadStats.BytesTotal)),
 	}, "\n")
 }
 
@@ -127,6 +139,7 @@ func (s *Service) Snapshot() Snapshot {
 	activeHTTP, totalHTTP := getHTTPStats()
 	uploadsDir := getUploadsDir()
 	uploadsTotal, uploadsFree := fsUsage(uploadsDir)
+	uploadStats := getUploadStats()
 
 	var memory runtime.MemStats
 	runtime.ReadMemStats(&memory)
@@ -148,6 +161,10 @@ func (s *Service) Snapshot() Snapshot {
 		UploadsFilesCount:   dirFileCount(uploadsDir),
 		UploadsFSTotalBytes: uploadsTotal,
 		UploadsFSFreeBytes:  uploadsFree,
+		UploadRequestsTotal: uploadStats.RequestsTotal,
+		UploadFailedTotal:   uploadStats.FailedTotal,
+		UploadBytesInTotal:  uploadStats.BytesTotal,
+		UploadAvgDurationMS: uploadStats.AvgDurationMS,
 	}
 
 	_ = database.DB.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&snap.UsersTotal)
@@ -242,7 +259,6 @@ func dirFileCount(path string) int64 {
 	})
 	return total
 }
-
 
 func formatBytes(value int64) string {
 	units := []string{"B", "KB", "MB", "GB", "TB"}

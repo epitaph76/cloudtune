@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   app:
     build:
@@ -13,15 +11,22 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
+      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-20}
+      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-10}
+      DB_CONN_MAX_IDLE_MINUTES: ${DB_CONN_MAX_IDLE_MINUTES:-5}
+      DB_CONN_MAX_LIFETIME_MINUTES: ${DB_CONN_MAX_LIFETIME_MINUTES:-30}
       JWT_SECRET: ${JWT_SECRET}
       MONITORING_API_KEY: ${MONITORING_API_KEY}
       CLOUD_UPLOADS_PATH: ${CLOUD_UPLOADS_PATH:-./uploads}
+      CLOUD_MAX_PARALLEL_UPLOADS: ${CLOUD_MAX_PARALLEL_UPLOADS:-4}
+      X_ACCEL_REDIRECT_ENABLED: ${X_ACCEL_REDIRECT_ENABLED:-false}
+      X_ACCEL_REDIRECT_PREFIX: ${X_ACCEL_REDIRECT_PREFIX:-/internal_uploads}
     depends_on:
       - db
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
-      - uploads:/app/uploads
+      - ${CLOUD_UPLOADS_HOST_PATH:-/opt/cloudtune/uploads}:/app/uploads
 
   db:
     image: postgres:15
@@ -41,4 +46,3 @@ services:
 
 volumes:
   postgres_data:
-  uploads:

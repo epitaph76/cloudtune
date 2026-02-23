@@ -88,6 +88,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     '.ogg',
     '.opus',
   ];
+  static const int _cloudUploadParallelism = 3;
 
   @override
   void initState() {
@@ -1149,7 +1150,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     }
   }
 
-  Future<bool> _uploadLocalTrack(File file, {bool silent = false}) async {
+  Future<bool> _uploadLocalTrack(
+    File file, {
+    bool silent = false,
+    bool refreshCloudData = true,
+  }) async {
     if (_uploadingPaths.contains(file.path)) return false;
     setState(() => _uploadingPaths.add(file.path));
 
@@ -1173,7 +1178,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
       if (result['success'] == true) {
         uploaded = true;
-        await _refreshCloudData();
+        if (refreshCloudData) {
+          await _refreshCloudData();
+        }
         if (!mounted) return uploaded;
         if (!silent) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1596,6 +1603,68 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     );
   }
 
+  Future<({Map<String, int> uploadedSongIDs, int completedTracks})>
+  _uploadMissingCloudTracks({
+    required Map<String, File> missingFilesByName,
+    required Map<String, int> keyOccurrences,
+    required String syncKey,
+    required String playlistName,
+    required int completedTracks,
+    required int totalTracks,
+  }) async {
+    final entries = missingFilesByName.entries.toList(growable: false);
+    if (entries.isEmpty) {
+      return (uploadedSongIDs: <String, int>{}, completedTracks: completedTracks);
+    }
+
+    final uploadedSongIDs = <String, int>{};
+    var nextIndex = 0;
+    final workerCount = math
+        .max(1, math.min(_cloudUploadParallelism, entries.length))
+        .toInt();
+
+    Future<void> worker() async {
+      while (true) {
+        if (nextIndex >= entries.length) {
+          return;
+        }
+        final entry = entries[nextIndex];
+        nextIndex += 1;
+
+        try {
+          final uploadResult = await _apiService.uploadFile(entry.value);
+          if (uploadResult['success'] == true) {
+            final uploadedSongId = _extractSongIdFromUploadResult(uploadResult);
+            if (uploadedSongId != null) {
+              uploadedSongIDs[entry.key] = uploadedSongId;
+              completedTracks += keyOccurrences[entry.key] ?? 1;
+            }
+          }
+        } catch (_) {
+          // Ignore per-file failures to let remaining uploads continue.
+        }
+
+        if (mounted) {
+          setState(() {
+            _playlistUploadProgress[syncKey] = (
+              uploaded: completedTracks,
+              total: totalTracks,
+            );
+          });
+        }
+        await UploadNotificationService.showPlaylistUploadProgress(
+          syncKey: syncKey,
+          playlistName: playlistName,
+          uploadedTracks: completedTracks,
+          totalTracks: totalTracks,
+        );
+      }
+    }
+
+    await Future.wait(List.generate(workerCount, (_) => worker()));
+    return (uploadedSongIDs: uploadedSongIDs, completedTracks: completedTracks);
+  }
+
   Future<void> _uploadTracksAsCloudPlaylist({
     required String syncKey,
     required String playlistName,
@@ -1668,30 +1737,16 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         totalTracks: totalTracks,
       );
 
-      for (final entry in missingFilesByName.entries) {
-        final uploadResult = await _apiService.uploadFile(entry.value);
-        if (uploadResult['success'] == true) {
-          final uploadedSongId = _extractSongIdFromUploadResult(uploadResult);
-          if (uploadedSongId != null) {
-            cloudSongIdByName[entry.key] = uploadedSongId;
-            completedTracks += keyOccurrences[entry.key] ?? 1;
-          }
-        }
-        if (mounted) {
-          setState(() {
-            _playlistUploadProgress[syncKey] = (
-              uploaded: completedTracks,
-              total: totalTracks,
-            );
-          });
-        }
-        await UploadNotificationService.showPlaylistUploadProgress(
-          syncKey: syncKey,
-          playlistName: playlistName,
-          uploadedTracks: completedTracks,
-          totalTracks: totalTracks,
-        );
-      }
+      final uploadedBatch = await _uploadMissingCloudTracks(
+        missingFilesByName: missingFilesByName,
+        keyOccurrences: keyOccurrences,
+        syncKey: syncKey,
+        playlistName: playlistName,
+        completedTracks: completedTracks,
+        totalTracks: totalTracks,
+      );
+      completedTracks = uploadedBatch.completedTracks;
+      cloudSongIdByName.addAll(uploadedBatch.uploadedSongIDs);
 
       final desiredSongIDsInOrder = <int>[];
       for (final file in playlistTracks) {
@@ -1776,14 +1831,25 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         return;
       }
 
-      final added = <int>{};
+      final uniqueSongIDsInOrder = <int>[];
+      final seenSongIDs = <int>{};
       for (final songID in desiredSongIDsInOrder) {
-        if (added.contains(songID)) continue;
-        added.add(songID);
-        await _apiService.addSongToPlaylist(
-          playlistId: cloudPlaylistID,
-          songId: songID,
-        );
+        if (seenSongIDs.add(songID)) {
+          uniqueSongIDsInOrder.add(songID);
+        }
+      }
+
+      final bulkResult = await _apiService.addSongsToPlaylistBulk(
+        playlistId: cloudPlaylistID,
+        songIds: uniqueSongIDsInOrder,
+      );
+      if (bulkResult['success'] != true) {
+        for (final songID in uniqueSongIDsInOrder) {
+          await _apiService.addSongToPlaylist(
+            playlistId: cloudPlaylistID,
+            songId: songID,
+          );
+        }
       }
 
       await _refreshCloudData();
@@ -2064,8 +2130,15 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
     var successCount = 0;
     for (final file in uniqueFiles) {
-      final uploaded = await _uploadLocalTrack(file, silent: true);
+      final uploaded = await _uploadLocalTrack(
+        file,
+        silent: true,
+        refreshCloudData: false,
+      );
       if (uploaded) successCount += 1;
+    }
+    if (successCount > 0) {
+      await _refreshCloudData();
     }
     if (!mounted) return;
 

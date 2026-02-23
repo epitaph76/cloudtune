@@ -8,9 +8,12 @@ import (
 )
 
 const (
-	defaultStorageQuotaBytes int64 = 3 * 1024 * 1024 * 1024 // 3 GB
-	defaultMaxUploadSize     int64 = 100 * 1024 * 1024      // 100 MB
-	defaultUploadsBasePath         = "./uploads"
+	defaultStorageQuotaBytes  int64 = 3 * 1024 * 1024 * 1024 // 3 GB
+	defaultMaxUploadSize      int64 = 100 * 1024 * 1024      // 100 MB
+	defaultMaxParallelUploads int   = 4
+	defaultUploadsBasePath          = "./uploads"
+	defaultXAccelEnabled            = false
+	defaultXAccelPrefix             = "/internal_uploads"
 )
 
 func resolveStorageQuotaBytes() int64 {
@@ -29,6 +32,22 @@ func resolveUploadsBasePath() string {
 	return value
 }
 
+func resolveMaxParallelUploads() int {
+	return resolvePositiveIntEnv("CLOUD_MAX_PARALLEL_UPLOADS", defaultMaxParallelUploads)
+}
+
+func resolveXAccelEnabled() bool {
+	return resolveBoolEnv("X_ACCEL_REDIRECT_ENABLED", defaultXAccelEnabled)
+}
+
+func resolveXAccelPrefix() string {
+	value := strings.TrimSpace(os.Getenv("X_ACCEL_REDIRECT_PREFIX"))
+	if value == "" {
+		return defaultXAccelPrefix
+	}
+	return value
+}
+
 func resolvePositiveInt64Env(key string, fallback int64) int64 {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
@@ -41,6 +60,36 @@ func resolvePositiveInt64Env(key string, fallback int64) int64 {
 	}
 
 	return value
+}
+
+func resolvePositiveIntEnv(key string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+
+	return value
+}
+
+func resolveBoolEnv(key string, fallback bool) bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if raw == "" {
+		return fallback
+	}
+
+	switch raw {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func getUserStorageUsageBytes(db *sql.DB, userID int) (int64, error) {

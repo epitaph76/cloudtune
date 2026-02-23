@@ -106,6 +106,7 @@ func createPlaylistSongsTable() {
 		log.Fatal("Failed to create playlist_songs table:", err)
 	}
 
+	ensurePlaylistSongsSchema()
 	fmt.Println("Playlist_songs table created successfully")
 }
 
@@ -125,6 +126,7 @@ func createUserLibraryTable() {
 		log.Fatal("Failed to create user_library table:", err)
 	}
 
+	ensureUserLibrarySchema()
 	fmt.Println("User_library table created successfully")
 }
 
@@ -135,6 +137,10 @@ func ensureSongsSchema() {
 
 	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS songs_content_hash_idx ON songs(content_hash)`); err != nil {
 		log.Fatal("Failed to ensure songs content hash index:", err)
+	}
+
+	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS songs_uploader_upload_date_idx ON songs(uploader_id, upload_date DESC)`); err != nil {
+		log.Fatal("Failed to ensure songs uploader/upload_date index:", err)
 	}
 }
 
@@ -149,5 +155,25 @@ func ensurePlaylistsSchema() {
 
 	if _, err := DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS playlists_owner_favorite_unique ON playlists(owner_id) WHERE is_favorite = TRUE`); err != nil {
 		log.Fatal("Failed to ensure playlists favorite uniqueness index:", err)
+	}
+}
+
+func ensurePlaylistSongsSchema() {
+	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS playlist_songs_playlist_position_idx ON playlist_songs(playlist_id, position)`); err != nil {
+		log.Fatal("Failed to ensure playlist_songs playlist/position index:", err)
+	}
+
+	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS playlist_songs_song_idx ON playlist_songs(song_id)`); err != nil {
+		log.Fatal("Failed to ensure playlist_songs song index:", err)
+	}
+}
+
+func ensureUserLibrarySchema() {
+	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS user_library_user_added_idx ON user_library(user_id, added_at DESC)`); err != nil {
+		log.Fatal("Failed to ensure user_library user/added index:", err)
+	}
+
+	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS user_library_song_idx ON user_library(song_id)`); err != nil {
+		log.Fatal("Failed to ensure user_library song index:", err)
 	}
 }

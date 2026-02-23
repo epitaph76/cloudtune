@@ -3,6 +3,7 @@ package handlers
 import (
 	"cloudtune/internal/database"
 	"cloudtune/internal/models"
+	"cloudtune/internal/monitoring"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -13,10 +14,17 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gin-gonic/gin"
+)
+
+var (
+	uploadLimiterOnce sync.Once
+	uploadLimiter     chan struct{}
 )
 
 func linkSongToUserLibrary(db *sql.DB, userID int, songID int) (bool, error) {
@@ -68,8 +76,38 @@ func computeFileSHA256(path string) (string, error) {
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
+func getUploadLimiter() chan struct{} {
+	uploadLimiterOnce.Do(func() {
+		uploadLimiter = make(chan struct{}, resolveMaxParallelUploads())
+	})
+	return uploadLimiter
+}
+
+func tryAcquireUploadSlot() bool {
+	select {
+	case getUploadLimiter() <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func releaseUploadSlot() {
+	select {
+	case <-getUploadLimiter():
+	default:
+	}
+}
+
 // UploadSong handles uploading a new song
 func UploadSong(c *gin.Context) {
+	startedAt := time.Now()
+	var uploadedBytes int64
+	uploadSuccess := false
+	defer func() {
+		monitoring.RecordUpload(uploadedBytes, time.Since(startedAt), uploadSuccess)
+	}()
+
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
@@ -81,6 +119,14 @@ func UploadSong(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
 		return
 	}
+
+	if !tryAcquireUploadSlot() {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": "Too many concurrent uploads. Please retry shortly",
+		})
+		return
+	}
+	defer releaseUploadSlot()
 
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
@@ -121,13 +167,38 @@ func UploadSong(c *gin.Context) {
 		return
 	}
 
-	// Hash the content first. If the song already exists on server, only grant access.
-	hasher := sha256.New()
-	fileSize, err := io.Copy(hasher, file)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Error reading file for deduplication"})
+	uploadDir := filepath.Join(resolveUploadsBasePath(), "songs")
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating upload directory"})
 		return
 	}
+
+	tempFile, err := os.CreateTemp(uploadDir, ".incoming-*"+filepath.Ext(header.Filename))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error preparing upload file"})
+		return
+	}
+
+	tempPath := tempFile.Name()
+	defer func() {
+		if tempPath != "" {
+			_ = os.Remove(tempPath)
+		}
+	}()
+
+	hasher := sha256.New()
+	fileSize, err := io.Copy(io.MultiWriter(tempFile, hasher), file)
+	if err != nil {
+		_ = tempFile.Close()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Error reading uploaded file"})
+		return
+	}
+	if closeErr := tempFile.Close(); closeErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error finalizing uploaded file"})
+		return
+	}
+	uploadedBytes = fileSize
+
 	if fileSize <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "File is empty"})
 		return
@@ -140,12 +211,6 @@ func UploadSong(c *gin.Context) {
 		return
 	}
 	contentHash := hex.EncodeToString(hasher.Sum(nil))
-
-	_, err = file.Seek(0, 0)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error resetting file pointer"})
-		return
-	}
 
 	db := database.DB
 	var existingSong models.Song
@@ -200,6 +265,7 @@ func UploadSong(c *gin.Context) {
 			message = "Song already exists in your library"
 		}
 
+		uploadSuccess = true
 		c.JSON(http.StatusOK, gin.H{
 			"message":      message,
 			"song_id":      existingSong.ID,
@@ -302,6 +368,7 @@ func UploadSong(c *gin.Context) {
 			message = "Song already exists in your library"
 		}
 
+		uploadSuccess = true
 		c.JSON(http.StatusOK, gin.H{
 			"message":      message,
 			"song_id":      candidate.ID,
@@ -341,29 +408,22 @@ func UploadSong(c *gin.Context) {
 		return
 	}
 
-	uploadDir := filepath.Join(resolveUploadsBasePath(), "songs")
-	err = os.MkdirAll(uploadDir, 0o755)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating upload directory"})
-		return
-	}
-
 	timestamp := time.Now().UnixNano()
 	extension := filepath.Ext(header.Filename)
 	uniqueFilename := fmt.Sprintf("%d_%d%s", userID, timestamp, extension)
 	filePath := filepath.Join(uploadDir, uniqueFilename)
 
-	out, err := os.Create(filePath)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error saving file"})
+	if err := os.Rename(tempPath, filePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error moving uploaded file"})
 		return
 	}
-	defer out.Close()
-
-	if _, err = io.Copy(out, file); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error copying file"})
+	if err := os.Chmod(filePath, 0o644); err != nil {
+		log.Printf("Error setting uploaded file permissions: %v", err)
+		_ = os.Remove(filePath)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error finalizing uploaded file"})
 		return
 	}
+	tempPath = ""
 
 	song := models.Song{
 		Filename:         uniqueFilename,
@@ -407,6 +467,7 @@ func UploadSong(c *gin.Context) {
 		return
 	}
 
+	uploadSuccess = true
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Song uploaded successfully",
 		"song_id": songID,
@@ -681,6 +742,39 @@ func DeleteSong(c *gin.Context) {
 	})
 }
 
+func sanitizeHeaderFilename(name string) string {
+	safe := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(name, "\r", ""), "\n", ""))
+	safe = strings.ReplaceAll(safe, `"`, "")
+	if safe == "" {
+		return "file"
+	}
+	return safe
+}
+
+func buildXAccelRedirectPath(songFilePath string) (string, bool) {
+	uploadsRoot := filepath.Clean(resolveUploadsBasePath())
+	cleanSongPath := filepath.Clean(songFilePath)
+
+	if absRoot, err := filepath.Abs(uploadsRoot); err == nil {
+		uploadsRoot = absRoot
+	}
+	if absSong, err := filepath.Abs(cleanSongPath); err == nil {
+		cleanSongPath = absSong
+	}
+
+	relative, err := filepath.Rel(uploadsRoot, cleanSongPath)
+	if err != nil {
+		return "", false
+	}
+	if relative == "." || strings.HasPrefix(relative, "..") {
+		return "", false
+	}
+
+	prefix := strings.TrimRight(resolveXAccelPrefix(), "/")
+	relative = filepath.ToSlash(relative)
+	return prefix + "/" + relative, true
+}
+
 // DownloadSong handles downloading a song by ID
 func DownloadSong(c *gin.Context) {
 	// Получаем ID пользователя из контекста
@@ -738,5 +832,18 @@ func DownloadSong(c *gin.Context) {
 	}
 
 	c.Header("X-Content-Type-Options", "nosniff")
+	if resolveXAccelEnabled() {
+		if internalPath, ok := buildXAccelRedirectPath(song.Filepath); ok {
+			contentType := strings.TrimSpace(song.MimeType)
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+			c.Header("Content-Type", contentType)
+			c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeHeaderFilename(fileName)))
+			c.Header("X-Accel-Redirect", internalPath)
+			c.Status(http.StatusOK)
+			return
+		}
+	}
 	c.FileAttachment(song.Filepath, fileName)
 }

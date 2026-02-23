@@ -17,6 +17,9 @@ services:
       - JWT_SECRET=your-secret-key-change-this-in-production
       - MONITORING_API_KEY=change-me-monitoring-key
       - CLOUD_UPLOADS_PATH=./uploads
+      - CLOUD_MAX_PARALLEL_UPLOADS=4
+      - X_ACCEL_REDIRECT_ENABLED=false
+      - X_ACCEL_REDIRECT_PREFIX=/internal_uploads
     depends_on:
       - db
     volumes:
