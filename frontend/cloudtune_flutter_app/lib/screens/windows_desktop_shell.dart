@@ -400,50 +400,53 @@ class _SidebarActionState extends State<_SidebarAction> {
           final canShowExpanded =
               widget.expanded && constraints.maxWidth >= 184;
 
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: widget.active ? colorScheme.primary : colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: _hovered
-                    ? colorScheme.primary.withValues(alpha: 0.35)
-                    : Colors.transparent,
-              ),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: widget.onTap,
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    widget.icon,
-                    size: 22,
-                    color: widget.active
-                        ? colorScheme.onPrimary
-                        : colorScheme.onSurface.withValues(alpha: 0.72),
-                  ),
+          return InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: widget.active ? colorScheme.primary : colorScheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _hovered
+                      ? colorScheme.primary.withValues(alpha: 0.35)
+                      : Colors.transparent,
                 ),
-                if (canShowExpanded) ...[
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      widget.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: widget.active
-                            ? colorScheme.onPrimary
-                            : colorScheme.onSurface.withValues(alpha: 0.8),
-                        fontWeight: FontWeight.w600,
-                      ),
+              ),
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(
+                      widget.icon,
+                      size: 22,
+                      color: widget.active
+                          ? colorScheme.onPrimary
+                          : colorScheme.onSurface.withValues(alpha: 0.72),
                     ),
                   ),
+                  if (canShowExpanded) ...[
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        widget.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: widget.active
+                              ? colorScheme.onPrimary
+                              : colorScheme.onSurface.withValues(alpha: 0.8),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           );
         },
@@ -604,67 +607,70 @@ class _SidebarAccountCardState extends State<_SidebarAccountCard> {
           final canShowLogoutLabel =
               canShowExpanded && constraints.maxWidth >= 246;
 
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: _hovered
-                    ? colorScheme.primary.withValues(alpha: 0.35)
-                    : Colors.transparent,
-              ),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: widget.onAccountTap,
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    Icons.person_rounded,
-                    color: colorScheme.onSurface.withValues(alpha: 0.72),
-                  ),
+          return InkWell(
+            onTap: widget.onAccountTap,
+            borderRadius: BorderRadius.circular(16),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _hovered
+                      ? colorScheme.primary.withValues(alpha: 0.35)
+                      : Colors.transparent,
                 ),
-                if (canShowExpanded) ...[
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      widget.accountLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: colorScheme.onSurface.withValues(alpha: 0.8),
-                        fontWeight: FontWeight.w600,
-                      ),
+              ),
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(
+                      Icons.person_rounded,
+                      color: colorScheme.onSurface.withValues(alpha: 0.72),
                     ),
                   ),
-                  if (widget.hasUser)
-                    canShowLogoutLabel
-                        ? TextButton.icon(
-                            onPressed: widget.onLogoutTap,
-                            style: TextButton.styleFrom(
-                              minimumSize: const Size(0, 34),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 6,
+                  if (canShowExpanded) ...[
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        widget.accountLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colorScheme.onSurface.withValues(alpha: 0.8),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (widget.hasUser)
+                      canShowLogoutLabel
+                          ? TextButton.icon(
+                              onPressed: widget.onLogoutTap,
+                              style: TextButton.styleFrom(
+                                minimumSize: const Size(0, 34),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
+                              icon: const Icon(Icons.logout_rounded, size: 16),
+                              label: Text(widget.logoutLabel),
+                            )
+                          : IconButton(
+                              onPressed: widget.onLogoutTap,
+                              tooltip: widget.logoutLabel,
                               visualDensity: VisualDensity.compact,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              icon: const Icon(Icons.logout_rounded, size: 18),
                             ),
-                            icon: const Icon(Icons.logout_rounded, size: 16),
-                            label: Text(widget.logoutLabel),
-                          )
-                        : IconButton(
-                            onPressed: widget.onLogoutTap,
-                            tooltip: widget.logoutLabel,
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(Icons.logout_rounded, size: 18),
-                          ),
+                  ],
                 ],
-              ],
+              ),
             ),
           );
         },

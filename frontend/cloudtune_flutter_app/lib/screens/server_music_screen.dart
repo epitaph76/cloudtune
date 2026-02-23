@@ -994,6 +994,15 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     return p.basename(value).trim().toLowerCase();
   }
 
+  bool _isTrackAlreadyInCloudLibrary(File file, CloudMusicProvider provider) {
+    final key = _trackLookupName(file.path);
+    for (final track in provider.tracks) {
+      final cloudKey = _trackLookupName(track.originalFilename ?? track.filename);
+      if (cloudKey == key) return true;
+    }
+    return false;
+  }
+
   String _normalizePlaylistName(String value) => value.trim().toLowerCase();
 
   int? _extractSongIdFromUploadResult(Map<String, dynamic> uploadResult) {
@@ -1135,6 +1144,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
 
     var uploaded = false;
     try {
+      final cloudMusicProvider = context.read<CloudMusicProvider>();
+      if (_isTrackAlreadyInCloudLibrary(file, cloudMusicProvider)) {
+        uploaded = true;
+        if (!silent && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Already in cloud: ${p.basename(file.path)}')),
+          );
+        }
+        return uploaded;
+      }
+
       final result = await _apiService.uploadFile(file);
       if (!mounted) return false;
 
@@ -1922,6 +1942,12 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   Future<void> _uploadLocalTracks(List<File> files) async {
     final uniqueFiles = _uniqueFilesByPath(files);
     if (uniqueFiles.isEmpty) return;
+
+    final authProvider = context.read<AuthProvider>();
+    final cloudMusicProvider = context.read<CloudMusicProvider>();
+    if (authProvider.currentUser != null) {
+      await cloudMusicProvider.fetchUserLibrary();
+    }
 
     var successCount = 0;
     for (final file in uniqueFiles) {
