@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloudTune - музыкальный fullstack-проект</title>
+  <meta name="description" content="CloudTune: Flutter-клиент, Go backend, PostgreSQL и Telegram-бот мониторинга." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f3efe5;
+      --bg-2: #e8dfcf;
+      --card: #fffdf8;
+      --text: #2f2a1f;
+      --muted: #6d6452;
+      --line: #d9ceb9;
+      --accent: #8bbf9e;
+      --accent-2: #d8b87c;
+      --accent-3: #9eb8d8;
+      --ok: #67a67f;
+      --shadow: 0 24px 60px rgba(73, 53, 20, 0.14);
+      --radius: 24px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 8% 2%, #fff5d8 0%, transparent 30%),
+        radial-gradient(circle at 88% 10%, #d9ebff 0%, transparent 35%),
+        linear-gradient(160deg, var(--bg) 0%, var(--bg-2) 100%);
+      min-height: 100vh;
+      padding: 32px 20px 48px;
+    }
+
+    .page {
+      max-width: 1140px;
+      margin: 0 auto;
+      display: grid;
+      gap: 20px;
+    }
+
+    .card {
+      background: color-mix(in srgb, var(--card) 84%, #ffffff 16%);
+      border: 1px solid color-mix(in srgb, var(--line) 80%, white 20%);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(5px);
+    }
+
+    .hero {
+      padding: clamp(24px, 4vw, 40px);
+      display: grid;
+      gap: 18px;
+    }
+
+    .eyebrow {
+      margin: 0;
+      display: inline-flex;
+      width: fit-content;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: #4c432f;
+      background: #f6ebd3;
+      border: 1px solid #e6d4ad;
+    }
+
+    h1 {
+      margin: 0;
+      line-height: 1.08;
+      font-size: clamp(31px, 5vw, 54px);
+      letter-spacing: -0.02em;
+      max-width: 17ch;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 70ch;
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 17px;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 6px;
+    }
+
+    .btn {
+      text-decoration: none;
+      border-radius: 14px;
+      padding: 12px 18px;
+      font-size: 15px;
+      font-weight: 700;
+      transition: transform .18s ease, box-shadow .18s ease, background .2s ease;
+      border: 1px solid transparent;
+    }
+
+    .btn:hover { transform: translateY(-2px); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-2), #d09e4a);
+      color: #241a0f;
+      box-shadow: 0 12px 30px rgba(168, 112, 26, 0.32);
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 14px 34px rgba(168, 112, 26, 0.4);
+    }
+
+    .btn-ghost {
+      background: #f5efe4;
+      color: #3c3426;
+      border-color: #d6c8ad;
+    }
+
+    .metrics {
+      list-style: none;
+      margin: 6px 0 0;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .metrics li {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      color: #4d4638;
+      background: #f7f2e8;
+      border: 1px solid #dfd4bf;
+      padding: 8px 12px;
+      border-radius: 12px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 1.25fr .75fr;
+    }
+
+    .section {
+      padding: 26px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .section h2 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.01em;
+    }
+
+    .section p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .feature-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .feature {
+      border: 1px solid #dfd4be;
+      background: #faf6ee;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 14px;
+      color: #453d2f;
+      line-height: 1.45;
+    }
+
+    .arch {
+      display: grid;
+      gap: 10px;
+    }
+
+    .arch-step {
+      border: 1px solid #d8ccb5;
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #f8f2e7;
+      font-size: 14px;
+      color: #3d3528;
+      position: relative;
+    }
+
+    .arch-step + .arch-step::before {
+      content: "";
+      position: absolute;
+      top: -10px;
+      left: 20px;
+      width: 2px;
+      height: 10px;
+      background: #ccbc9f;
+    }
+
+    .screens {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    }
+
+    figure {
+      margin: 0;
+      border: 1px solid #dbcdb5;
+      background: #f8f3e9;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16/10;
+      object-fit: cover;
+      background: #eee4d2;
+    }
+
+    figcaption {
+      padding: 10px 12px;
+      font-size: 13px;
+      color: #5d5445;
+      border-top: 1px solid #ddcfb7;
+    }
+
+    .stack {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 2px;
+    }
+
+    .stack span {
+      background: #f8f2e6;
+      border: 1px solid #d9ccb5;
+      border-radius: 999px;
+      padding: 7px 11px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #41382a;
+    }
+
+    footer {
+      text-align: center;
+      color: #6f654f;
+      font-size: 13px;
+      padding-top: 6px;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(16px);
+      animation: reveal .72s cubic-bezier(.22,.65,.25,1) forwards;
+    }
+
+    .delay-1 { animation-delay: .08s; }
+    .delay-2 { animation-delay: .16s; }
+    .delay-3 { animation-delay: .24s; }
+
+    @keyframes reveal {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+      .section { padding: 22px; }
+      .hero p { font-size: 16px; }
+    }
+
+    @media (max-width: 620px) {
+      body { padding: 20px 14px 26px; }
+      .hero { padding: 20px; }
+      .section { padding: 18px; }
+      .btn { width: 100%; text-align: center; }
+      .hero-actions { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="card hero reveal">
+      <p class="eyebrow">CloudTune • проект в проде</p>
+      <h1>Музыкальный сервис с локальным и облачным режимом</h1>
+      <p>
+        CloudTune - это рабочий fullstack: Flutter-клиент, backend на Go и PostgreSQL,
+        плюс отдельный Telegram-бот для мониторинга. Приложение уже умеет локальную библиотеку,
+        облачную синхронизацию, плейлисты, лайки и фоновое воспроизведение.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="https://github.com/epitaph76/cloudtune" target="_blank" rel="noopener noreferrer">Открыть GitHub репозиторий</a>
+        <a class="btn btn-ghost" href="https://api-mp3-player.ru/health" target="_blank" rel="noopener noreferrer">Проверить /health</a>
+      </div>
+      <ul class="metrics">
+        <li>Backend: Go 1.24 + Gin</li>
+        <li>DB: PostgreSQL 15</li>
+        <li>Client: Flutter 3.x / Dart 3.11+</li>
+        <li>Monitoring: Python 3.12</li>
+      </ul>
+    </header>
+
+    <section class="grid">
+      <article class="card section reveal delay-1">
+        <h2>Что внутри проекта</h2>
+        <p>
+          CloudTune сделан как единый стек: мобильный/desktop-клиент, API и инфраструктура мониторинга.
+          Ниже ключевые функции, которые уже доступны в текущей версии.
+        </p>
+        <div class="feature-list">
+          <div class="feature">JWT-аутентификация и персональная библиотека пользователя.</div>
+          <div class="feature">Дедупликация треков в облаке по <code>content_hash</code>.</div>
+          <div class="feature">Локальные и облачные плейлисты, включая системный <b>Liked songs</b>.</div>
+          <div class="feature">Фоновый плеер, queue, shuffle, repeat-one, управление через media session.</div>
+          <div class="feature">Windows desktop-shell с отдельной навигацией и правой player-панелью.</div>
+          <div class="feature">Telegram мониторинг: статус, хранилище, пользователи, авто-алерты.</div>
+        </div>
+      </article>
+
+      <aside class="card section reveal delay-2">
+        <h2>Схема работы</h2>
+        <div class="arch">
+          <div class="arch-step">Flutter App -> REST API</div>
+          <div class="arch-step">Go Backend -> PostgreSQL + uploads</div>
+          <div class="arch-step">Monitoring Bot -> /api/monitor/*</div>
+          <div class="arch-step">Оповещения и команды -> Telegram</div>
+        </div>
+        <p>
+          Прод-окружение работает под Ubuntu 22.04: backend в Docker, Nginx как reverse proxy,
+          SSL от Let's Encrypt.
+        </p>
+      </aside>
+    </section>
+
+    <section class="card section reveal delay-2">
+      <h2>Скриншоты работы</h2>
+      <p>Ниже текущие экраны интерфейса: desktop-режим и два мобильных состояния (player/storage).</p>
+      <div class="screens">
+        <figure>
+          <img src="assets/screens/desktop-storage.svg" alt="CloudTune desktop storage screen" loading="lazy" />
+          <figcaption>Desktop: хранилище и плеер в двухпанельной раскладке.</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/screens/mobile-player.svg" alt="CloudTune mobile player" loading="lazy" />
+          <figcaption>Mobile Player: текущее воспроизведение, seek и transport-controls.</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/screens/mobile-storage.svg" alt="CloudTune mobile storage" loading="lazy" />
+          <figcaption>Mobile Storage: локальные/облачные треки и плейлисты.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="card section reveal delay-3">
+      <h2>Текущий стек и версии</h2>
+      <div class="stack">
+        <span>Go 1.24 (go.mod)</span>
+        <span>Gin 1.9.1</span>
+        <span>PostgreSQL 15</span>
+        <span>Flutter 3.x</span>
+        <span>Dart 3.11+</span>
+        <span>just_audio 0.9.40</span>
+        <span>audio_service 0.18.18</span>
+        <span>python-telegram-bot 22.3</span>
+        <span>httpx 0.28.1</span>
+        <span>Docker Compose</span>
+      </div>
+      <p>
+        Исходники, README и скрипты деплоя доступны в репозитории.
+        Основной URL проекта: <a href="https://api-mp3-player.ru" target="_blank" rel="noopener noreferrer">api-mp3-player.ru</a>.
+      </p>
+    </section>
+
+    <footer>
+      CloudTune • обновлено 23.02.2026 • GitHub: github.com/epitaph76/cloudtune
+    </footer>
+  </main>
+</body>
+</html>

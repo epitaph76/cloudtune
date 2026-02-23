@@ -1,4 +1,4 @@
-﻿# 🛠️ CloudTune Backend
+# CloudTune Backend
 
 ![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white)
 ![Gin](https://img.shields.io/badge/Gin-1.9.1-00A86B?logo=go&logoColor=white)
@@ -6,18 +6,19 @@
 ![JWT](https://img.shields.io/badge/JWT-v5.3.1-000000?logo=jsonwebtokens&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
-Backend-часть CloudTune: API для авторизации, треков, плейлистов и мониторинга.
+Backend-часть CloudTune: REST API для авторизации, облачной библиотеки, плейлистов и мониторинга.
 
-## ✨ Возможности
+## Что реализовано
 
-- 🔐 Регистрация и вход пользователей (JWT)
-- 🎵 Загрузка треков в облако
-- 📚 Персональная библиотека пользователя
-- 🗂️ Плейлисты (создание, чтение, удаление, добавление треков)
-- ⬇️ Скачивание треков с проверкой доступа
-- 📈 Monitoring API для Telegram-бота
+- JWT-аутентификация (`/auth/register`, `/auth/login`);
+- загрузка треков с проверкой MIME и дедупликацией по `content_hash`;
+- персональная библиотека пользователя через `user_library`;
+- удаление трека с корректной очисткой связей из плейлистов;
+- системный облачный плейлист избранного (`is_favorite`);
+- расчет использования облачного хранилища и квоты;
+- Monitoring API с ключом `X-Monitoring-Key`.
 
-## 🏗️ Архитектура
+## Архитектура
 
 ```mermaid
 flowchart TD
@@ -28,7 +29,7 @@ flowchart TD
     F[Monitoring Bot] -->|X-Monitoring-Key| C
 ```
 
-## 📁 Структура
+## Структура
 
 ```text
 backend/
@@ -43,16 +44,16 @@ backend/
   docker-compose.prod.yml
 ```
 
-## ⚙️ Запуск (локально)
+## Локальный запуск
 
 ```bash
 cd backend
 docker compose up --build
 ```
 
-API по умолчанию: `http://localhost:8080`
+API по умолчанию: `http://localhost:8080`.
 
-## 🚀 Production запуск
+## Production запуск
 
 1. Подготовить переменные:
 
@@ -67,23 +68,23 @@ cp .env.prod.example .env.prod
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
-3. При работе через Nginx API слушает: `127.0.0.1:8080`
+3. При схеме с Nginx backend обычно слушает `127.0.0.1:8080`.
 
-## 🌍 Переменные окружения
+## Переменные окружения
 
-- `DB_HOST` — хост БД (по умолчанию `localhost`)
-- `DB_PORT` — порт БД (по умолчанию `5432`)
-- `DB_USER` — пользователь БД
-- `DB_PASSWORD` — пароль БД
-- `DB_NAME` — имя БД
-- `JWT_SECRET` — секрет JWT
-- `MONITORING_API_KEY` — ключ для Monitoring API
-- `CLOUD_UPLOADS_PATH` — путь к папке файлов (`./uploads`)
-- `CLOUD_STORAGE_QUOTA_BYTES` — квота облака в байтах (по умолчанию 3 ГБ)
+- `DB_HOST` - хост БД (`localhost` по умолчанию).
+- `DB_PORT` - порт БД (`5432` по умолчанию).
+- `DB_USER` - пользователь PostgreSQL.
+- `DB_PASSWORD` - пароль PostgreSQL.
+- `DB_NAME` - имя БД.
+- `JWT_SECRET` - секрет подписи JWT.
+- `MONITORING_API_KEY` - ключ доступа к Monitoring API.
+- `CLOUD_UPLOADS_PATH` - папка хранения файлов (`./uploads` по умолчанию).
+- `CLOUD_STORAGE_QUOTA_BYTES` - квота облака в байтах (по умолчанию `3221225472`, это 3 ГБ).
 
-## 📡 Monitoring API
+## Monitoring API
 
-Все ручки требуют заголовок: `X-Monitoring-Key: <MONITORING_API_KEY>`
+Все эндпоинты требуют заголовок `X-Monitoring-Key: <MONITORING_API_KEY>`.
 
 - `GET /api/monitor/status`
 - `GET /api/monitor/storage`
@@ -92,7 +93,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 - `GET /api/monitor/users/list?page=1&limit=8`
 - `GET /api/monitor/all`
 
-## 🔌 Основные API ручки
+## Основные API эндпоинты
 
 Публичные:
 
@@ -101,7 +102,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 - `POST /auth/register`
 - `POST /auth/login`
 
-Защищённые (`Authorization: Bearer <token>`):
+Защищенные (`Authorization: Bearer <token>`):
 
 - `POST /api/songs/upload`
 - `GET /api/songs/library`
@@ -115,8 +116,8 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 - `POST /api/playlists/:playlist_id/songs/:song_id`
 - `GET /api/playlists/:playlist_id/songs`
 
-## 📝 Примечания
+## Примечания
 
-- Таблицы БД создаются автоматически при старте.
-- Допустимые MIME-типы загрузки: `audio/mpeg`, `audio/wav`, `audio/mp4`, `audio/flac`.
-- Мониторинг-бот вынесен в отдельный сервис: `../monitoring`.
+- Схема БД создается автоматически при старте.
+- Допустимые MIME-типы для загрузки: `audio/mpeg`, `audio/wav`, `audio/mp4`, `audio/flac`.
+- В Dockerfile для сборки используется образ `golang:1.25`, при этом `go.mod` зафиксирован на `go 1.24.0`.

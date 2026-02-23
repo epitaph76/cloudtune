@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="1000" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F3EFE5"/>
+      <stop offset="1" stop-color="#E8DFCF"/>
+    </linearGradient>
+    <linearGradient id="music" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#E7D2A2"/>
+      <stop offset="1" stop-color="#D9BB7A"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <rect x="20" y="20" width="1540" height="960" rx="28" fill="#F7F3E8" stroke="#DACDB5"/>
+
+  <rect x="44" y="44" width="86" height="912" rx="26" fill="#EDEAE3" stroke="#D2C8B5"/>
+  <rect x="58" y="58" width="56" height="56" rx="16" fill="#D8BE85"/>
+  <rect x="58" y="126" width="56" height="56" rx="16" fill="#D8BE85"/>
+
+  <rect x="152" y="44" width="900" height="912" rx="24" fill="#F9F5EC" stroke="#DCCFB8"/>
+  <text x="190" y="94" fill="#3D3426" font-family="Arial" font-size="42" font-weight="700">Storage</text>
+
+  <rect x="190" y="125" width="822" height="48" rx="18" fill="#EFE4CD"/>
+  <rect x="194" y="129" width="404" height="40" rx="14" fill="#F8F7F4"/>
+  <text x="383" y="156" fill="#4A402F" font-family="Arial" font-size="24" text-anchor="middle">Local</text>
+  <text x="802" y="156" fill="#4A402F" font-family="Arial" font-size="24" text-anchor="middle">Cloud</text>
+
+  <text x="190" y="208" fill="#7A6F58" font-family="Arial" font-size="30">2 Playlists • 34 Tracks</text>
+
+  <rect x="190" y="245" width="154" height="132" rx="24" fill="#F4F2EE" stroke="#DACDB7"/>
+  <rect x="360" y="245" width="154" height="132" rx="24" fill="#EEE4CD" stroke="#BFA266" stroke-width="2"/>
+  <rect x="530" y="245" width="154" height="132" rx="24" fill="#F4F2EE" stroke="#DACDB7"/>
+  <text x="437" y="330" fill="#3D3426" font-family="Arial" font-size="34" font-weight="700" text-anchor="middle">All songs</text>
+
+  <rect x="190" y="406" width="820" height="64" rx="22" fill="#F2EBDD" stroke="#D7C9B2"/>
+  <text x="228" y="448" fill="#6E624E" font-family="Arial" font-size="32">Search track</text>
+
+  <g>
+    <rect x="190" y="488" width="820" height="108" rx="24" fill="#F8F7F4" stroke="#DBCFBA"/>
+    <rect x="210" y="508" width="68" height="68" rx="18" fill="#D8BE85"/>
+    <text x="296" y="546" fill="#4A402F" font-family="Arial" font-size="28">ARUSTAMOV, xxxmanera, Josodo...</text>
+  </g>
+  <g>
+    <rect x="190" y="610" width="820" height="108" rx="24" fill="#F8F7F4" stroke="#DBCFBA"/>
+    <rect x="210" y="630" width="68" height="68" rx="18" fill="#D8BE85"/>
+    <text x="296" y="668" fill="#4A402F" font-family="Arial" font-size="28">0 похвал - NIX.mp3</text>
+  </g>
+  <g>
+    <rect x="190" y="732" width="820" height="108" rx="24" fill="#F8F7F4" stroke="#DBCFBA"/>
+    <rect x="210" y="752" width="68" height="68" rx="18" fill="#D8BE85"/>
+    <text x="296" y="790" fill="#4A402F" font-family="Arial" font-size="28">17 SEVENTEEN - Утро.mp3</text>
+  </g>
+
+  <rect x="1080" y="44" width="476" height="912" rx="30" fill="#F5F4F2" stroke="#D9CDB8"/>
+  <rect x="1178" y="106" width="280" height="280" rx="34" fill="url(#music)"/>
+  <text x="1318" y="263" fill="#FFF" font-family="Arial" font-size="130" text-anchor="middle">♪</text>
+  <text x="1114" y="500" fill="#3C3427" font-family="Arial" font-size="58" font-weight="700">ARUSTAMOV, xxxmanera...</text>
+  <line x1="1120" y1="620" x2="1514" y2="620" stroke="#D4CDC1" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="1135" cy="620" r="12" fill="#B3A99A"/>
+  <circle cx="1320" cy="792" r="42" fill="#D8B874"/>
+  <polygon points="1310,774 1310,810 1340,792" fill="#fff"/>
+</svg>
