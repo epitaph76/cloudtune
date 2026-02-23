@@ -6,7 +6,7 @@ import (
 
 // User represents a user in the system
 type User struct {
-	ID        string    `json:"id" db:"id"`
+	ID        int       `json:"id" db:"id"`
 	Email     string    `json:"email" db:"email" validate:"required,email"`
 	Username  string    `json:"username" db:"username" validate:"required,min=3,max=50"`
 	Password  string    `json:"password,omitempty" db:"password" validate:"required,min=6"`

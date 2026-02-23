@@ -5,6 +5,7 @@ import (
 	"cloudtune/internal/handlers"
 	"cloudtune/internal/middleware"
 	"cloudtune/internal/monitoring"
+	"cloudtune/internal/utils"
 	"log"
 	"time"
 
@@ -12,6 +13,10 @@ import (
 )
 
 func main() {
+	if err := utils.EnsureJWTReady(); err != nil {
+		log.Fatal("JWT configuration error:", err)
+	}
+
 	database.InitDB()
 	defer database.CloseDB()
 
@@ -30,6 +35,8 @@ func main() {
 	router.GET("/api/monitor/connections", handlers.MonitorConnections)
 	router.GET("/api/monitor/users", handlers.MonitorUsers)
 	router.GET("/api/monitor/users/list", handlers.MonitorUsersList)
+	router.GET("/api/monitor/runtime", handlers.MonitorRuntime)
+	router.GET("/api/monitor/snapshot", handlers.MonitorSnapshot)
 	router.GET("/api/monitor/all", handlers.MonitorAll)
 
 	authRoutes := router.Group("/auth")

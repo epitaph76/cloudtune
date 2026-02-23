@@ -77,6 +77,20 @@ func MonitorAll(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"text": getMonitoringService().AllText()})
 }
 
+func MonitorRuntime(c *gin.Context) {
+	if !checkMonitoringToken(c) {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"text": getMonitoringService().RuntimeText()})
+}
+
+func MonitorSnapshot(c *gin.Context) {
+	if !checkMonitoringToken(c) {
+		return
+	}
+	c.JSON(http.StatusOK, getMonitoringService().Snapshot())
+}
+
 func MonitorUsersList(c *gin.Context) {
 	if !checkMonitoringToken(c) {
 		return

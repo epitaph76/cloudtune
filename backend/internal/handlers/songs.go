@@ -39,6 +39,20 @@ func linkSongToUserLibrary(db *sql.DB, userID int, songID int) (bool, error) {
 	return rowsAffected > 0, nil
 }
 
+func userHasSongInLibrary(db *sql.DB, userID int, songID int) (bool, error) {
+	var exists bool
+	err := db.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM user_library WHERE user_id = $1 AND song_id = $2)`,
+		userID,
+		songID,
+	).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
 func computeFileSHA256(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -75,10 +89,23 @@ func UploadSong(c *gin.Context) {
 	}
 	defer file.Close()
 
+	maxUploadBytes := resolveMaxUploadSizeBytes()
+	if header.Size > 0 && header.Size > maxUploadBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+			"error":            "File is too large",
+			"max_upload_bytes": maxUploadBytes,
+		})
+		return
+	}
+
 	buffer := make([]byte, 512)
-	_, err = file.Read(buffer)
-	if err != nil {
+	bytesRead, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Error reading file"})
+		return
+	}
+	if bytesRead == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File is empty"})
 		return
 	}
 
@@ -88,7 +115,7 @@ func UploadSong(c *gin.Context) {
 		return
 	}
 
-	mimeType := mimetype.Detect(buffer).String()
+	mimeType := mimetype.Detect(buffer[:bytesRead]).String()
 	if mimeType != "audio/mpeg" && mimeType != "audio/wav" && mimeType != "audio/mp4" && mimeType != "audio/flac" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Only audio files (MP3, WAV, MP4, FLAC) are allowed"})
 		return
@@ -99,6 +126,17 @@ func UploadSong(c *gin.Context) {
 	fileSize, err := io.Copy(hasher, file)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Error reading file for deduplication"})
+		return
+	}
+	if fileSize <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File is empty"})
+		return
+	}
+	if fileSize > maxUploadBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+			"error":            "File is too large",
+			"max_upload_bytes": maxUploadBytes,
+		})
 		return
 	}
 	contentHash := hex.EncodeToString(hasher.Sum(nil))
@@ -127,6 +165,29 @@ func UploadSong(c *gin.Context) {
 		&existingSong.MimeType,
 	)
 	if err == nil {
+		alreadyInLibrary, existsErr := userHasSongInLibrary(db, userID, existingSong.ID)
+		if existsErr != nil {
+			log.Printf("Error checking existing library ownership: %v", existsErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error validating song ownership"})
+			return
+		}
+		if !alreadyInLibrary {
+			allowed, usedBytes, quotaBytes, quotaErr := canUserStoreAdditionalBytes(db, userID, existingSong.Filesize)
+			if quotaErr != nil {
+				log.Printf("Error checking user quota before linking existing song: %v", quotaErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking storage quota"})
+				return
+			}
+			if !allowed {
+				c.JSON(http.StatusInsufficientStorage, gin.H{
+					"error":       "Storage quota exceeded",
+					"used_bytes":  usedBytes,
+					"quota_bytes": quotaBytes,
+				})
+				return
+			}
+		}
+
 		addedToLibrary, linkErr := linkSongToUserLibrary(db, userID, existingSong.ID)
 		if linkErr != nil {
 			log.Printf("Error linking existing song to user library: %v", linkErr)
@@ -206,6 +267,29 @@ func UploadSong(c *gin.Context) {
 			continue
 		}
 
+		alreadyInLibrary, existsErr := userHasSongInLibrary(db, userID, candidate.ID)
+		if existsErr != nil {
+			log.Printf("Error checking legacy library ownership: %v", existsErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error validating song ownership"})
+			return
+		}
+		if !alreadyInLibrary {
+			allowed, usedBytes, quotaBytes, quotaErr := canUserStoreAdditionalBytes(db, userID, candidate.Filesize)
+			if quotaErr != nil {
+				log.Printf("Error checking user quota before linking legacy song: %v", quotaErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking storage quota"})
+				return
+			}
+			if !allowed {
+				c.JSON(http.StatusInsufficientStorage, gin.H{
+					"error":       "Storage quota exceeded",
+					"used_bytes":  usedBytes,
+					"quota_bytes": quotaBytes,
+				})
+				return
+			}
+		}
+
 		addedToLibrary, linkErr := linkSongToUserLibrary(db, userID, candidate.ID)
 		if linkErr != nil {
 			log.Printf("Error linking legacy song to user library: %v", linkErr)
@@ -236,9 +320,29 @@ func UploadSong(c *gin.Context) {
 	if legacyFound {
 		return
 	}
+	if err := legacyRows.Err(); err != nil {
+		log.Printf("Error iterating legacy dedupe candidates: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking legacy songs"})
+		return
+	}
 
-	uploadDir := "./uploads/songs/"
-	err = os.MkdirAll(uploadDir, os.ModePerm)
+	allowed, usedBytes, quotaBytes, quotaErr := canUserStoreAdditionalBytes(db, userID, fileSize)
+	if quotaErr != nil {
+		log.Printf("Error checking user quota before upload: %v", quotaErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error checking storage quota"})
+		return
+	}
+	if !allowed {
+		c.JSON(http.StatusInsufficientStorage, gin.H{
+			"error":       "Storage quota exceeded",
+			"used_bytes":  usedBytes,
+			"quota_bytes": quotaBytes,
+		})
+		return
+	}
+
+	uploadDir := filepath.Join(resolveUploadsBasePath(), "songs")
+	err = os.MkdirAll(uploadDir, 0o755)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating upload directory"})
 		return
@@ -394,6 +498,18 @@ func GetUserLibrary(c *gin.Context) {
 
 // GetSongByID returns a specific song by ID
 func GetSongByID(c *gin.Context) {
+	userIDInterface, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDInterface.(int)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
 	songID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid song ID"})
@@ -403,20 +519,28 @@ func GetSongByID(c *gin.Context) {
 	db := database.DB
 	var song models.Song
 
-	query := `SELECT id, filename, original_filename, filepath, filesize, artist, title, album, genre, year, mime_type, upload_date
-			  FROM songs WHERE id = $1`
+	query := `
+		SELECT s.id, s.filename, s.original_filename, s.filesize, s.artist, s.title, s.album, s.genre, s.year, s.mime_type, s.upload_date
+		FROM songs s
+		JOIN user_library ul ON ul.song_id = s.id
+		WHERE s.id = $1 AND ul.user_id = $2
+	`
 
 	var artist, title, album, genre sql.NullString
 	var year sql.NullInt64
 
-	err = db.QueryRow(query, songID).Scan(&song.ID, &song.Filename, &song.OriginalFilename,
-		&song.Filepath, &song.Filesize, &artist,
+	err = db.QueryRow(query, songID, userID).Scan(&song.ID, &song.Filename, &song.OriginalFilename,
+		&song.Filesize, &artist,
 		&title, &album, &genre, &year,
 		&song.MimeType, &song.UploadDate)
 
 	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Song not found in your library"})
+			return
+		}
 		log.Printf("Error retrieving song: %v", err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Song not found"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error retrieving song"})
 		return
 	}
 
@@ -438,7 +562,21 @@ func GetSongByID(c *gin.Context) {
 		song.Year = &yearVal
 	}
 
-	c.JSON(http.StatusOK, gin.H{"song": song})
+	c.JSON(http.StatusOK, gin.H{
+		"song": gin.H{
+			"id":                song.ID,
+			"filename":          song.Filename,
+			"original_filename": song.OriginalFilename,
+			"filesize":          song.Filesize,
+			"artist":            song.Artist,
+			"title":             song.Title,
+			"album":             song.Album,
+			"genre":             song.Genre,
+			"year":              song.Year,
+			"mime_type":         song.MimeType,
+			"upload_date":       song.UploadDate,
+		},
+	})
 }
 
 // DeleteSong removes song from user's cloud library and deletes file if unused.
@@ -594,10 +732,11 @@ func DownloadSong(c *gin.Context) {
 	}
 
 	// Отправляем файл пользователю
-	c.Header("Content-Description", "File Transfer")
-	c.Header("Content-Transfer-Encoding", "binary")
-	c.Header("Content-Disposition", "attachment; filename="+song.OriginalFilename)
-	c.Header("Content-Type", "application/octet-stream")
+	fileName := filepath.Base(song.OriginalFilename)
+	if fileName == "." || fileName == string(filepath.Separator) || fileName == "" {
+		fileName = song.Filename
+	}
 
-	c.File(song.Filepath)
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.FileAttachment(song.Filepath, fileName)
 }

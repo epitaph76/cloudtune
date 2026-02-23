@@ -10,7 +10,7 @@ class CloudMusicProvider with ChangeNotifier {
   List<Playlist> _playlists = [];
   bool _isLoading = false;
   int _usedBytes = 0;
-  int _quotaBytes = 10 * 1024 * 1024 * 1024;
+  int _quotaBytes = 3 * 1024 * 1024 * 1024;
 
   List<Track> get tracks => _tracks;
   List<Playlist> get playlists => _playlists;

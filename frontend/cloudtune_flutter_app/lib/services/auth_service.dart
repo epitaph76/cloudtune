@@ -1,56 +1,21 @@
-import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import 'dart:io';
 import '../models/user.dart';
-import '../utils/constants.dart';
+import 'backend_client.dart';
+import 'session_storage_service.dart';
 
 class AuthService {
-  final Dio _dio;
-  late final List<String> _baseUrls;
+  AuthService({
+    BackendClient? backendClient,
+    SessionStorageService? sessionStorage,
+  }) : _backendClient =
+           backendClient ??
+           BackendClient(
+             connectTimeout: const Duration(seconds: 9),
+             receiveTimeout: const Duration(seconds: 9),
+           ),
+       _sessionStorage = sessionStorage ?? SessionStorageService();
 
-  AuthService()
-    : _dio = Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 9),
-          receiveTimeout: const Duration(seconds: 9),
-        ),
-      ) {
-    _baseUrls = {
-      Constants.primaryBaseUrl,
-      ...Constants.fallbackBaseUrls,
-    }.toList();
-  }
-
-  bool _isNetworkDioError(Object error) {
-    if (error is! DioException) return false;
-    final responseMissing = error.response == null;
-    final connectionError = error.type == DioExceptionType.connectionError;
-    final failedHostLookup =
-        error.error is SocketException ||
-        error.message.toString().contains('Failed host lookup');
-    return responseMissing && (connectionError || failedHostLookup);
-  }
-
-  Future<Response<dynamic>> _postWithFallback(
-    String path, {
-    required Map<String, dynamic> data,
-  }) async {
-    Object? lastError;
-    for (var i = 0; i < _baseUrls.length; i++) {
-      final url = '${_baseUrls[i]}$path';
-      try {
-        return await _dio.post(url, data: data);
-      } catch (error) {
-        lastError = error;
-        final canTryNext = i < _baseUrls.length - 1;
-        if (!canTryNext || !_isNetworkDioError(error)) {
-          rethrow;
-        }
-      }
-    }
-    throw lastError ?? Exception('Request failed');
-  }
+  final BackendClient _backendClient;
+  final SessionStorageService _sessionStorage;
 
   Future<Map<String, dynamic>> register(
     String email,
@@ -58,113 +23,99 @@ class AuthService {
     String password,
   ) async {
     try {
-      final response = await _postWithFallback(
-        '/auth/register',
+      final response = await _backendClient.request<dynamic>(
+        method: 'POST',
+        path: '/auth/register',
         data: {'email': email, 'username': username, 'password': password},
       );
 
-      if (response.statusCode == 200) {
-        final data = response.data;
-        final user = User.fromJson(data['user']);
-        final token = data['token'];
-
-        // Save token to shared preferences
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.setString(Constants.tokenKey, token);
-
-        // Cache user details
-        await prefs.setString(
-          Constants.userCacheKey,
-          json.encode(user.toJson()),
-        );
-
-        return {
-          'success': true,
-          'user': user,
-          'token': token,
-          'message': data['message'],
-        };
-      } else {
+      if (response.statusCode != 200 ||
+          response.data is! Map<String, dynamic>) {
         return {'success': false, 'message': 'Registration failed'};
       }
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+
+      final data = response.data as Map<String, dynamic>;
+      final userJson = data['user'];
+      final token = data['token']?.toString() ?? '';
+      if (userJson is! Map<String, dynamic> || token.isEmpty) {
+        return {'success': false, 'message': 'Registration failed'};
+      }
+
+      final user = User.fromJson(userJson);
+      await _sessionStorage.saveToken(token);
+      await _sessionStorage.cacheUser(user);
+
+      return {
+        'success': true,
+        'user': user,
+        'token': token,
+        'message': data['message'],
+      };
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Registration failed',
+        ),
+      };
     }
   }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
-      final response = await _postWithFallback(
-        '/auth/login',
+      final response = await _backendClient.request<dynamic>(
+        method: 'POST',
+        path: '/auth/login',
         data: {'email': email, 'password': password},
       );
 
-      if (response.statusCode == 200) {
-        final data = response.data;
-        final user = User.fromJson(data['user']);
-        final token = data['token'];
-
-        // Save token to shared preferences
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.setString(Constants.tokenKey, token);
-
-        // Cache user details
-        await prefs.setString(
-          Constants.userCacheKey,
-          json.encode(user.toJson()),
-        );
-
-        return {
-          'success': true,
-          'user': user,
-          'token': token,
-          'message': data['message'],
-        };
-      } else {
+      if (response.statusCode != 200 ||
+          response.data is! Map<String, dynamic>) {
         return {'success': false, 'message': 'Login failed'};
       }
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+
+      final data = response.data as Map<String, dynamic>;
+      final userJson = data['user'];
+      final token = data['token']?.toString() ?? '';
+      if (userJson is! Map<String, dynamic> || token.isEmpty) {
+        return {'success': false, 'message': 'Login failed'};
+      }
+
+      final user = User.fromJson(userJson);
+      await _sessionStorage.saveToken(token);
+      await _sessionStorage.cacheUser(user);
+
+      return {
+        'success': true,
+        'user': user,
+        'token': token,
+        'message': data['message'],
+      };
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Login failed',
+        ),
+      };
     }
   }
 
   Future<bool> isLoggedIn() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString(Constants.tokenKey);
+    final token = await _sessionStorage.readToken();
     return token != null && token.isNotEmpty;
   }
 
   Future<void> logout() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.remove(Constants.tokenKey);
-    await prefs.remove(Constants.userCacheKey);
+    await _sessionStorage.clearToken();
+    await _sessionStorage.clearCachedUser();
   }
 
-  Future<String?> getToken() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    return prefs.getString(Constants.tokenKey);
-  }
+  Future<String?> getToken() => _sessionStorage.readToken();
 
-  // Method to get user details from stored token
-  Future<User?> getCachedUser() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? userData = prefs.getString(Constants.userCacheKey);
+  Future<User?> getCachedUser() => _sessionStorage.getCachedUser();
 
-    if (userData != null) {
-      try {
-        Map<String, dynamic> userMap = json.decode(userData);
-        return User.fromJson(userMap);
-      } catch (e) {
-        // Log error in production
-        return null;
-      }
-    }
-    return null;
-  }
-
-  // Method to cache user details
-  Future<void> cacheUser(User user) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setString(Constants.userCacheKey, json.encode(user.toJson()));
-  }
+  Future<void> cacheUser(User user) => _sessionStorage.cacheUser(user);
 }

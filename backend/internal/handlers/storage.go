@@ -3,27 +3,9 @@ package handlers
 import (
 	"cloudtune/internal/database"
 	"net/http"
-	"os"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
-
-const defaultStorageQuotaBytes int64 = 3 * 1024 * 1024 * 1024 // 3 GB
-
-func resolveStorageQuotaBytes() int64 {
-	raw := os.Getenv("CLOUD_STORAGE_QUOTA_BYTES")
-	if raw == "" {
-		return defaultStorageQuotaBytes
-	}
-
-	value, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || value <= 0 {
-		return defaultStorageQuotaBytes
-	}
-
-	return value
-}
 
 // GetStorageUsage returns cloud storage usage for current user.
 func GetStorageUsage(c *gin.Context) {
@@ -40,14 +22,8 @@ func GetStorageUsage(c *gin.Context) {
 	}
 
 	db := database.DB
-	var usedBytes int64
-	query := `
-		SELECT COALESCE(SUM(s.filesize), 0)
-		FROM songs s
-		JOIN user_library ul ON s.id = ul.song_id
-		WHERE ul.user_id = $1
-	`
-	if err := db.QueryRow(query, userID).Scan(&usedBytes); err != nil {
+	usedBytes, err := getUserStorageUsageBytes(db, userID)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error calculating storage usage"})
 		return
 	}

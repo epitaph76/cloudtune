@@ -1,0 +1,16 @@
+[Unit]
+Description=CloudTune Monitoring Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/cloudtune/monitoring
+EnvironmentFile=/opt/cloudtune/monitoring/.env
+ExecStart=/opt/cloudtune/monitoring/.venv/bin/python /opt/cloudtune/monitoring/src/bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

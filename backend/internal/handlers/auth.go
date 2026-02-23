@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +24,17 @@ func Register(c *gin.Context) {
 	// Validate required fields
 	if user.Email == "" || user.Username == "" || user.Password == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Email, username, and password are required"})
+		return
+	}
+
+	user.Email = strings.ToLower(strings.TrimSpace(user.Email))
+	user.Username = strings.TrimSpace(user.Username)
+	if user.Email == "" || user.Username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Email and username are required"})
+		return
+	}
+	if len(user.Password) < 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password must be at least 6 characters long"})
 		return
 	}
 
@@ -60,7 +72,7 @@ func Register(c *gin.Context) {
 		"message": "User registered successfully",
 		"token":   token,
 		"user": gin.H{
-			"id":       user.ID,
+			"id":       strconv.Itoa(user.ID),
 			"email":    user.Email,
 			"username": user.Username,
 		},
@@ -75,6 +87,11 @@ func Login(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&credentials); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Email and password are required"})
+		return
+	}
+	credentials.Email = strings.ToLower(strings.TrimSpace(credentials.Email))
+	if credentials.Email == "" || credentials.Password == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Email and password are required"})
 		return
 	}
@@ -118,7 +135,7 @@ func Login(c *gin.Context) {
 		"message": "Login successful",
 		"token":   token,
 		"user": gin.H{
-			"id":       user.ID,
+			"id":       strconv.Itoa(user.ID),
 			"email":    user.Email,
 			"username": user.Username,
 		},

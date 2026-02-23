@@ -17,9 +17,12 @@ import '../providers/cloud_music_provider.dart';
 import '../providers/local_music_provider.dart';
 import '../providers/main_nav_provider.dart';
 import '../services/api_service.dart';
+import '../services/upload_notification_service.dart';
 import '../utils/app_localizations.dart';
 
 enum _StorageType { local, cloud }
+
+enum _LocalTrackSort { addedToPlayer, name, fileModified }
 
 class _FolderImportFilters {
   const _FolderImportFilters({
@@ -70,6 +73,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   String _selectedLocalPlaylistId = LocalMusicProvider.allPlaylistId;
   int? _selectedCloudPlaylistId;
   String _localTracksSearchQuery = '';
+  _LocalTrackSort _localTrackSort = _LocalTrackSort.addedToPlayer;
   String _cloudTracksSearchQuery = '';
   final Set<String> _selectedLocalTrackPaths = <String>{};
   String? _lastLocalTracksAutoScrollKey;
@@ -1002,7 +1006,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   bool _isTrackAlreadyInCloudLibrary(File file, CloudMusicProvider provider) {
     final key = _trackLookupName(file.path);
     for (final track in provider.tracks) {
-      final cloudKey = _trackLookupName(track.originalFilename ?? track.filename);
+      final cloudKey = _trackLookupName(
+        track.originalFilename ?? track.filename,
+      );
       if (cloudKey == key) return true;
     }
     return false;
@@ -1154,7 +1160,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         uploaded = true;
         if (!silent && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Already in cloud: ${p.basename(file.path)}')),
+            SnackBar(
+              content: Text('Already in cloud: ${p.basename(file.path)}'),
+            ),
           );
         }
         return uploaded;
@@ -1235,6 +1243,63 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     LocalMusicProvider localMusicProvider,
   ) {
     return localMusicProvider.getTracksForPlaylist(_selectedLocalPlaylistId);
+  }
+
+  String _localTrackSortLabel(_LocalTrackSort sort, BuildContext context) {
+    switch (sort) {
+      case _LocalTrackSort.addedToPlayer:
+        return 'По дате добавления';
+      case _LocalTrackSort.name:
+        return 'По названию';
+      case _LocalTrackSort.fileModified:
+        return 'По дате изменения файла';
+    }
+  }
+
+  int _safeFileModifiedEpoch(File file) {
+    try {
+      return file.statSync().modified.millisecondsSinceEpoch;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  List<File> _sortLocalTracks({
+    required List<File> playlistTracks,
+    required List<File> allLocalTracks,
+  }) {
+    final sorted = List<File>.from(playlistTracks);
+
+    switch (_localTrackSort) {
+      case _LocalTrackSort.addedToPlayer:
+        final indexByPath = <String, int>{
+          for (var i = 0; i < allLocalTracks.length; i++)
+            _pathSelectionKey(allLocalTracks[i].path): i,
+        };
+        sorted.sort((left, right) {
+          final leftIndex = indexByPath[_pathSelectionKey(left.path)] ?? -1;
+          final rightIndex = indexByPath[_pathSelectionKey(right.path)] ?? -1;
+          return rightIndex.compareTo(leftIndex);
+        });
+        break;
+      case _LocalTrackSort.name:
+        sorted.sort(
+          (left, right) => p
+              .basenameWithoutExtension(left.path)
+              .toLowerCase()
+              .compareTo(p.basenameWithoutExtension(right.path).toLowerCase()),
+        );
+        break;
+      case _LocalTrackSort.fileModified:
+        sorted.sort(
+          (left, right) => _safeFileModifiedEpoch(
+            right,
+          ).compareTo(_safeFileModifiedEpoch(left)),
+        );
+        break;
+    }
+
+    return sorted;
   }
 
   bool _matchesLocalTrackSearch(File file) {
@@ -1554,6 +1619,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       _playlistUploadProgress.remove(syncKey);
     });
 
+    final totalTracks = playlistTracks.length;
+    var completedTracks = 0;
+
     try {
       final cloudMusicProvider = context.read<CloudMusicProvider>();
       await cloudMusicProvider.fetchUserLibrary();
@@ -1565,38 +1633,64 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         cloudSongIdByName.putIfAbsent(key, () => track.id);
       }
 
-      final missingFilesByName = <String, File>{};
+      final keyOccurrences = <String, int>{};
+      final firstFileByKey = <String, File>{};
       for (final file in playlistTracks) {
         final key = _trackLookupName(file.path);
-        if (cloudSongIdByName.containsKey(key)) continue;
-        missingFilesByName.putIfAbsent(key, () => file);
+        keyOccurrences[key] = (keyOccurrences[key] ?? 0) + 1;
+        firstFileByKey.putIfAbsent(key, () => file);
       }
 
-      final totalMissing = missingFilesByName.length;
+      final missingFilesByName = <String, File>{};
+      for (final entry in keyOccurrences.entries) {
+        if (cloudSongIdByName.containsKey(entry.key)) {
+          completedTracks += entry.value;
+          continue;
+        }
+        final file = firstFileByKey[entry.key];
+        if (file != null) {
+          missingFilesByName[entry.key] = file;
+        }
+      }
+
       if (mounted) {
         setState(() {
-          _playlistUploadProgress[syncKey] = (uploaded: 0, total: totalMissing);
+          _playlistUploadProgress[syncKey] = (
+            uploaded: completedTracks,
+            total: totalTracks,
+          );
         });
       }
+      await UploadNotificationService.showPlaylistUploadProgress(
+        syncKey: syncKey,
+        playlistName: playlistName,
+        uploadedTracks: completedTracks,
+        totalTracks: totalTracks,
+      );
 
-      var uploadedMissing = 0;
       for (final entry in missingFilesByName.entries) {
         final uploadResult = await _apiService.uploadFile(entry.value);
         if (uploadResult['success'] == true) {
           final uploadedSongId = _extractSongIdFromUploadResult(uploadResult);
           if (uploadedSongId != null) {
             cloudSongIdByName[entry.key] = uploadedSongId;
-            uploadedMissing += 1;
+            completedTracks += keyOccurrences[entry.key] ?? 1;
           }
         }
         if (mounted) {
           setState(() {
             _playlistUploadProgress[syncKey] = (
-              uploaded: uploadedMissing,
-              total: totalMissing,
+              uploaded: completedTracks,
+              total: totalTracks,
             );
           });
         }
+        await UploadNotificationService.showPlaylistUploadProgress(
+          syncKey: syncKey,
+          playlistName: playlistName,
+          uploadedTracks: completedTracks,
+          totalTracks: totalTracks,
+        );
       }
 
       final desiredSongIDsInOrder = <int>[];
@@ -1693,12 +1787,26 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       }
 
       await _refreshCloudData();
+      await UploadNotificationService.showPlaylistUploadFinished(
+        syncKey: syncKey,
+        playlistName: playlistName,
+        uploadedTracks: completedTracks,
+        totalTracks: totalTracks,
+      );
       if (!mounted) return;
       if (!silent) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Playlist "$playlistName" synced to cloud')),
         );
       }
+    } catch (_) {
+      await UploadNotificationService.showPlaylistUploadFinished(
+        syncKey: syncKey,
+        playlistName: playlistName,
+        uploadedTracks: completedTracks,
+        totalTracks: totalTracks,
+      );
+      rethrow;
     } finally {
       if (mounted) {
         setState(() {
@@ -2202,7 +2310,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         final playlistLocalTracks = _localTracksForSelectedPlaylist(
           localMusicProvider,
         );
-        final visibleLocalTracks = playlistLocalTracks
+        final sortedPlaylistLocalTracks = _sortLocalTracks(
+          playlistTracks: playlistLocalTracks,
+          allLocalTracks: localTracks,
+        );
+        final visibleLocalTracks = sortedPlaylistLocalTracks
             .where(_matchesLocalTrackSearch)
             .toList();
         _primeLocalFileSizeRequests(visibleLocalTracks);
@@ -2539,6 +2651,77 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                           ),
                                         ),
                                       ),
+                                      const SizedBox(width: 8),
+                                      PopupMenuButton<_LocalTrackSort>(
+                                        tooltip: 'Сортировка',
+                                        initialValue: _localTrackSort,
+                                        onSelected: (value) {
+                                          if (_localTrackSort == value) return;
+                                          setState(
+                                            () => _localTrackSort = value,
+                                          );
+                                        },
+                                        itemBuilder: (context) => _LocalTrackSort
+                                            .values
+                                            .map(
+                                              (sort) =>
+                                                  PopupMenuItem<
+                                                    _LocalTrackSort
+                                                  >(
+                                                    value: sort,
+                                                    child: Row(
+                                                      children: [
+                                                        Expanded(
+                                                          child: Text(
+                                                            _localTrackSortLabel(
+                                                              sort,
+                                                              context,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        if (sort ==
+                                                            _localTrackSort)
+                                                          Icon(
+                                                            Icons.check_rounded,
+                                                            size: 18,
+                                                            color: colorScheme
+                                                                .primary,
+                                                          ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                            )
+                                            .toList(),
+                                        child: Container(
+                                          height: 44,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: colorScheme.surface,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                            border: Border.all(
+                                              color: colorScheme.outline,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.sort_rounded,
+                                                size: 20,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                'Сортировка',
+                                                style: textTheme.labelMedium,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 10),
@@ -2592,7 +2775,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                                 return;
                                               }
                                               final targetIndex =
-                                                  playlistLocalTracks
+                                                  sortedPlaylistLocalTracks
                                                       .indexWhere(
                                                         (item) => _pathsEqual(
                                                           item.path,
@@ -2603,7 +2786,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                               context
                                                   .read<AudioPlayerProvider>()
                                                   .toggleTrackFromTracks(
-                                                    playlistLocalTracks,
+                                                    sortedPlaylistLocalTracks,
                                                     targetIndex,
                                                   );
                                             },
@@ -2624,7 +2807,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                                       _resolveTrackActionTargets(
                                                         anchorTrack: file,
                                                         playlistTracks:
-                                                            playlistLocalTracks,
+                                                            sortedPlaylistLocalTracks,
                                                       );
                                                   await _uploadLocalTracks(
                                                     targets,
@@ -2640,7 +2823,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                                       _resolveTrackActionTargets(
                                                         anchorTrack: file,
                                                         playlistTracks:
-                                                            playlistLocalTracks,
+                                                            sortedPlaylistLocalTracks,
                                                       );
                                                   await _addTracksToPlaylist(
                                                     targets,
@@ -2664,7 +2847,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                                         _resolveTrackActionTargets(
                                                           anchorTrack: file,
                                                           playlistTracks:
-                                                              playlistLocalTracks,
+                                                              sortedPlaylistLocalTracks,
                                                         );
                                                     await _removeTracksFromCurrentPlaylist(
                                                       targets,
@@ -2679,7 +2862,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                                       _resolveTrackActionTargets(
                                                         anchorTrack: file,
                                                         playlistTracks:
-                                                            playlistLocalTracks,
+                                                            sortedPlaylistLocalTracks,
                                                       );
                                                   await _removeLocalTracks(
                                                     targets,

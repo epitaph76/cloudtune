@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -32,6 +33,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   MyAudioHandler() {
+    unawaited(_configureAudioSession());
+
     // Keep playback rate stable even if platform media session requests speed changes.
     _player.setSpeed(1.0);
 
@@ -65,6 +68,28 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
   }
 
+  Future<void> _configureAudioSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+
+    session.interruptionEventStream.listen((event) {
+      if (event.begin) {
+        if (_player.playing) {
+          unawaited(pause());
+        }
+        return;
+      }
+
+      // Не возобновляем автоматически, пользователь сам снимает с паузы из уведомления.
+    });
+
+    session.becomingNoisyEventStream.listen((_) {
+      if (_player.playing) {
+        unawaited(pause());
+      }
+    });
+  }
+
   @override
   Future<void> play() async {
     await _runSerialized(() async {
@@ -81,7 +106,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> pause() => _runSerialized(() => _player.pause());
 
   @override
-  Future<void> stop() => _runSerialized(() => _player.stop());
+  Future<void> stop() async {
+    await _runSerialized(() => _player.stop());
+  }
 
   @override
   Future<void> seek(Duration position) =>
@@ -294,4 +321,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       queueIndex: player.currentIndex,
     );
   }
+
+  @override
+  Future<void> onTaskRemoved() async {
+    // При сворачивании/убийстве UI оставляем сервис живым, но ставим воспроизведение на паузу.
+    if (_player.playing) {
+      await pause();
+    }
+  }
+
 }

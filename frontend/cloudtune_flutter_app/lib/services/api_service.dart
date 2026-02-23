@@ -1,89 +1,60 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:io';
-import '../utils/constants.dart';
+
+import 'backend_client.dart';
+import 'session_storage_service.dart';
 
 class ApiService {
-  final Dio _dio;
-  late final List<String> _baseUrls;
+  ApiService({
+    BackendClient? backendClient,
+    SessionStorageService? sessionStorage,
+  }) : _backendClient = backendClient ?? BackendClient(),
+       _sessionStorage = sessionStorage ?? SessionStorageService();
 
-  ApiService()
-    : _dio = Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 30),
-          receiveTimeout: const Duration(seconds: 30),
-        ),
-      ) {
-    _baseUrls = {
-      Constants.primaryBaseUrl,
-      ...Constants.fallbackBaseUrls,
-    }.toList();
-  }
-
-  bool _isNetworkDioError(Object error) {
-    if (error is! DioException) return false;
-    final responseMissing = error.response == null;
-    final connectionError = error.type == DioExceptionType.connectionError;
-    final failedHostLookup =
-        error.error is SocketException ||
-        error.message.toString().contains('Failed host lookup');
-    return responseMissing && (connectionError || failedHostLookup);
-  }
+  final BackendClient _backendClient;
+  final SessionStorageService _sessionStorage;
 
   Future<Response<T>> _requestWithFallback<T>({
     required String method,
     required String path,
     Object? data,
     Options? options,
-  }) async {
-    Object? lastError;
-    for (var i = 0; i < _baseUrls.length; i++) {
-      final url = '${_baseUrls[i]}$path';
-      try {
-        return await _dio.request<T>(
-          url,
-          data: data,
-          options: (options ?? Options()).copyWith(method: method),
-        );
-      } catch (error) {
-        lastError = error;
-        final canTryNext = i < _baseUrls.length - 1;
-        if (!canTryNext || !_isNetworkDioError(error)) {
-          rethrow;
-        }
-      }
-    }
-    throw lastError ?? Exception('Request failed');
+    Map<String, dynamic>? queryParameters,
+  }) {
+    return _backendClient.request<T>(
+      method: method,
+      path: path,
+      data: data,
+      options: options,
+      queryParameters: queryParameters,
+    );
   }
 
-  // Метод для получения токена из SharedPreferences
-  Future<String?> _getToken() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    return prefs.getString(Constants.tokenKey);
+  Map<String, dynamic> _mapOrEmpty(Object? raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return <String, dynamic>{};
   }
 
-  // Добавляем токен авторизации к запросу
   Future<Options> _getAuthOptions() async {
-    String? token = await _getToken();
-    if (token != null) {
+    final token = await _sessionStorage.readToken();
+    if (token != null && token.isNotEmpty) {
       return Options(headers: {'Authorization': 'Bearer $token'});
     }
-    throw Exception('Пользователь не авторизован');
+    throw StateError('User is not authenticated');
   }
 
-  // Загрузка файла на сервер
   Future<Map<String, dynamic>> uploadFile(File file) async {
     try {
-      Options options = await _getAuthOptions();
-
-      String fileName = p.basename(file.path);
-
-      FormData formData = FormData.fromMap({
+      final options = await _getAuthOptions();
+      final fileName = p.basename(file.path);
+      final formData = FormData.fromMap({
         'file': await MultipartFile.fromFile(file.path, filename: fileName),
       });
 
-      Response response = await _requestWithFallback(
+      final response = await _requestWithFallback(
         method: 'POST',
         path: '/api/songs/upload',
         data: formData,
@@ -92,57 +63,74 @@ class ApiService {
 
       if (response.statusCode == 200) {
         return {'success': true, 'data': response.data};
-      } else {
-        return {'success': false, 'message': 'Ошибка при загрузке файла'};
       }
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+
+      return {'success': false, 'message': 'Ошибка при загрузке файла'};
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Ошибка при загрузке файла',
+        ),
+      };
     }
   }
 
-  // Получение библиотеки песен пользователя
   Future<Map<String, dynamic>> getUserLibrary() async {
     try {
-      Options options = await _getAuthOptions();
-
-      Response response = await _requestWithFallback(
+      final options = await _getAuthOptions();
+      final response = await _requestWithFallback(
         method: 'GET',
         path: '/api/songs/library',
         options: options,
       );
 
+      final data = _mapOrEmpty(response.data);
       if (response.statusCode == 200) {
-        return {'success': true, 'songs': response.data['songs']};
-      } else {
-        return {'success': false, 'message': 'Ошибка при получении библиотеки'};
+        final songs = data['songs'];
+        return {'success': true, 'songs': songs is List ? songs : <dynamic>[]};
       }
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+
+      return {'success': false, 'message': 'Ошибка при получении библиотеки'};
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Ошибка при получении библиотеки',
+        ),
+      };
     }
   }
 
-  // Получение плейлистов пользователя
   Future<Map<String, dynamic>> getUserPlaylists() async {
     try {
-      Options options = await _getAuthOptions();
-
-      Response response = await _requestWithFallback(
+      final options = await _getAuthOptions();
+      final response = await _requestWithFallback(
         method: 'GET',
         path: '/api/playlists',
         options: options,
       );
 
+      final data = _mapOrEmpty(response.data);
       if (response.statusCode == 200) {
-        final playlistsRaw = response.data['playlists'];
+        final playlistsRaw = data['playlists'];
         return {
           'success': true,
           'playlists': playlistsRaw is List ? playlistsRaw : <dynamic>[],
         };
-      } else {
-        return {'success': false, 'message': 'Ошибка при получении плейлистов'};
       }
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+
+      return {'success': false, 'message': 'Ошибка при получении плейлистов'};
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Ошибка при получении плейлистов',
+        ),
+      };
     }
   }
 
@@ -168,16 +156,24 @@ class ApiService {
         options: options,
       );
 
+      final data = _mapOrEmpty(response.data);
       if (response.statusCode == 200) {
         return {
           'success': true,
-          'playlist_id': response.data['playlist_id'],
-          'playlist': response.data['playlist'],
+          'playlist_id': data['playlist_id'],
+          'playlist': data['playlist'],
         };
       }
+
       return {'success': false, 'message': 'Failed to create playlist'};
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Failed to create playlist',
+        ),
+      };
     }
   }
 
@@ -196,9 +192,16 @@ class ApiService {
       if (response.statusCode == 200) {
         return {'success': true, 'data': response.data};
       }
+
       return {'success': false, 'message': 'Failed to add song to playlist'};
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Failed to add song to playlist',
+        ),
+      };
     }
   }
 
@@ -211,16 +214,24 @@ class ApiService {
         options: options,
       );
 
+      final data = _mapOrEmpty(response.data);
       if (response.statusCode == 200) {
         return {
           'success': true,
-          'songs': response.data['songs'] ?? <dynamic>[],
-          'count': response.data['count'] ?? 0,
+          'songs': data['songs'] is List ? data['songs'] : <dynamic>[],
+          'count': data['count'] is num ? (data['count'] as num).toInt() : 0,
         };
       }
+
       return {'success': false, 'message': 'Failed to fetch playlist songs'};
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Failed to fetch playlist songs',
+        ),
+      };
     }
   }
 
@@ -236,54 +247,60 @@ class ApiService {
       if (response.statusCode == 200) {
         return {'success': true, 'data': response.data};
       }
+
       return {'success': false, 'message': 'Failed to delete playlist'};
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Failed to delete playlist',
+        ),
+      };
     }
   }
 
-  // Скачивание файла с сервера
   Future<Map<String, dynamic>> downloadFile(int fileId, String savePath) async {
+    final file = File(savePath);
+    RandomAccessFile? randomAccessFile;
+
     try {
-      Options options = await _getAuthOptions();
-
-      // Создаем файл для сохранения
-      File file = File(savePath);
-
-      // Открываем поток для записи
-      RandomAccessFile randomAccessFile = await file.open(mode: FileMode.write);
-
-      try {
-        // Выполняем запрос с потоковой передачей
-        Response<ResponseBody> response =
-            await _requestWithFallback<ResponseBody>(
-              method: 'GET',
-              path: '/api/songs/download/$fileId',
-              options: options.copyWith(responseType: ResponseType.stream),
-            );
-
-        if (response.statusCode == 200) {
-          // Получаем поток данных
-          Stream<List<int>> stream = response.data!.stream;
-
-          // Читаем поток по кусочкам и записываем в файл
-          await for (List<int> chunk in stream) {
-            await randomAccessFile.writeFrom(chunk);
-          }
-
-          return {'success': true, 'filePath': file.path};
-        } else {
-          return {
-            'success': false,
-            'message': 'Ошибка при скачивании файла: ${response.statusCode}',
-          };
-        }
-      } finally {
-        // Закрываем файл
-        await randomAccessFile.close();
+      final options = await _getAuthOptions();
+      final parentDir = file.parent;
+      if (!await parentDir.exists()) {
+        await parentDir.create(recursive: true);
       }
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+
+      randomAccessFile = await file.open(mode: FileMode.write);
+
+      final response = await _requestWithFallback<ResponseBody>(
+        method: 'GET',
+        path: '/api/songs/download/$fileId',
+        options: options.copyWith(responseType: ResponseType.stream),
+      );
+
+      if (response.statusCode != 200 || response.data == null) {
+        return {
+          'success': false,
+          'message': 'Ошибка при скачивании файла: ${response.statusCode}',
+        };
+      }
+
+      await for (final chunk in response.data!.stream) {
+        await randomAccessFile.writeFrom(chunk);
+      }
+
+      return {'success': true, 'filePath': file.path};
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Ошибка при скачивании файла',
+        ),
+      };
+    } finally {
+      await randomAccessFile?.close();
     }
   }
 
@@ -296,12 +313,13 @@ class ApiService {
         options: options,
       );
 
+      final data = _mapOrEmpty(response.data);
       if (response.statusCode == 200) {
         return {
           'success': true,
-          'used_bytes': response.data['used_bytes'] ?? 0,
-          'quota_bytes': response.data['quota_bytes'] ?? 0,
-          'remaining_bytes': response.data['remaining_bytes'] ?? 0,
+          'used_bytes': data['used_bytes'] ?? 0,
+          'quota_bytes': data['quota_bytes'] ?? 0,
+          'remaining_bytes': data['remaining_bytes'] ?? 0,
         };
       }
 
@@ -309,8 +327,14 @@ class ApiService {
         'success': false,
         'message': 'Ошибка при получении квоты хранилища',
       };
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Ошибка при получении квоты хранилища',
+        ),
+      };
     }
   }
 
@@ -326,9 +350,16 @@ class ApiService {
       if (response.statusCode == 200) {
         return {'success': true, 'data': response.data};
       }
+
       return {'success': false, 'message': 'Failed to delete song'};
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
+    } catch (error) {
+      return {
+        'success': false,
+        'message': _backendClient.describeError(
+          error,
+          fallbackMessage: 'Failed to delete song',
+        ),
+      };
     }
   }
 }

@@ -60,7 +60,7 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } else {
-      _errorMessage = result['message'];
+      _errorMessage = result['message']?.toString();
       notifyListeners();
       return false;
     }
@@ -84,7 +84,7 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } else {
-      _errorMessage = result['message'];
+      _errorMessage = result['message']?.toString();
       notifyListeners();
       return false;
     }

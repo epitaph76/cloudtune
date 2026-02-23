@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/audio_player_provider.dart';
@@ -27,6 +28,8 @@ late final MyAudioHandler audioHandler;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _prepareAndroidPermissions();
+
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     JustAudioMediaKit.ensureInitialized(
       windows: true,
@@ -40,11 +43,22 @@ void main() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.cloudtune.audio',
       androidNotificationChannelName: 'CloudTune Playback',
-      androidNotificationOngoing: true,
+      androidNotificationOngoing: false,
+      androidStopForegroundOnPause: false,
     ),
   );
 
   runApp(const MyApp());
+}
+
+Future<void> _prepareAndroidPermissions() async {
+  if (kIsWeb || !Platform.isAndroid) return;
+
+  // Для Android 13+ без этого системное уведомление управления может не появляться.
+  final status = await Permission.notification.status;
+  if (!status.isGranted) {
+    await Permission.notification.request();
+  }
 }
 
 class MyApp extends StatelessWidget {
