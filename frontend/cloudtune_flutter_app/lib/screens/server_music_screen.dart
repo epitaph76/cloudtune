@@ -42,7 +42,8 @@ class ServerMusicScreen extends StatefulWidget {
   State<ServerMusicScreen> createState() => _ServerMusicScreenState();
 }
 
-class _ServerMusicScreenState extends State<ServerMusicScreen> {
+class _ServerMusicScreenState extends State<ServerMusicScreen>
+    with AutomaticKeepAliveClientMixin {
   static const double _storageHeaderControlWidth = 156;
   static const double _storageHeaderControlHeight = 46;
 
@@ -55,6 +56,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
   final Set<int> _loadingCloudPlaylistIds = <int>{};
   final Map<int, List<Track>> _cloudPlaylistTracksCache = <int, List<Track>>{};
   final Map<String, String> _localFileSizeCache = <String, String>{};
+  final Set<String> _localFileSizeLoadingPaths = <String>{};
   final Map<String, ({int uploaded, int total})> _playlistUploadProgress =
       <String, ({int uploaded, int total})>{};
 
@@ -107,6 +109,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     _localTracksScrollController.dispose();
     super.dispose();
   }
+
+  @override
+  bool get wantKeepAlive => true;
 
   Future<void> _refreshCloudData() async {
     if (!mounted) return;
@@ -2167,6 +2172,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     String t(String key) => AppLocalizations.text(context, key);
@@ -2199,23 +2205,30 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
         final visibleLocalTracks = playlistLocalTracks
             .where(_matchesLocalTrackSearch)
             .toList();
+        _primeLocalFileSizeRequests(visibleLocalTracks);
         _maybeAutoScrollToCurrentLocalTrack(
           visibleLocalTracks: visibleLocalTracks,
           currentTrackPath: currentTrackPath,
         );
-        final cloudTracks = cloudMusicProvider.tracks;
-        final cloudPlaylists = cloudMusicProvider.playlists;
-        final baseCloudTracks = _selectedCloudPlaylistId == null
-            ? cloudTracks
-            : (_cloudPlaylistTracksCache[_selectedCloudPlaylistId!] ??
-                  const <Track>[]);
-        final visibleCloudTracks = baseCloudTracks
-            .where(_matchesCloudTrackSearch)
-            .toList();
+        final isCloudAuthed = authProvider.currentUser != null;
+        final cloudTracks = _storageType == _StorageType.cloud
+            ? cloudMusicProvider.tracks
+            : const <Track>[];
+        final cloudPlaylists = _storageType == _StorageType.cloud
+            ? cloudMusicProvider.playlists
+            : const <Playlist>[];
+        final visibleCloudTracks = _storageType == _StorageType.cloud
+            ? (_selectedCloudPlaylistId == null
+                      ? cloudTracks
+                      : (_cloudPlaylistTracksCache[_selectedCloudPlaylistId!] ??
+                            const <Track>[]))
+                  .where(_matchesCloudTrackSearch)
+                  .toList()
+            : const <Track>[];
         final isCloudPlaylistLoading =
+            _storageType == _StorageType.cloud &&
             _selectedCloudPlaylistId != null &&
             _loadingCloudPlaylistIds.contains(_selectedCloudPlaylistId);
-        final isCloudAuthed = authProvider.currentUser != null;
         final isWindowsDesktop =
             Theme.of(context).platform == TargetPlatform.windows &&
             MediaQuery.of(context).size.width >= 920;
@@ -2935,18 +2948,41 @@ class _ServerMusicScreenState extends State<ServerMusicScreen> {
     );
   }
 
+  void _primeLocalFileSizeRequests(List<File> files) {
+    final limit = math.min(files.length, 18);
+    for (var i = 0; i < limit; i++) {
+      _requestLocalFileSize(files[i]);
+    }
+  }
+
+  void _requestLocalFileSize(File file) {
+    final path = file.path;
+    if (_localFileSizeCache.containsKey(path) ||
+        _localFileSizeLoadingPaths.contains(path)) {
+      return;
+    }
+    _localFileSizeLoadingPaths.add(path);
+    file
+        .length()
+        .then((bytes) {
+          final mb = bytes / 1024 / 1024;
+          return '${mb.toStringAsFixed(2)} MB';
+        })
+        .catchError((_) => 'Unknown size')
+        .then((value) {
+          if (!mounted) return;
+          setState(() {
+            _localFileSizeCache[path] = value;
+            _localFileSizeLoadingPaths.remove(path);
+          });
+        });
+  }
+
   String _localFileSize(File file) {
     final cached = _localFileSizeCache[file.path];
     if (cached != null) return cached;
-    try {
-      final bytes = file.lengthSync();
-      final mb = bytes / 1024 / 1024;
-      final value = '${mb.toStringAsFixed(2)} MB';
-      _localFileSizeCache[file.path] = value;
-      return value;
-    } catch (_) {
-      return 'Unknown size';
-    }
+    _requestLocalFileSize(file);
+    return '...';
   }
 
   String _cloudFileSize(Track track) {
