@@ -28,6 +28,8 @@ volumes/
 .env.*.local
 .env.production
 .env.development
+backend/.env.prod
+monitoring/.env
 
 # SSL/TLS certificates (не коммитим приватные ключи)
 *.pem
@@ -51,6 +53,26 @@ Thumbs.db
 *.swp
 *.swo
 .cache/
+
+# ======================
+# Runtime Data
+# ======================
+uploads/
+
+# ======================
+# Python
+# ======================
+**/.venv/
+**/__pycache__/
+*.py[cod]
+
+# ======================
+# Backup / Patch Artifacts
+# ======================
+*.bak
+*.bak.*
+*.orig
+*.rej
 
 # ======================
 # Testing
