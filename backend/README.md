@@ -70,6 +70,18 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 
 3. При схеме с Nginx backend обычно слушает `127.0.0.1:8080`.
 
+## Deploy Script (GitHub + rollback)
+
+Скрипт: `backend/scripts/deploy-from-github.sh`.
+
+Что делает:
+- обновляет код из GitHub;
+- деплоит backend через `docker compose`;
+- обновляет основной и resume-лендинг;
+- запускает post-deploy автотесты (`backend/scripts/run_post_deploy_tests.py`);
+- при падении тестов откатывает на предыдущий commit и деплоит его обратно;
+- перезапускает `cloudtune-monitoring-bot` с задержкой.
+
 ## Переменные окружения
 
 - `DB_HOST` - хост БД (`localhost` по умолчанию).
