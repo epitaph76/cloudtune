@@ -28,6 +28,7 @@ CloudTune - это музыкальный fullstack-проект с локаль
 - `frontend/cloudtune_flutter_app/` - Flutter-клиент (Android + desktop).
 - `monitoring/` - Telegram-бот мониторинга на Python.
 - `landing/` - статический лендинг проекта для Nginx.
+![Cloudtune_kQh2MX30By](https://github.com/user-attachments/assets/fa471318-4c4f-4f1e-bf42-7fbb5bbdcb26)
 
 ## Схема системы
 
