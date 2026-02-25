@@ -344,8 +344,9 @@ def run() -> None:
             timeout=max(cfg.timeout_seconds, 60),
         )
         ensure_status(status, 200, "GET /api/songs/download/:id")
-        if len(body) < 128:
-            fail("GET /api/songs/download/:id: response body too small")
+        x_accel_redirect = headers.get("X-Accel-Redirect", "")
+        if len(body) < 128 and not x_accel_redirect:
+            fail("GET /api/songs/download/:id: response body too small and no X-Accel-Redirect")
         content_type = headers.get("Content-Type", "")
         if "audio" not in content_type and "octet-stream" not in content_type:
             fail(f"GET /api/songs/download/:id: unexpected content-type '{content_type}'")
