@@ -302,6 +302,51 @@
       font-weight: 600;
     }
 
+    .changelog {
+      display: grid;
+      gap: 10px;
+    }
+
+    .change-item {
+      border: 1px solid rgba(226, 183, 145, 0.3);
+      border-radius: 14px;
+      background: rgba(61, 40, 29, 0.56);
+      padding: 12px 13px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .change-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .change-head strong {
+      font-size: 15px;
+      font-family: var(--mono);
+      color: #f7dec8;
+    }
+
+    .change-date {
+      font-size: 12px;
+      color: #d6bcaa;
+      border: 1px solid rgba(225, 184, 147, 0.3);
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: rgba(70, 47, 34, 0.58);
+      font-family: var(--mono);
+    }
+
+    .change-note {
+      margin: 0;
+      color: #e4cab7;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
     footer {
       text-align: center;
       color: #b99f8b;
@@ -381,7 +426,7 @@
       <ul class="meta">
         <li>Backend: Go 1.24 + Gin</li>
         <li>DB: PostgreSQL 15</li>
-        <li>Client: Flutter 3.x / Dart 3.11+</li>
+        <li>Client: Flutter 3.41.1 / Dart 3.11.0</li>
         <li>Monitoring: Python 3.12</li>
       </ul>
     </header>
@@ -412,7 +457,7 @@
           <div class="arch-step">Nginx + TLS -> api-mp3-player.ru</div>
         </div>
         <p>
-          Сервер запущен на VDS (Ubuntu 22.04, 1 vCPU, 1 GB RAM, 20 GB SSD).
+          Сервер запущен на VDS (Ubuntu 22.04, 2 vCPU, 2 GB RAM, 20 GB SSD).
           Схема ориентирована на экономный расход ресурсов и контролируемые апдейты.
         </p>
       </aside>
@@ -452,12 +497,12 @@
       <div class="downloads">
         <article class="download-card">
           <h3>Desktop версия (Windows)</h3>
-          <p>Для установки скачайте архив desktop-сборки и распакуйте его на ПК. Актуальный релиз: 1.8.2+5.</p>
+          <p>Для установки скачайте архив desktop-сборки и распакуйте его на ПК. Актуальный релиз: 1.8.3+6 (обновлен 24.02.2026).</p>
           <a class="btn btn-primary" href="/cloudtune_win.zip">Скачать архив (.zip)</a>
         </article>
         <article class="download-card">
           <h3>Android версия</h3>
-          <p>Можно установить APK напрямую или скачать приложение из RuStore. Актуальный релиз: 1.8.2+5.</p>
+          <p>Можно установить APK напрямую или скачать приложение из RuStore. Актуальный релиз: 1.8.3+6.</p>
           <a class="btn btn-primary" href="/cloudtune_andr.apk">Скачать APK</a>
           <a class="btn btn-secondary" href="https://www.rustore.ru/catalog/app/com.example.cloudtune_flutter_app" target="_blank" rel="noopener noreferrer">Открыть в RuStore</a>
         </article>
@@ -470,12 +515,12 @@
         <span>Go 1.24 (go.mod)</span>
         <span>Gin 1.9.1</span>
         <span>PostgreSQL 15</span>
-        <span>Flutter 3.x</span>
-        <span>Dart 3.11+</span>
-        <span>just_audio 0.9.40</span>
+        <span>Flutter 3.41.1</span>
+        <span>Dart 3.11.0</span>
+        <span>just_audio 0.9.46</span>
         <span>audio_service 0.18.18</span>
         <span>flutter_secure_storage 9.2.4</span>
-        <span>flutter_local_notifications 19.4.2</span>
+        <span>flutter_local_notifications 19.5.0</span>
         <span>python-telegram-bot 22.3</span>
         <span>httpx 0.28.1</span>
         <span>Docker Compose</span>
@@ -485,7 +530,40 @@
       </p>
     </section>
 
-    <footer>CloudTune • обновлено 23.02.2026 • api-mp3-player.ru</footer>
+    <section class="card section reveal delay-3">
+      <h2>История обновлений</h2>
+      <div class="changelog">
+        <article class="change-item">
+          <div class="change-head">
+            <strong>Релиз клиента 1.8.3+6</strong>
+            <span class="change-date">24.02.2026</span>
+          </div>
+          <p class="change-note">
+            Обновлены файлы сборок в корне: свежий <code>cloudtune_win.zip</code> для desktop и актуальный <code>cloudtune_andr.apk</code> для Android.
+          </p>
+        </article>
+        <article class="change-item">
+          <div class="change-head">
+            <strong>Оптимизация облачной загрузки/скачивания</strong>
+            <span class="change-date">23.02.2026</span>
+          </div>
+          <p class="change-note">
+            Добавлены bulk-операции для плейлистов, параллельные загрузки, ускоренная отдача файлов через Nginx и новые upload-метрики в мониторинге.
+          </p>
+        </article>
+        <article class="change-item">
+          <div class="change-head">
+            <strong>Расширен Telegram-мониторинг</strong>
+            <span class="change-date">23.02.2026</span>
+          </div>
+          <p class="change-note">
+            Бот переведен в отдельный systemd-сервис (вне Docker), добавлены карточки пользователя, файлы и плейлисты с постраничным просмотром.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <footer>CloudTune • обновлено 24.02.2026 • api-mp3-player.ru</footer>
   </main>
 </body>
 </html>

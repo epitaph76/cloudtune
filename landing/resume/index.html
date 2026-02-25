@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Илья Белов - Fullstack Developer</title>
+  <meta
+    name="description"
+    content="Резюме Ильи Белова: fullstack-разработка (Go, Python, Dart, SQL), Docker, Nginx, PostgreSQL."
+  />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;700&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --bg-0: #0f1a15;
+      --bg-1: #14211b;
+      --bg-2: #1b2b23;
+      --text: #e8f1ec;
+      --muted: #a8c4b5;
+      --card: rgba(26, 38, 32, 0.86);
+      --line: rgba(124, 184, 153, 0.3);
+      --primary: #7cb899;
+      --primary-2: #5ca382;
+      --radius-xl: 26px;
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --shadow: 0 24px 56px rgba(0, 0, 0, 0.35);
+      --mono: "Unbounded", "Manrope", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(880px 540px at 10% -8%, rgba(124, 184, 153, 0.16), transparent 58%),
+        radial-gradient(720px 520px at 96% 0%, rgba(106, 170, 224, 0.13), transparent 56%),
+        linear-gradient(160deg, var(--bg-0), var(--bg-1) 52%, var(--bg-2));
+      padding: 26px 16px 34px;
+    }
+
+    .page {
+      width: min(1020px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+
+    .card {
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--line);
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .hero {
+      padding: clamp(22px, 3.6vw, 34px);
+      display: grid;
+      gap: 14px;
+    }
+
+    .badge {
+      margin: 0;
+      width: fit-content;
+      border-radius: 999px;
+      border: 1px solid rgba(124, 184, 153, 0.55);
+      background: rgba(124, 184, 153, 0.16);
+      color: #d4ebdf;
+      padding: 7px 12px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: clamp(30px, 5vw, 50px);
+      line-height: 1.08;
+      letter-spacing: -0.01em;
+      max-width: 14ch;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.68;
+      font-size: 17px;
+      max-width: 76ch;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .btn {
+      text-decoration: none;
+      border-radius: 14px;
+      border: 1px solid transparent;
+      padding: 11px 16px;
+      font-weight: 700;
+      font-size: 15px;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+    }
+
+    .btn-primary {
+      color: #0d1a14;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      box-shadow: 0 10px 28px rgba(92, 163, 130, 0.35);
+    }
+
+    .btn-secondary {
+      color: #d4ebdf;
+      border-color: rgba(124, 184, 153, 0.4);
+      background: rgba(20, 34, 27, 0.56);
+    }
+
+    .meta {
+      list-style: none;
+      margin: 4px 0 0;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .meta li {
+      border-radius: 999px;
+      border: 1px solid rgba(124, 184, 153, 0.34);
+      background: rgba(23, 39, 31, 0.62);
+      color: #cfe7db;
+      font-size: 12px;
+      font-family: var(--mono);
+      padding: 8px 11px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1.08fr 0.92fr;
+    }
+
+    .section {
+      padding: 22px;
+      display: grid;
+      gap: 12px;
+      border-radius: var(--radius-lg);
+    }
+
+    h2 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 23px;
+      letter-spacing: -0.01em;
+    }
+
+    .section p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.62;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chips span {
+      border-radius: 999px;
+      border: 1px solid rgba(124, 184, 153, 0.35);
+      background: rgba(28, 45, 37, 0.66);
+      color: #d8ece2;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 10px;
+    }
+
+    .item {
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(124, 184, 153, 0.28);
+      background: rgba(30, 47, 39, 0.6);
+      padding: 12px 13px;
+      display: grid;
+      gap: 7px;
+    }
+
+    .item-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .item-head strong {
+      color: #e7f4ee;
+      font-size: 15px;
+      font-family: var(--mono);
+      line-height: 1.35;
+    }
+
+    .tag {
+      border-radius: 999px;
+      border: 1px solid rgba(124, 184, 153, 0.35);
+      background: rgba(22, 37, 30, 0.66);
+      color: #cae4d7;
+      font-size: 12px;
+      padding: 4px 8px;
+      white-space: nowrap;
+    }
+
+    .item ul {
+      margin: 0;
+      padding-left: 18px;
+      color: #d6eade;
+      line-height: 1.5;
+      display: grid;
+      gap: 4px;
+      font-size: 14px;
+    }
+
+    .minimal-project {
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(124, 184, 153, 0.26);
+      background: rgba(23, 39, 31, 0.58);
+      padding: 13px;
+    }
+
+    .minimal-project p {
+      margin: 0;
+      color: #d0e6da;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .contacts {
+      display: grid;
+      gap: 8px;
+    }
+
+    .contacts a {
+      width: fit-content;
+      color: #d8ece2;
+      text-decoration: none;
+      border-bottom: 1px dashed rgba(124, 184, 153, 0.6);
+      font-weight: 600;
+    }
+
+    .contacts a:hover {
+      color: #effaf5;
+    }
+
+    footer {
+      text-align: center;
+      color: #9fb9aa;
+      font-size: 13px;
+      padding-top: 4px;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(14px);
+      animation: reveal 0.62s cubic-bezier(0.22, 0.65, 0.25, 1) forwards;
+    }
+
+    .delay-1 { animation-delay: 0.08s; }
+    .delay-2 { animation-delay: 0.16s; }
+    .delay-3 { animation-delay: 0.24s; }
+
+    @keyframes reveal {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero p {
+        font-size: 16px;
+      }
+    }
+
+    @media (max-width: 620px) {
+      body {
+        padding: 14px 10px 24px;
+      }
+
+      .hero,
+      .section {
+        padding: 17px;
+      }
+
+      .actions {
+        width: 100%;
+      }
+
+      .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="card hero reveal">
+      <p class="badge">Resume • Fullstack</p>
+      <h1>Илья Белов</h1>
+      <p>
+        Junior fullstack-разработчик (Go / Flutter / Python), Москва.
+        Учусь на 2 курсе РТУ МИРЭА по направлению «Информационные системы и технологии».
+        Фокус: production-практика, стабильность сервиса, аккуратная эксплуатация.
+      </p>
+      <div class="actions">
+        <a class="btn btn-primary" href="https://github.com/epitaph76" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a class="btn btn-secondary" href="mailto:ilyabelov041006@gmail.com">ilyabelov041006@gmail.com</a>
+        <a class="btn btn-secondary" href="https://api-mp3-player.ru" target="_blank" rel="noopener noreferrer">Основной сайт проекта</a>
+      </div>
+      <ul class="meta">
+        <li>Москва</li>
+        <li>РТУ МИРЭА, 2 курс</li>
+        <li>Go / Python / Dart / SQL</li>
+        <li>Docker / Nginx / PostgreSQL</li>
+      </ul>
+    </header>
+
+    <section class="grid">
+      <article class="card section reveal delay-1">
+        <h2>Технические навыки</h2>
+        <div class="chips">
+          <span>Go + Gin</span>
+          <span>Python</span>
+          <span>Dart / Flutter</span>
+          <span>SQL</span>
+          <span>PostgreSQL</span>
+          <span>Docker</span>
+          <span>Nginx</span>
+          <span>Linux (Ubuntu)</span>
+        </div>
+        <p>
+          Умею собирать и поддерживать сервис от API и БД до деплоя и мониторинга.
+          В приоритете предсказуемость релизов, логичность архитектуры и контроль состояния прод-среды.
+        </p>
+
+        <div class="minimal-project">
+          <p>
+            Ключевой проект: персональный музыкальный сервис с локальным и облачным режимом.
+            Здесь только краткая ссылка, детали проекта вынесены на отдельный основной сайт:
+            <a href="https://api-mp3-player.ru" target="_blank" rel="noopener noreferrer">api-mp3-player.ru</a>.
+          </p>
+        </div>
+      </article>
+
+      <aside class="card section reveal delay-2">
+        <h2>Контакты</h2>
+        <div class="contacts">
+          <a href="mailto:ilyabelov041006@gmail.com">ilyabelov041006@gmail.com</a>
+          <a href="https://github.com/epitaph76" target="_blank" rel="noopener noreferrer">github.com/epitaph76</a>
+          <a href="https://api-mp3-player.ru" target="_blank" rel="noopener noreferrer">api-mp3-player.ru</a>
+        </div>
+        <p>
+          Английский: Intermediate. Работаю с технической документацией, issue и README на английском.
+        </p>
+        <p>
+          Интересы: безопасность веб-приложений, сетевые протоколы и эксплуатация production-сервисов.
+        </p>
+      </aside>
+    </section>
+
+    <section class="card section reveal delay-3">
+      <h2>Опыт</h2>
+      <div class="timeline">
+        <article class="item">
+          <div class="item-head">
+            <strong>ОДК «Сатурн» - стажёр, отдел цифровой трансформации</strong>
+            <span class="tag">Автоматизация процессов</span>
+          </div>
+          <ul>
+            <li>Обучал модель для распознавания маркировок на деталях (обработка изображений, парсинг данных).</li>
+            <li>Интегрировал результаты в рабочий процесс отдела и помогал с техподдержкой внедрения.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <footer>Илья Белов • Резюме • обновлено 25.02.2026</footer>
+  </main>
+</body>
+</html>

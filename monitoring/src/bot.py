@@ -73,6 +73,19 @@ ALERT_NOTIFY_ON_START = parse_bool(os.getenv("ALERT_NOTIFY_ON_START", "true"), T
 ALLOWED_CHAT_IDS = parse_chat_ids(os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", ""))
 ALERT_RECIPIENT_CHAT_IDS = parse_chat_ids(os.getenv("ALERT_RECIPIENT_CHAT_IDS", ""))
 USERS_PAGE_SIZE = int(os.getenv("USERS_PAGE_SIZE", "8"))
+DEPLOY_ENABLED = parse_bool(os.getenv("DEPLOY_ENABLED", "true"), True)
+DEPLOY_SCRIPT_PATH = os.getenv(
+    "DEPLOY_SCRIPT_PATH",
+    "/opt/cloudtune/backend/scripts/deploy-from-github.sh",
+).strip()
+DEPLOY_REPO_URL = os.getenv(
+    "DEPLOY_REPO_URL",
+    "https://github.com/epitaph76/cloudtune.git",
+).strip()
+DEPLOY_BRANCH = os.getenv("DEPLOY_BRANCH", "master").strip() or "master"
+DEPLOY_APP_DIR = os.getenv("DEPLOY_APP_DIR", "/opt/cloudtune").strip() or "/opt/cloudtune"
+DEPLOY_TIMEOUT_SECONDS = parse_int(os.getenv("DEPLOY_TIMEOUT_SECONDS", "1800"), 1800)
+DEPLOY_ALLOWED_CHAT_IDS = parse_chat_ids(os.getenv("DEPLOY_ALLOWED_CHAT_IDS", ""))
 
 # Пороговые алерты
 ALERT_MAX_ACTIVE_HTTP_REQUESTS = parse_int(os.getenv("ALERT_MAX_ACTIVE_HTTP_REQUESTS", "300"), 300)
@@ -123,6 +136,11 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 def is_chat_allowed(chat_id: int) -> bool:
     return not ALLOWED_CHAT_IDS or chat_id in ALLOWED_CHAT_IDS
+
+
+def is_deploy_chat_allowed(chat_id: int) -> bool:
+    allowed = DEPLOY_ALLOWED_CHAT_IDS or ALLOWED_CHAT_IDS
+    return not allowed or chat_id in allowed
 
 
 def register_runtime_chat(application: Application, chat_id: int) -> None:
@@ -307,6 +325,46 @@ async def check_backend_health() -> Tuple[bool, str]:
         return False, str(exc)
 
 
+def truncate_output(value: str, limit: int = 3200) -> str:
+    value = value.strip()
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1] + "…"
+
+
+async def run_deploy_script(branch: str) -> tuple[int, str, str]:
+    env = os.environ.copy()
+    env["REPO_URL"] = DEPLOY_REPO_URL
+    env["BRANCH"] = branch
+    env["APP_DIR"] = DEPLOY_APP_DIR
+
+    process = await asyncio.create_subprocess_exec(
+        "bash",
+        DEPLOY_SCRIPT_PATH,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(),
+            timeout=max(DEPLOY_TIMEOUT_SECONDS, 60),
+        )
+    except asyncio.TimeoutError:
+        process.kill()
+        await process.wait()
+        raise RuntimeError(
+            f"Deploy timed out after {max(DEPLOY_TIMEOUT_SECONDS, 60)} seconds"
+        )
+
+    return (
+        process.returncode,
+        stdout.decode("utf-8", errors="replace"),
+        stderr.decode("utf-8", errors="replace"),
+    )
+
+
 def format_help_message() -> str:
     return (
         "🤖 <b>CloudTune Monitoring Bot</b>\n\n"
@@ -319,6 +377,7 @@ def format_help_message() -> str:
         "• /user &lt;email&gt;\n"
         "• /snapshot\n"
         "• /all\n"
+        "• /deploy [branch]\n"
         "• /help\n\n"
         f"⏱️ Автопроверка backend каждые {max(ALERT_CHECK_INTERVAL_SECONDS, 60)} сек."
     )
@@ -1024,6 +1083,92 @@ async def cmd_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_monitoring(update, context, "all", "/api/monitor/all")
 
 
+async def cmd_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    if update.message is None or chat is None:
+        return
+
+    if not is_chat_allowed(chat.id):
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
+        return
+
+    if not is_deploy_chat_allowed(chat.id):
+        await send_pretty_message(
+            update,
+            "⛔ <b>Деплой запрещен для этого чата</b>",
+        )
+        return
+
+    register_runtime_chat(context.application, chat.id)
+
+    if not DEPLOY_ENABLED:
+        await send_pretty_message(update, "⚠️ <b>Деплой отключен (DEPLOY_ENABLED=false)</b>")
+        return
+
+    if not DEPLOY_REPO_URL:
+        await send_pretty_message(
+            update,
+            "🚨 <b>DEPLOY_REPO_URL не задан</b>\n"
+            "Задайте URL репозитория в .env бота.",
+        )
+        return
+
+    branch = DEPLOY_BRANCH
+    if context.args:
+        candidate = context.args[0].strip()
+        if candidate:
+            branch = candidate
+
+    lock = context.application.bot_data.setdefault("deploy_lock", asyncio.Lock())
+    if lock.locked():
+        await send_pretty_message(update, "⏳ <b>Деплой уже выполняется</b>")
+        return
+
+    await send_pretty_message(
+        update,
+        "🚀 <b>Запускаю деплой</b>\n"
+        f"• branch: <code>{html.escape(branch)}</code>\n"
+        f"• app_dir: <code>{html.escape(DEPLOY_APP_DIR)}</code>\n"
+        f"• script: <code>{html.escape(DEPLOY_SCRIPT_PATH)}</code>",
+    )
+
+    async with lock:
+        try:
+            return_code, stdout, stderr = await run_deploy_script(branch)
+            stdout_short = truncate_output(stdout)
+            stderr_short = truncate_output(stderr)
+
+            if return_code == 0:
+                text = (
+                    "✅ <b>Деплой завершен успешно</b>\n"
+                    f"• branch: <code>{html.escape(branch)}</code>\n"
+                )
+                if stdout_short:
+                    text += f"\n<b>stdout</b>\n<pre>{html.escape(stdout_short)}</pre>"
+                if stderr_short:
+                    text += f"\n<b>stderr</b>\n<pre>{html.escape(stderr_short)}</pre>"
+                await send_pretty_message(update, text)
+                return
+
+            text = (
+                "🚨 <b>Деплой завершился с ошибкой</b>\n"
+                f"• code: <code>{return_code}</code>\n"
+                f"• branch: <code>{html.escape(branch)}</code>\n"
+            )
+            if stdout_short:
+                text += f"\n<b>stdout</b>\n<pre>{html.escape(stdout_short)}</pre>"
+            if stderr_short:
+                text += f"\n<b>stderr</b>\n<pre>{html.escape(stderr_short)}</pre>"
+            await send_pretty_message(update, text)
+        except Exception as exc:
+            logger.exception("Ошибка deploy-команды")
+            await send_pretty_message(
+                update,
+                "🚨 <b>Ошибка запуска деплоя</b>\n"
+                f"<code>{html.escape(str(exc))}</code>",
+            )
+
+
 async def handle_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None or update.message.text is None:
         return
@@ -1221,6 +1366,7 @@ def main() -> None:
     app.add_handler(CommandHandler("user", cmd_user))
     app.add_handler(CommandHandler("snapshot", cmd_snapshot))
     app.add_handler(CommandHandler("all", cmd_all))
+    app.add_handler(CommandHandler("deploy", cmd_deploy))
     app.add_handler(CallbackQueryHandler(handle_users_page_callback, pattern=r"^users_page:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_user_callback, pattern=r"^user:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_buttons))

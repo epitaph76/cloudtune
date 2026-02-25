@@ -3,7 +3,7 @@
 Telegram-бот для мониторинга CloudTune backend через защищенные Monitoring API-эндпоинты.
 
 ## Что умеет
-- Команды: `/status`, `/storage`, `/connections`, `/runtime`, `/users`, `/user <email>`, `/snapshot`, `/all`, `/help`.
+- Команды: `/status`, `/storage`, `/connections`, `/runtime`, `/users`, `/user <email>`, `/snapshot`, `/all`, `/deploy [branch]`, `/help`.
 - Кнопочное меню в Telegram.
 - Пагинация пользователей через inline-кнопки.
 - Watchdog backend по `/health`.
@@ -31,6 +31,13 @@ Telegram-бот для мониторинга CloudTune backend через за�
 - `ALERT_MAX_GOROUTINES` - порог goroutines.
 - `ALERT_MAX_GO_MEMORY_MB` - порог Go alloc памяти в MB.
 - `ALERT_MIN_UPLOADS_DISK_FREE_MB` - минимально свободное место (uploads FS) в MB.
+- `DEPLOY_ENABLED` - включить/выключить команду `/deploy` (`true/false`).
+- `DEPLOY_SCRIPT_PATH` - путь до deploy-скрипта (по умолчанию `/opt/cloudtune/backend/scripts/deploy-from-github.sh`).
+- `DEPLOY_REPO_URL` - URL git-репозитория для деплоя.
+- `DEPLOY_BRANCH` - ветка по умолчанию для `/deploy` (если без аргумента).
+- `DEPLOY_APP_DIR` - директория проекта на сервере (по умолчанию `/opt/cloudtune`).
+- `DEPLOY_TIMEOUT_SECONDS` - таймаут деплоя в секундах.
+- `DEPLOY_ALLOWED_CHAT_IDS` - chat id, которым разрешен `/deploy` (если пусто, используется `TELEGRAM_ALLOWED_CHAT_IDS`).
 
 ## Локальный запуск
 ```bash
