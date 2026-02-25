@@ -102,6 +102,7 @@ MENU_BUTTON_RUNTIME = "⚙️ Рантайм"
 MENU_BUTTON_USERS = "👥 Пользователи"
 MENU_BUTTON_SNAPSHOT = "🧪 Снимок"
 MENU_BUTTON_ALL = "🧾 Полный отчет"
+MENU_BUTTON_DEPLOY = "🚀 Деплой"
 MENU_BUTTON_HELP = "❓ Помощь"
 
 MENU_KEYBOARD = ReplyKeyboardMarkup(
@@ -109,7 +110,8 @@ MENU_KEYBOARD = ReplyKeyboardMarkup(
         [MENU_BUTTON_STATUS, MENU_BUTTON_STORAGE],
         [MENU_BUTTON_CONNECTIONS, MENU_BUTTON_RUNTIME],
         [MENU_BUTTON_USERS, MENU_BUTTON_SNAPSHOT],
-        [MENU_BUTTON_ALL, MENU_BUTTON_HELP],
+        [MENU_BUTTON_ALL, MENU_BUTTON_DEPLOY],
+        [MENU_BUTTON_HELP],
     ],
     resize_keyboard=True,
     is_persistent=True,
@@ -1194,6 +1196,10 @@ async def handle_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if text == MENU_BUTTON_SNAPSHOT:
         await send_snapshot(update, context)
+        return
+
+    if text == MENU_BUTTON_DEPLOY:
+        await cmd_deploy(update, context)
         return
 
     if looks_like_email(text):
