@@ -50,7 +50,7 @@ def parse_chat_ids(raw: str) -> Set[int]:
         try:
             out.add(int(value))
         except ValueError:
-            logger.warning("РџСЂРѕРїСѓСЃРєР°СЋ РЅРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ chat id: %s", value)
+            logger.warning("Пропускаю некорректный chat id: %s", value)
     return out
 
 
@@ -95,7 +95,7 @@ DEPLOY_APP_DIR = os.getenv("DEPLOY_APP_DIR", "/opt/cloudtune").strip() or "/opt/
 DEPLOY_TIMEOUT_SECONDS = parse_int(os.getenv("DEPLOY_TIMEOUT_SECONDS", "1800"), 1800)
 DEPLOY_ALLOWED_CHAT_IDS = parse_chat_ids(os.getenv("DEPLOY_ALLOWED_CHAT_IDS", ""))
 
-# РџРѕСЂРѕРіРѕРІС‹Рµ Р°Р»РµСЂС‚С‹
+# Пороговые алерты
 ALERT_MAX_ACTIVE_HTTP_REQUESTS = parse_int(os.getenv("ALERT_MAX_ACTIVE_HTTP_REQUESTS", "300"), 300)
 ALERT_MAX_DB_IN_USE_CONNECTIONS = parse_int(os.getenv("ALERT_MAX_DB_IN_USE_CONNECTIONS", "50"), 50)
 ALERT_MAX_GOROUTINES = parse_int(os.getenv("ALERT_MAX_GOROUTINES", "500"), 500)
@@ -115,17 +115,19 @@ ALERT_MAX_UPLOAD_5XX_RATE_PCT = parse_float(
 )
 ALERT_MAX_UPLOAD_4XX_TOTAL = parse_int(os.getenv("ALERT_MAX_UPLOAD_4XX_TOTAL", "100"), 100)
 ALERT_MAX_UPLOAD_5XX_TOTAL = parse_int(os.getenv("ALERT_MAX_UPLOAD_5XX_TOTAL", "30"), 30)
+DEPLOY_OUTPUT_CHUNK_SIZE = parse_int(os.getenv("DEPLOY_OUTPUT_CHUNK_SIZE", "3000"), 3000)
+DEPLOY_OUTPUT_MAX_CHUNKS = parse_int(os.getenv("DEPLOY_OUTPUT_MAX_CHUNKS", "20"), 20)
 
 
-MENU_BUTTON_STATUS = "рџ“Љ РЎС‚Р°С‚СѓСЃ"
-MENU_BUTTON_STORAGE = "рџ’ѕ РҐСЂР°РЅРёР»РёС‰Рµ"
-MENU_BUTTON_CONNECTIONS = "рџ”Њ РџРѕРґРєР»СЋС‡РµРЅРёСЏ"
-MENU_BUTTON_RUNTIME = "вљ™пёЏ Р Р°РЅС‚Р°Р№Рј"
-MENU_BUTTON_USERS = "рџ‘Ґ РџРѕР»СЊР·РѕРІР°С‚РµР»Рё"
-MENU_BUTTON_SNAPSHOT = "рџ§Є РЎРЅРёРјРѕРє"
-MENU_BUTTON_ALL = "рџ§ѕ РџРѕР»РЅС‹Р№ РѕС‚С‡РµС‚"
-MENU_BUTTON_DEPLOY = "рџљЂ Р”РµРїР»РѕР№"
-MENU_BUTTON_HELP = "вќ“ РџРѕРјРѕС‰СЊ"
+MENU_BUTTON_STATUS = "📊 Статус"
+MENU_BUTTON_STORAGE = "💾 Хранилище"
+MENU_BUTTON_CONNECTIONS = "🔌 Подключения"
+MENU_BUTTON_RUNTIME = "⚙️ Рантайм"
+MENU_BUTTON_USERS = "👥 Пользователи"
+MENU_BUTTON_SNAPSHOT = "🧪 Снимок"
+MENU_BUTTON_ALL = "🧾 Полный отчет"
+MENU_BUTTON_DEPLOY = "🚀 Деплой"
+MENU_BUTTON_HELP = "❓ Помощь"
 
 MENU_KEYBOARD = ReplyKeyboardMarkup(
     [
@@ -137,7 +139,7 @@ MENU_KEYBOARD = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True,
     is_persistent=True,
-    input_field_placeholder="Р’С‹Р±РµСЂРёС‚Рµ РјРµС‚СЂРёРєСѓ",
+    input_field_placeholder="Выберите метрику",
 )
 
 BUTTON_TO_QUERY = {
@@ -188,11 +190,11 @@ async def fetch_monitoring_json(path: str, params: Optional[dict[str, Any]] = No
         response = await client.get(url, headers=headers, params=params)
 
     if response.status_code != 200:
-        raise RuntimeError(f"Backend РІРµСЂРЅСѓР» {response.status_code}: {response.text}")
+        raise RuntimeError(f"Backend вернул {response.status_code}: {response.text}")
 
     payload = response.json()
     if not isinstance(payload, dict):
-        raise RuntimeError("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С„РѕСЂРјР°С‚ РѕС‚РІРµС‚Р° backend")
+        raise RuntimeError("Некорректный формат ответа backend")
     return payload
 
 
@@ -200,14 +202,14 @@ async def fetch_monitoring_text(path: str) -> str:
     payload = await fetch_monitoring_json(path)
     text = payload.get("text")
     if not isinstance(text, str):
-        raise RuntimeError("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С„РѕСЂРјР°С‚ РѕС‚РІРµС‚Р° backend")
+        raise RuntimeError("Некорректный формат ответа backend")
     return text
 
 
 async def delete_user_profile_by_email(email: str) -> dict[str, Any]:
     normalized_email = email.strip().lower()
     if not normalized_email:
-        raise RuntimeError("Email РЅРµ Р·Р°РґР°РЅ")
+        raise RuntimeError("Email не задан")
 
     url = f"{BACKEND_BASE_URL}/api/monitor/users/delete"
     headers = {"X-Monitoring-Key": BACKEND_MONITORING_API_KEY}
@@ -216,11 +218,11 @@ async def delete_user_profile_by_email(email: str) -> dict[str, Any]:
         response = await client.delete(url, headers=headers, params={"email": normalized_email})
 
     if response.status_code != 200:
-        raise RuntimeError(f"Backend РІРµСЂРЅСѓР» {response.status_code}: {response.text}")
+        raise RuntimeError(f"Backend вернул {response.status_code}: {response.text}")
 
     payload = response.json()
     if not isinstance(payload, dict):
-        raise RuntimeError("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С„РѕСЂРјР°С‚ РѕС‚РІРµС‚Р° backend")
+        raise RuntimeError("Некорректный формат ответа backend")
     return payload
 
 
@@ -369,11 +371,81 @@ async def check_backend_health() -> Tuple[bool, str]:
         return False, str(exc)
 
 
-def truncate_output(value: str, limit: int = 3200) -> str:
+def split_output_chunks(value: str, chunk_size: int = DEPLOY_OUTPUT_CHUNK_SIZE) -> list[str]:
     value = value.strip()
-    if len(value) <= limit:
-        return value
-    return value[: limit - 1] + "вЂ¦"
+    if not value:
+        return []
+
+    safe_chunk_size = max(chunk_size, 800)
+    chunks: list[str] = []
+    current_lines: list[str] = []
+    current_len = 0
+
+    def flush_current() -> None:
+        nonlocal current_lines, current_len
+        if current_lines:
+            chunks.append("\n".join(current_lines))
+            current_lines = []
+            current_len = 0
+
+    for raw_line in value.splitlines():
+        line = raw_line.rstrip("\n")
+        if not line:
+            if current_len + 1 <= safe_chunk_size:
+                current_lines.append("")
+                current_len += 1
+            else:
+                flush_current()
+                current_lines.append("")
+                current_len = 1
+            continue
+
+        while len(line) > safe_chunk_size:
+            if current_lines:
+                flush_current()
+            chunks.append(line[:safe_chunk_size])
+            line = line[safe_chunk_size:]
+
+        line_len = len(line) + 1
+        if current_lines and current_len + line_len > safe_chunk_size:
+            flush_current()
+        current_lines.append(line)
+        current_len += line_len
+
+    flush_current()
+    return chunks
+
+
+def split_deploy_stdout(stdout: str) -> tuple[str, str]:
+    lines = stdout.splitlines()
+    if not lines:
+        return "", ""
+
+    start_idx = None
+    for idx, line in enumerate(lines):
+        if "Running post-deploy smoke checks..." in line:
+            start_idx = idx
+            break
+
+    if start_idx is None:
+        return stdout.strip(), ""
+
+    end_markers = (
+        "Post-deploy smoke checks passed.",
+        "Post-deploy tests failed.",
+        "POST_DEPLOY_TESTS_PASSED",
+        "POST_DEPLOY_TESTS_FAILED",
+        "POST_DEPLOY_TESTS_FAILED_UNEXPECTED",
+    )
+    end_idx = len(lines) - 1
+    for idx in range(start_idx, len(lines)):
+        if any(marker in lines[idx] for marker in end_markers):
+            end_idx = idx
+
+    tests_block = "\n".join(lines[start_idx : end_idx + 1]).strip()
+    main_block_lines = lines[:start_idx] + lines[end_idx + 1 :]
+    main_block = "\n".join(main_block_lines).strip()
+    return main_block, tests_block
 
 
 async def run_deploy_script(branch: str) -> tuple[int, str, str]:
@@ -411,33 +483,33 @@ async def run_deploy_script(branch: str) -> tuple[int, str, str]:
 
 def format_help_message() -> str:
     return (
-        "рџ¤– <b>CloudTune Monitoring Bot</b>\n\n"
-        "Р”РѕСЃС‚СѓРїРЅС‹Рµ РєРѕРјР°РЅРґС‹:\n"
-        "вЂў /status\n"
-        "вЂў /storage\n"
-        "вЂў /connections\n"
-        "вЂў /runtime\n"
-        "вЂў /users\n"
-        "вЂў /user &lt;email&gt;\n"
-        "вЂў /delete_user &lt;email&gt;\n"
-        "вЂў /snapshot\n"
-        "вЂў /all\n"
-        "вЂў /deploy [branch]\n"
-        "вЂў /help\n\n"
-        f"вЏ±пёЏ РђРІС‚РѕРїСЂРѕРІРµСЂРєР° backend РєР°Р¶РґС‹Рµ {max(ALERT_CHECK_INTERVAL_SECONDS, 60)} СЃРµРє."
+        "🤖 <b>CloudTune Monitoring Bot</b>\n\n"
+        "Доступные команды:\n"
+        "• /status\n"
+        "• /storage\n"
+        "• /connections\n"
+        "• /runtime\n"
+        "• /users\n"
+        "• /user &lt;email&gt;\n"
+        "• /delete_user &lt;email&gt;\n"
+        "• /snapshot\n"
+        "• /all\n"
+        "• /deploy [branch]\n"
+        "• /help\n\n"
+        f"⏱️ Автопроверка backend каждые {max(ALERT_CHECK_INTERVAL_SECONDS, 60)} сек."
     )
 
 
 def format_monitoring_message(kind: str, raw_text: str) -> str:
     titles = {
-        "status": "рџ“Љ РЎРѕСЃС‚РѕСЏРЅРёРµ СЃРµСЂРІРµСЂР°",
-        "storage": "рџ’ѕ РҐСЂР°РЅРёР»РёС‰Рµ",
-        "connections": "рџ”Њ РџРѕРґРєР»СЋС‡РµРЅРёСЏ",
-        "runtime": "вљ™пёЏ Р Р°РЅС‚Р°Р№Рј",
-        "users": "рџ‘Ґ РџРѕР»СЊР·РѕРІР°С‚РµР»Рё",
-        "all": "рџ§ѕ РџРѕР»РЅС‹Р№ РѕС‚С‡РµС‚",
+        "status": "📊 Состояние сервера",
+        "storage": "💾 Хранилище",
+        "connections": "🔌 Подключения",
+        "runtime": "⚙️ Рантайм",
+        "users": "👥 Пользователи",
+        "all": "🧾 Полный отчет",
     }
-    title = titles.get(kind, "рџ“Њ РњРѕРЅРёС‚РѕСЂРёРЅРі")
+    title = titles.get(kind, "📌 Мониторинг")
 
     lines = []
     for raw_line in raw_text.splitlines():
@@ -452,12 +524,12 @@ def format_monitoring_message(kind: str, raw_text: str) -> str:
         if ":" in line:
             key, value = line.split(":", 1)
             lines.append(
-                f"вЂў <b>{html.escape(key.strip())}:</b> <code>{html.escape(value.strip())}</code>"
+                f"• <b>{html.escape(key.strip())}:</b> <code>{html.escape(value.strip())}</code>"
             )
         else:
-            lines.append(f"вЂў {html.escape(line)}")
+            lines.append(f"• {html.escape(line)}")
 
-    body = "\n".join(lines) if lines else "вЂў РќРµС‚ РґР°РЅРЅС‹С…"
+    body = "\n".join(lines) if lines else "• Нет данных"
     return f"{title}\n\n{body}"
 
 
@@ -476,7 +548,7 @@ def format_bytes(size: int) -> str:
 def shorten(value: str, limit: int = 48) -> str:
     if len(value) <= limit:
         return value
-    return value[: limit - 1] + "вЂ¦"
+    return value[: limit - 1] + "…"
 
 
 def build_users_keyboard(page: int, total_pages: int) -> Optional[InlineKeyboardMarkup]:
@@ -486,11 +558,11 @@ def build_users_keyboard(page: int, total_pages: int) -> Optional[InlineKeyboard
     buttons: list[InlineKeyboardButton] = []
     if page > 1:
         buttons.append(
-            InlineKeyboardButton("в¬…пёЏ", callback_data=f"{USERS_CALLBACK_PREFIX}{page - 1}")
+            InlineKeyboardButton("⬅️", callback_data=f"{USERS_CALLBACK_PREFIX}{page - 1}")
         )
     if page < total_pages:
         buttons.append(
-            InlineKeyboardButton("вћЎпёЏ", callback_data=f"{USERS_CALLBACK_PREFIX}{page + 1}")
+            InlineKeyboardButton("➡️", callback_data=f"{USERS_CALLBACK_PREFIX}{page + 1}")
         )
 
     if not buttons:
@@ -506,14 +578,14 @@ def format_users_page(payload: dict[str, Any]) -> tuple[str, Optional[InlineKeyb
     users = payload.get("users", [])
 
     lines = [
-        "рџ‘Ґ <b>РџРѕР»СЊР·РѕРІР°С‚РµР»Рё CloudTune</b>",
-        f"Р’СЃРµРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№: <b>{total_users}</b>",
-        f"РЎС‚СЂР°РЅРёС†Р°: <b>{page}/{max(total_pages, 1)}</b>",
+        "👥 <b>Пользователи CloudTune</b>",
+        f"Всего пользователей: <b>{total_users}</b>",
+        f"Страница: <b>{page}/{max(total_pages, 1)}</b>",
         "",
     ]
 
     if not users:
-        lines.append("РџРѕР»СЊР·РѕРІР°С‚РµР»Рё РЅРµ РЅР°Р№РґРµРЅС‹.")
+        lines.append("Пользователи не найдены.")
     else:
         for idx, user in enumerate(users, start=1):
             email = shorten(str(user.get("email", "-")))
@@ -522,11 +594,11 @@ def format_users_page(payload: dict[str, Any]) -> tuple[str, Optional[InlineKeyb
             created_at = str(user.get("created_at", "-")).replace("T", " ").replace("Z", " UTC")
 
             lines.append(
-                f"{idx}. рџ“§ <code>{html.escape(email)}</code> | "
-                f"рџ‘¤ <b>{html.escape(username)}</b>"
+                f"{idx}. 📧 <code>{html.escape(email)}</code> | "
+                f"👤 <b>{html.escape(username)}</b>"
             )
-            lines.append(f"   рџ’Ѕ Р—Р°РЅСЏС‚Рѕ: <code>{html.escape(format_bytes(used_bytes))}</code>")
-            lines.append(f"   рџ—“пёЏ Р РµРіРёСЃС‚СЂР°С†РёСЏ: <code>{html.escape(created_at)}</code>")
+            lines.append(f"   💽 Занято: <code>{html.escape(format_bytes(used_bytes))}</code>")
+            lines.append(f"   🗓️ Регистрация: <code>{html.escape(created_at)}</code>")
             lines.append("")
 
     text = "\n".join(lines).rstrip()
@@ -536,41 +608,41 @@ def format_users_page(payload: dict[str, Any]) -> tuple[str, Optional[InlineKeyb
 
 def format_snapshot(payload: dict[str, Any]) -> str:
     lines = [
-        "?? <b>Технический снимок</b>",
-        f"?? <code>{html.escape(str(payload.get('timestamp_utc', '-')))}</code>",
-        f"?? Uptime: <code>{payload.get('uptime_seconds', 0)} сек</code>",
+        "🧪 <b>Технический снимок</b>",
+        f"🕒 <code>{html.escape(str(payload.get('timestamp_utc', '-')))}</code>",
+        f"⏱️ Uptime: <code>{payload.get('uptime_seconds', 0)} сек</code>",
         "",
-        f"?? HTTP active: <code>{payload.get('http_active_requests', 0)}</code>",
-        f"?? HTTP total: <code>{payload.get('http_total_requests', 0)}</code>",
-        f"?? Goroutines: <code>{payload.get('goroutines', 0)}</code>",
+        f"🌐 HTTP active: <code>{payload.get('http_active_requests', 0)}</code>",
+        f"🌐 HTTP total: <code>{payload.get('http_total_requests', 0)}</code>",
+        f"🧵 Goroutines: <code>{payload.get('goroutines', 0)}</code>",
         "",
-        f"??? DB open: <code>{payload.get('db_open_connections', 0)}</code>",
-        f"??? DB in_use: <code>{payload.get('db_in_use_connections', 0)}</code>",
-        f"??? DB wait_count: <code>{payload.get('db_wait_count', 0)}</code>",
+        f"🗄️ DB open: <code>{payload.get('db_open_connections', 0)}</code>",
+        f"🗄️ DB in_use: <code>{payload.get('db_in_use_connections', 0)}</code>",
+        f"🗄️ DB wait_count: <code>{payload.get('db_wait_count', 0)}</code>",
         "",
-        f"?? Go alloc: <code>{format_bytes(int(payload.get('go_memory_alloc_bytes', 0)))}</code>",
-        f"?? Go heap_in_use: <code>{format_bytes(int(payload.get('go_heap_in_use_bytes', 0)))}</code>",
-        f"?? Go sys: <code>{format_bytes(int(payload.get('go_memory_sys_bytes', 0)))}</code>",
+        f"🧠 Go alloc: <code>{format_bytes(int(payload.get('go_memory_alloc_bytes', 0)))}</code>",
+        f"🧠 Go heap_in_use: <code>{format_bytes(int(payload.get('go_heap_in_use_bytes', 0)))}</code>",
+        f"🧠 Go sys: <code>{format_bytes(int(payload.get('go_memory_sys_bytes', 0)))}</code>",
         "",
-        f"?? Uploads size: <code>{format_bytes(int(payload.get('uploads_size_bytes', 0)))}</code>",
-        f"?? Uploads free: <code>{format_bytes(int(payload.get('uploads_fs_free_bytes', 0)))}</code>",
-        f"?? Uploads files: <code>{payload.get('uploads_files_count', 0)}</code>",
-        f"?? Upload req total: <code>{payload.get('upload_requests_total', 0)}</code>",
-        f"?? Upload failed total: <code>{payload.get('upload_failed_total', 0)}</code>",
-        f"?? Upload 4xx/5xx: <code>{payload.get('upload_4xx_total', 0)}/{payload.get('upload_5xx_total', 0)}</code>",
-        f"?? Upload 4xx%/5xx%: <code>{float(payload.get('upload_4xx_rate_pct', 0)):.2f}/{float(payload.get('upload_5xx_rate_pct', 0)):.2f}</code>",
-        f"?? Upload top reason: <code>{html.escape(str(payload.get('upload_top_failure_reason', 'n/a')))} ({payload.get('upload_top_failure_reason_count', 0)})</code>",
+        f"💾 Uploads size: <code>{format_bytes(int(payload.get('uploads_size_bytes', 0)))}</code>",
+        f"💾 Uploads free: <code>{format_bytes(int(payload.get('uploads_fs_free_bytes', 0)))}</code>",
+        f"💾 Uploads files: <code>{payload.get('uploads_files_count', 0)}</code>",
+        f"💾 Upload req total: <code>{payload.get('upload_requests_total', 0)}</code>",
+        f"💾 Upload failed total: <code>{payload.get('upload_failed_total', 0)}</code>",
+        f"💾 Upload 4xx/5xx: <code>{payload.get('upload_4xx_total', 0)}/{payload.get('upload_5xx_total', 0)}</code>",
+        f"💾 Upload 4xx%/5xx%: <code>{float(payload.get('upload_4xx_rate_pct', 0)):.2f}/{float(payload.get('upload_5xx_rate_pct', 0)):.2f}</code>",
+        f"💾 Upload top reason: <code>{html.escape(str(payload.get('upload_top_failure_reason', 'n/a')))} ({payload.get('upload_top_failure_reason_count', 0)})</code>",
         "",
-        f"?? Users: <code>{payload.get('users_total', 0)}</code>",
-        f"?? Songs: <code>{payload.get('songs_total', 0)}</code>",
-        f"?? Playlists: <code>{payload.get('playlists_total', 0)}</code>",
+        f"👥 Users: <code>{payload.get('users_total', 0)}</code>",
+        f"🎵 Songs: <code>{payload.get('songs_total', 0)}</code>",
+        f"📚 Playlists: <code>{payload.get('playlists_total', 0)}</code>",
     ]
     return "\n".join(lines)
 
 
 def build_user_home_keyboard(token: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Рћ РїРѕР»СЊР·РѕРІР°С‚РµР»Рµ", callback_data=f"{USER_CALLBACK_PREFIX}about:{token}")]]
+        [[InlineKeyboardButton("О пользователе", callback_data=f"{USER_CALLBACK_PREFIX}about:{token}")]]
     )
 
 
@@ -578,9 +650,9 @@ def build_user_about_keyboard(token: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Р”РѕРјРѕР№", callback_data=f"{USER_CALLBACK_PREFIX}home:{token}"),
-                InlineKeyboardButton("Р¤Р°Р№Р»С‹", callback_data=f"{USER_CALLBACK_PREFIX}files:{token}"),
-                InlineKeyboardButton("РџР»РµР№Р»РёСЃС‚С‹", callback_data=f"{USER_CALLBACK_PREFIX}playlists:{token}"),
+                InlineKeyboardButton("Домой", callback_data=f"{USER_CALLBACK_PREFIX}home:{token}"),
+                InlineKeyboardButton("Файлы", callback_data=f"{USER_CALLBACK_PREFIX}files:{token}"),
+                InlineKeyboardButton("Плейлисты", callback_data=f"{USER_CALLBACK_PREFIX}playlists:{token}"),
             ]
         ]
     )
@@ -590,8 +662,8 @@ def build_user_files_keyboard(token: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("РўСЂРµРєРё", callback_data=f"{USER_CALLBACK_PREFIX}tracks:{token}:1"),
-                InlineKeyboardButton("Р”РѕРјРѕР№", callback_data=f"{USER_CALLBACK_PREFIX}about:{token}"),
+                InlineKeyboardButton("Треки", callback_data=f"{USER_CALLBACK_PREFIX}tracks:{token}:1"),
+                InlineKeyboardButton("Домой", callback_data=f"{USER_CALLBACK_PREFIX}about:{token}"),
             ]
         ]
     )
@@ -601,8 +673,8 @@ def build_user_playlists_keyboard(token: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("РЎРїРёСЃРѕРє", callback_data=f"{USER_CALLBACK_PREFIX}playlist_items:{token}:1"),
-                InlineKeyboardButton("Р”РѕРјРѕР№", callback_data=f"{USER_CALLBACK_PREFIX}about:{token}"),
+                InlineKeyboardButton("Список", callback_data=f"{USER_CALLBACK_PREFIX}playlist_items:{token}:1"),
+                InlineKeyboardButton("Домой", callback_data=f"{USER_CALLBACK_PREFIX}about:{token}"),
             ]
         ]
     )
@@ -621,19 +693,19 @@ def build_user_list_pagination_keyboard(
 
     row: list[InlineKeyboardButton] = []
     if page > 1:
-        row.append(InlineKeyboardButton("в¬…пёЏ", callback_data=f"{prefix}{page - 1}"))
-    row.append(InlineKeyboardButton("Р”РѕРјРѕР№", callback_data=f"{USER_CALLBACK_PREFIX}about:{token}"))
+        row.append(InlineKeyboardButton("⬅️", callback_data=f"{prefix}{page - 1}"))
+    row.append(InlineKeyboardButton("Домой", callback_data=f"{USER_CALLBACK_PREFIX}about:{token}"))
     if page < total_pages:
-        row.append(InlineKeyboardButton("вћЎпёЏ", callback_data=f"{prefix}{page + 1}"))
+        row.append(InlineKeyboardButton("➡️", callback_data=f"{prefix}{page + 1}"))
     return InlineKeyboardMarkup([row])
 
 
 def format_user_home_text(user: dict[str, str]) -> str:
     return (
-        "рџ‘¤ <b>РљР°СЂС‚РѕС‡РєР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ</b>\n\n"
-        f"рџ“§ <code>{html.escape(str(user.get('email', '-')))}</code>\n"
-        f"рџ‘¤ Username: <b>{html.escape(str(user.get('username', '-')))}</b>\n"
-        "РќР°Р¶РјРёС‚Рµ РєРЅРѕРїРєСѓ РЅРёР¶Рµ РґР»СЏ РґРµС‚Р°Р»СЊРЅРѕР№ СЃРІРѕРґРєРё."
+        "👤 <b>Карточка пользователя</b>\n\n"
+        f"📧 <code>{html.escape(str(user.get('email', '-')))}</code>\n"
+        f"👤 Username: <b>{html.escape(str(user.get('username', '-')))}</b>\n"
+        "Нажмите кнопку ниже для детальной сводки."
     )
 
 
@@ -642,13 +714,13 @@ def format_user_about_text(user: dict[str, str], summary: dict[str, int]) -> str
     tracks_count = int(summary.get("tracks_count", 0))
     used_bytes = int(summary.get("used_bytes", 0))
     return (
-        "в„№пёЏ <b>Рћ РїРѕР»СЊР·РѕРІР°С‚РµР»Рµ</b>\n\n"
-        f"рџ†” ID: <code>{html.escape(str(user.get('id', '-')))}</code>\n"
-        f"рџ“§ Email: <code>{html.escape(str(user.get('email', '-')))}</code>\n"
-        f"рџ‘¤ Username: <b>{html.escape(str(user.get('username', '-')))}</b>\n"
-        f"рџ—“пёЏ Р РµРіРёСЃС‚СЂР°С†РёСЏ: <code>{html.escape(created_at)}</code>\n\n"
-        f"Р’СЃРµРіРѕ С‚СЂРµРєРѕРІ РІ user_library: <b>{tracks_count}</b>\n"
-        f"Р—Р°РЅСЏС‚Рѕ: <code>{used_bytes:,}</code> Р±Р°Р№С‚ (РїСЂРёРјРµСЂРЅРѕ <code>{format_bytes(used_bytes)}</code>)"
+        "ℹ️ <b>О пользователе</b>\n\n"
+        f"🆔 ID: <code>{html.escape(str(user.get('id', '-')))}</code>\n"
+        f"📧 Email: <code>{html.escape(str(user.get('email', '-')))}</code>\n"
+        f"👤 Username: <b>{html.escape(str(user.get('username', '-')))}</b>\n"
+        f"🗓️ Регистрация: <code>{html.escape(created_at)}</code>\n\n"
+        f"Всего треков в user_library: <b>{tracks_count}</b>\n"
+        f"Занято: <code>{used_bytes:,}</code> байт (примерно <code>{format_bytes(used_bytes)}</code>)"
     )
 
 
@@ -656,22 +728,22 @@ def format_user_files_text(summary: dict[str, int]) -> str:
     tracks_count = int(summary.get("tracks_count", 0))
     used_bytes = int(summary.get("used_bytes", 0))
     return (
-        "рџЋµ <b>Р¤Р°Р№Р»С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ</b>\n\n"
-        f"Р’СЃРµРіРѕ С‚СЂРµРєРѕРІ РІ user_library: <b>{tracks_count}</b>\n"
-        f"Р—Р°РЅСЏС‚Рѕ: <code>{used_bytes:,}</code> Р±Р°Р№С‚ (РїСЂРёРјРµСЂРЅРѕ <code>{format_bytes(used_bytes)}</code>)\n\n"
-        "РќР°Р¶РјРёС‚Рµ <b>РўСЂРµРєРё</b>, С‡С‚РѕР±С‹ РѕС‚РєСЂС‹С‚СЊ СЃРїРёСЃРѕРє РїРѕ 5 С€С‚."
+        "🎵 <b>Файлы пользователя</b>\n\n"
+        f"Всего треков в user_library: <b>{tracks_count}</b>\n"
+        f"Занято: <code>{used_bytes:,}</code> байт (примерно <code>{format_bytes(used_bytes)}</code>)\n\n"
+        "Нажмите <b>Треки</b>, чтобы открыть список по 5 шт."
     )
 
 
 def format_user_tracks_page_text(rows: list[dict[str, str]], page: int, total_pages: int, total: int) -> str:
     lines = [
-        "рџЋ§ <b>РўСЂРµРєРё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ</b>",
-        f"РЎС‚СЂР°РЅРёС†Р°: <b>{page}/{max(total_pages, 1)}</b>",
-        f"Р’СЃРµРіРѕ С‚СЂРµРєРѕРІ: <b>{total}</b>",
+        "🎧 <b>Треки пользователя</b>",
+        f"Страница: <b>{page}/{max(total_pages, 1)}</b>",
+        f"Всего треков: <b>{total}</b>",
         "",
     ]
     if not rows:
-        lines.append("РўСЂРµРєРё РЅРµ РЅР°Р№РґРµРЅС‹.")
+        lines.append("Треки не найдены.")
         return "\n".join(lines)
 
     start_idx = (page - 1) * USER_TRACKS_PAGE_SIZE
@@ -682,21 +754,21 @@ def format_user_tracks_page_text(rows: list[dict[str, str]], page: int, total_pa
         uploaded = str(row.get("upload_date", "-")).replace("T", " ").replace("Z", " UTC")
         lines.append(f"{number}. <b>{html.escape(title)}</b>")
         lines.append(f"   ID: <code>{html.escape(str(row.get('id', '-')))}</code>")
-        lines.append(f"   Р Р°Р·РјРµСЂ: <code>{format_bytes(size)}</code>")
-        lines.append(f"   Р”Р°С‚Р°: <code>{html.escape(uploaded)}</code>")
+        lines.append(f"   Размер: <code>{format_bytes(size)}</code>")
+        lines.append(f"   Дата: <code>{html.escape(uploaded)}</code>")
         lines.append("")
     return "\n".join(lines).rstrip()
 
 
 def format_user_playlists_page_text(rows: list[dict[str, str]], page: int, total_pages: int, total: int) -> str:
     lines = [
-        "рџ“љ <b>РџР»РµР№Р»РёСЃС‚С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ</b>",
-        f"РЎС‚СЂР°РЅРёС†Р°: <b>{page}/{max(total_pages, 1)}</b>",
-        f"Р’СЃРµРіРѕ РїР»РµР№Р»РёСЃС‚РѕРІ: <b>{total}</b>",
+        "📚 <b>Плейлисты пользователя</b>",
+        f"Страница: <b>{page}/{max(total_pages, 1)}</b>",
+        f"Всего плейлистов: <b>{total}</b>",
         "",
     ]
     if not rows:
-        lines.append("РџР»РµР№Р»РёСЃС‚С‹ РЅРµ РЅР°Р№РґРµРЅС‹.")
+        lines.append("Плейлисты не найдены.")
         return "\n".join(lines)
 
     start_idx = (page - 1) * USER_PLAYLISTS_PAGE_SIZE
@@ -707,9 +779,9 @@ def format_user_playlists_page_text(rows: list[dict[str, str]], page: int, total
         is_favorite = str(row.get("is_favorite", "false")).lower() in {"t", "true", "1"}
         lines.append(f"{number}. <b>{html.escape(name)}</b>")
         lines.append(f"   ID: <code>{html.escape(str(row.get('id', '-')))}</code>")
-        lines.append(f"   РўСЂРµРєРѕРІ: <code>{song_count}</code>")
+        lines.append(f"   Треков: <code>{song_count}</code>")
         if is_favorite:
-            lines.append("   РўРёРї: <b>System favorites</b>")
+            lines.append("   Тип: <b>System favorites</b>")
         lines.append("")
     return "\n".join(lines).rstrip()
 
@@ -778,13 +850,54 @@ async def send_pretty_message(update: Update, text: str) -> None:
     )
 
 
+async def send_output_chunks(
+    update: Update,
+    title: str,
+    content: str,
+    *,
+    include_keyboard: bool = False,
+) -> None:
+    if update.message is None:
+        return
+
+    chunks = split_output_chunks(content, DEPLOY_OUTPUT_CHUNK_SIZE)
+    if not chunks:
+        return
+
+    limited_chunks = chunks[: max(DEPLOY_OUTPUT_MAX_CHUNKS, 1)]
+    total = len(limited_chunks)
+    truncated = len(chunks) > total
+
+    for idx, chunk in enumerate(limited_chunks, start=1):
+        suffix = f" ({idx}/{total})" if total > 1 else ""
+        text = f"<b>{html.escape(title)}{suffix}</b>\n<pre>{html.escape(chunk)}</pre>"
+        await update.message.reply_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=MENU_KEYBOARD if include_keyboard else None,
+        )
+
+    if truncated:
+        await update.message.reply_text(
+            (
+                "⚠️ <b>Лог обрезан</b>\n"
+                f"Показано <code>{total}</code> из <code>{len(chunks)}</code> частей. "
+                "Увеличьте DEPLOY_OUTPUT_MAX_CHUNKS при необходимости."
+            ),
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=MENU_KEYBOARD if include_keyboard else None,
+        )
+
+
 async def send_monitoring(update: Update, context: ContextTypes.DEFAULT_TYPE, kind: str, path: str) -> None:
     chat = update.effective_chat
     if chat is None or update.message is None:
         return
 
     if not is_chat_allowed(chat.id):
-        await send_pretty_message(update, "в›” <b>Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ РґР»СЏ СЌС‚РѕРіРѕ С‡Р°С‚Р°</b>")
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
         return
 
     register_runtime_chat(context.application, chat.id)
@@ -793,10 +906,10 @@ async def send_monitoring(update: Update, context: ContextTypes.DEFAULT_TYPE, ki
         text = await fetch_monitoring_text(path)
         await send_pretty_message(update, format_monitoring_message(kind, text))
     except Exception as exc:
-        logger.exception("РћС€РёР±РєР° РїРѕР»СѓС‡РµРЅРёСЏ РјРµС‚СЂРёРє")
+        logger.exception("Ошибка получения метрик")
         await send_pretty_message(
             update,
-            "рџљЁ <b>РћС€РёР±РєР° РјРѕРЅРёС‚РѕСЂРёРЅРіР°</b>\n"
+            "🚨 <b>Ошибка мониторинга</b>\n"
             f"<code>{html.escape(str(exc))}</code>",
         )
 
@@ -807,7 +920,7 @@ async def send_snapshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     if not is_chat_allowed(chat.id):
-        await send_pretty_message(update, "в›” <b>Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ РґР»СЏ СЌС‚РѕРіРѕ С‡Р°С‚Р°</b>")
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
         return
 
     register_runtime_chat(context.application, chat.id)
@@ -815,10 +928,10 @@ async def send_snapshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         payload = await fetch_snapshot()
         await send_pretty_message(update, format_snapshot(payload))
     except Exception as exc:
-        logger.exception("РћС€РёР±РєР° РїРѕР»СѓС‡РµРЅРёСЏ snapshot")
+        logger.exception("Ошибка получения snapshot")
         await send_pretty_message(
             update,
-            "рџљЁ <b>РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё snapshot</b>\n"
+            "🚨 <b>Ошибка загрузки snapshot</b>\n"
             f"<code>{html.escape(str(exc))}</code>",
         )
 
@@ -829,7 +942,7 @@ async def send_users_page(update: Update, context: ContextTypes.DEFAULT_TYPE, pa
         return
 
     if not is_chat_allowed(chat.id):
-        await send_pretty_message(update, "в›” <b>Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ РґР»СЏ СЌС‚РѕРіРѕ С‡Р°С‚Р°</b>")
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
         return
 
     register_runtime_chat(context.application, chat.id)
@@ -847,10 +960,10 @@ async def send_users_page(update: Update, context: ContextTypes.DEFAULT_TYPE, pa
             disable_web_page_preview=True,
         )
     except Exception as exc:
-        logger.exception("РћС€РёР±РєР° РїРѕР»СѓС‡РµРЅРёСЏ СЃРїРёСЃРєР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№")
+        logger.exception("Ошибка получения списка пользователей")
         await send_pretty_message(
             update,
-            "рџљЁ <b>РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё СЃРїРёСЃРєР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№</b>\n"
+            "🚨 <b>Ошибка загрузки списка пользователей</b>\n"
             f"<code>{html.escape(str(exc))}</code>",
         )
 
@@ -866,7 +979,7 @@ async def handle_users_page_callback(update: Update, context: ContextTypes.DEFAU
         return
 
     if not is_chat_allowed(chat.id):
-        await query.answer("Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ", show_alert=True)
+        await query.answer("Доступ запрещен", show_alert=True)
         return
 
     register_runtime_chat(context.application, chat.id)
@@ -891,11 +1004,11 @@ async def handle_users_page_callback(update: Update, context: ContextTypes.DEFAU
         )
         await query.answer()
     except Exception as exc:
-        logger.exception("РћС€РёР±РєР° РїРµСЂРµРєР»СЋС‡РµРЅРёСЏ СЃС‚СЂР°РЅРёС†С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№")
-        await query.answer("РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё СЃС‚СЂР°РЅРёС†С‹", show_alert=True)
+        logger.exception("Ошибка переключения страницы пользователей")
+        await query.answer("Ошибка загрузки страницы", show_alert=True)
         if query.message is not None:
             await query.message.reply_text(
-                "рџљЁ <b>РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё СЃС‚СЂР°РЅРёС†С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№</b>\n"
+                "🚨 <b>Ошибка загрузки страницы пользователей</b>\n"
                 f"<code>{html.escape(str(exc))}</code>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=MENU_KEYBOARD,
@@ -908,7 +1021,7 @@ async def send_user_home(update: Update, context: ContextTypes.DEFAULT_TYPE, ema
         return
 
     if not is_chat_allowed(chat.id):
-        await send_pretty_message(update, "в›” <b>Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ РґР»СЏ СЌС‚РѕРіРѕ С‡Р°С‚Р°</b>")
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
         return
 
     register_runtime_chat(context.application, chat.id)
@@ -917,8 +1030,8 @@ async def send_user_home(update: Update, context: ContextTypes.DEFAULT_TYPE, ema
     if not looks_like_email(normalized_email):
         await send_pretty_message(
             update,
-            "вљ пёЏ <b>РќРµРІРµСЂРЅС‹Р№ С„РѕСЂРјР°С‚ email</b>\n"
-            "РСЃРїРѕР»СЊР·СѓР№С‚Рµ: <code>/user user@example.com</code>",
+            "⚠️ <b>Неверный формат email</b>\n"
+            "Используйте: <code>/user user@example.com</code>",
         )
         return
 
@@ -927,7 +1040,7 @@ async def send_user_home(update: Update, context: ContextTypes.DEFAULT_TYPE, ema
         if user is None:
             await send_pretty_message(
                 update,
-                "рџ”Ћ <b>РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ</b>\n"
+                "🔎 <b>Пользователь не найден</b>\n"
                 f"Email: <code>{html.escape(normalized_email)}</code>",
             )
             return
@@ -940,10 +1053,10 @@ async def send_user_home(update: Update, context: ContextTypes.DEFAULT_TYPE, ema
             disable_web_page_preview=True,
         )
     except Exception as exc:
-        logger.exception("РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё РєР°СЂС‚РѕС‡РєРё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ email=%s", normalized_email)
+        logger.exception("Ошибка загрузки карточки пользователя email=%s", normalized_email)
         await send_pretty_message(
             update,
-            "рџљЁ <b>РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ</b>\n"
+            "🚨 <b>Ошибка загрузки пользователя</b>\n"
             f"<code>{html.escape(str(exc))}</code>",
         )
 
@@ -959,7 +1072,7 @@ async def handle_user_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if not is_chat_allowed(chat.id):
-        await query.answer("Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ", show_alert=True)
+        await query.answer("Доступ запрещен", show_alert=True)
         return
 
     register_runtime_chat(context.application, chat.id)
@@ -973,13 +1086,13 @@ async def handle_user_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     # user:playlists:<token>
     # user:playlist_items:<token>:<page>
     if len(parts) < 3:
-        await query.answer("РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ РєРЅРѕРїРєР°", show_alert=True)
+        await query.answer("Некорректная кнопка", show_alert=True)
         return
 
     _, action, token = parts[0], parts[1], parts[2]
     email = resolve_user_email_by_token(context.application, token)
     if not email:
-        await query.answer("РЎРµСЃСЃРёСЏ СѓСЃС‚Р°СЂРµР»Р°. Р’С‹РїРѕР»РЅРёС‚Рµ /user <email>", show_alert=True)
+        await query.answer("Сессия устарела. Выполните /user <email>", show_alert=True)
         return
 
     try:
@@ -987,7 +1100,7 @@ async def handle_user_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         if user is None:
             await query.edit_message_text(
                 text=(
-                    "рџ”Ћ <b>РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ</b>\n"
+                    "🔎 <b>Пользователь не найден</b>\n"
                     f"Email: <code>{html.escape(email)}</code>"
                 ),
                 parse_mode=ParseMode.HTML,
@@ -1056,9 +1169,9 @@ async def handle_user_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             _ = total_rows
             await query.edit_message_text(
                 text=(
-                    "рџ“љ <b>РџР»РµР№Р»РёСЃС‚С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ</b>\n\n"
-                    f"Р’СЃРµРіРѕ РїР»РµР№Р»РёСЃС‚РѕРІ: <b>{total_playlists}</b>\n\n"
-                    "РќР°Р¶РјРёС‚Рµ <b>РЎРїРёСЃРѕРє</b>, С‡С‚РѕР±С‹ РѕС‚РєСЂС‹С‚СЊ РїР»РµР№Р»РёСЃС‚С‹ РїРѕ 5 С€С‚."
+                    "📚 <b>Плейлисты пользователя</b>\n\n"
+                    f"Всего плейлистов: <b>{total_playlists}</b>\n\n"
+                    "Нажмите <b>Список</b>, чтобы открыть плейлисты по 5 шт."
                 ),
                 parse_mode=ParseMode.HTML,
                 reply_markup=build_user_playlists_keyboard(token),
@@ -1088,13 +1201,13 @@ async def handle_user_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.answer()
             return
 
-        await query.answer("РќРµРёР·РІРµСЃС‚РЅРѕРµ РґРµР№СЃС‚РІРёРµ", show_alert=True)
+        await query.answer("Неизвестное действие", show_alert=True)
     except Exception as exc:
-        logger.exception("РћС€РёР±РєР° user callback: %s", query.data)
-        await query.answer("РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё", show_alert=True)
+        logger.exception("Ошибка user callback: %s", query.data)
+        await query.answer("Ошибка загрузки", show_alert=True)
         if query.message is not None:
             await query.message.reply_text(
-                "рџљЁ <b>РћС€РёР±РєР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРѕР№ СЃРІРѕРґРєРё</b>\n"
+                "🚨 <b>Ошибка пользовательской сводки</b>\n"
                 f"<code>{html.escape(str(exc))}</code>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=MENU_KEYBOARD,
@@ -1107,7 +1220,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if not is_chat_allowed(chat.id):
-        await send_pretty_message(update, "в›” <b>Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ РґР»СЏ СЌС‚РѕРіРѕ С‡Р°С‚Р°</b>")
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
         return
 
     register_runtime_chat(context.application, chat.id)
@@ -1144,7 +1257,7 @@ async def cmd_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
         await send_pretty_message(
             update,
-            "РСЃРїРѕР»СЊР·РѕРІР°РЅРёРµ: <code>/user user@example.com</code>",
+            "Использование: <code>/user user@example.com</code>",
         )
         return
     email = " ".join(context.args).strip()
@@ -1157,11 +1270,11 @@ async def cmd_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if not is_chat_allowed(chat.id):
-        await send_pretty_message(update, "в›” <b>Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ РґР»СЏ СЌС‚РѕРіРѕ С‡Р°С‚Р°</b>")
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
         return
 
     if not is_deploy_chat_allowed(chat.id):
-        await send_pretty_message(update, "в›” <b>РЈРґР°Р»РµРЅРёРµ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ Р·Р°РїСЂРµС‰РµРЅРѕ РґР»СЏ СЌС‚РѕРіРѕ С‡Р°С‚Р°</b>")
+        await send_pretty_message(update, "⛔ <b>Удаление пользователей запрещено для этого чата</b>")
         return
 
     register_runtime_chat(context.application, chat.id)
@@ -1169,7 +1282,7 @@ async def cmd_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not context.args:
         await send_pretty_message(
             update,
-            "РСЃРїРѕР»СЊР·РѕРІР°РЅРёРµ: <code>/delete_user user@example.com</code>",
+            "Использование: <code>/delete_user user@example.com</code>",
         )
         return
 
@@ -1177,14 +1290,14 @@ async def cmd_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not looks_like_email(email):
         await send_pretty_message(
             update,
-            "вљ пёЏ <b>РќРµРІРµСЂРЅС‹Р№ С„РѕСЂРјР°С‚ email</b>\n"
-            "РСЃРїРѕР»СЊР·РѕРІР°РЅРёРµ: <code>/delete_user user@example.com</code>",
+            "⚠️ <b>Неверный формат email</b>\n"
+            "Использование: <code>/delete_user user@example.com</code>",
         )
         return
 
     await send_pretty_message(
         update,
-        "рџ—‘пёЏ <b>Р—Р°РїСѓСЃРєР°СЋ СѓРґР°Р»РµРЅРёРµ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ</b>\n"
+        "🗑️ <b>Запускаю удаление пользователя</b>\n"
         f"Email: <code>{html.escape(email)}</code>",
     )
 
@@ -1194,19 +1307,19 @@ async def cmd_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         await send_pretty_message(
             update,
-            "вњ… <b>РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СѓРґР°Р»РµРЅ</b>\n"
+            "✅ <b>Пользователь удален</b>\n"
             f"Email: <code>{html.escape(str(payload.get('email', email)))}</code>\n"
             f"ID: <code>{html.escape(str(payload.get('user_id', '-')))}</code>\n"
-            f"РљР°РЅРґРёРґР°С‚РѕРІ РїРµСЃРµРЅ: <code>{html.escape(str(summary.get('candidate_songs', 0)))}</code>\n"
-            f"РЈРґР°Р»РµРЅРѕ РїРµСЃРµРЅ: <code>{html.escape(str(summary.get('deleted_songs', 0)))}</code>\n"
-            f"РЈРґР°Р»РµРЅРѕ С„Р°Р№Р»РѕРІ: <code>{html.escape(str(summary.get('deleted_files', 0)))}</code>\n"
-            f"РћС€РёР±РѕРє СѓРґР°Р»РµРЅРёСЏ С„Р°Р№Р»РѕРІ: <code>{html.escape(str(summary.get('file_delete_errors', 0)))}</code>",
+            f"Кандидатов песен: <code>{html.escape(str(summary.get('candidate_songs', 0)))}</code>\n"
+            f"Удалено песен: <code>{html.escape(str(summary.get('deleted_songs', 0)))}</code>\n"
+            f"Удалено файлов: <code>{html.escape(str(summary.get('deleted_files', 0)))}</code>\n"
+            f"Ошибок удаления файлов: <code>{html.escape(str(summary.get('file_delete_errors', 0)))}</code>",
         )
     except Exception as exc:
-        logger.exception("РћС€РёР±РєР° СѓРґР°Р»РµРЅРёСЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ email=%s", email)
+        logger.exception("Ошибка удаления пользователя email=%s", email)
         await send_pretty_message(
             update,
-            "рџљЁ <b>РћС€РёР±РєР° СѓРґР°Р»РµРЅРёСЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ</b>\n"
+            "🚨 <b>Ошибка удаления пользователя</b>\n"
             f"<code>{html.escape(str(exc))}</code>",
         )
 
@@ -1225,27 +1338,27 @@ async def cmd_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     if not is_chat_allowed(chat.id):
-        await send_pretty_message(update, "в›” <b>Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ РґР»СЏ СЌС‚РѕРіРѕ С‡Р°С‚Р°</b>")
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
         return
 
     if not is_deploy_chat_allowed(chat.id):
         await send_pretty_message(
             update,
-            "в›” <b>Р”РµРїР»РѕР№ Р·Р°РїСЂРµС‰РµРЅ РґР»СЏ СЌС‚РѕРіРѕ С‡Р°С‚Р°</b>",
+            "⛔ <b>Деплой запрещен для этого чата</b>",
         )
         return
 
     register_runtime_chat(context.application, chat.id)
 
     if not DEPLOY_ENABLED:
-        await send_pretty_message(update, "вљ пёЏ <b>Р”РµРїР»РѕР№ РѕС‚РєР»СЋС‡РµРЅ (DEPLOY_ENABLED=false)</b>")
+        await send_pretty_message(update, "⚠️ <b>Деплой отключен (DEPLOY_ENABLED=false)</b>")
         return
 
     if not DEPLOY_REPO_URL:
         await send_pretty_message(
             update,
-            "рџљЁ <b>DEPLOY_REPO_URL РЅРµ Р·Р°РґР°РЅ</b>\n"
-            "Р—Р°РґР°Р№С‚Рµ URL СЂРµРїРѕР·РёС‚РѕСЂРёСЏ РІ .env Р±РѕС‚Р°.",
+            "🚨 <b>DEPLOY_REPO_URL не задан</b>\n"
+            "Задайте URL репозитория в .env бота.",
         )
         return
 
@@ -1257,50 +1370,53 @@ async def cmd_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     lock = context.application.bot_data.setdefault("deploy_lock", asyncio.Lock())
     if lock.locked():
-        await send_pretty_message(update, "вЏі <b>Р”РµРїР»РѕР№ СѓР¶Рµ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ</b>")
+        await send_pretty_message(update, "⏳ <b>Деплой уже выполняется</b>")
         return
 
     await send_pretty_message(
         update,
-        "рџљЂ <b>Р—Р°РїСѓСЃРєР°СЋ РґРµРїР»РѕР№</b>\n"
-        f"вЂў branch: <code>{html.escape(branch)}</code>\n"
-        f"вЂў app_dir: <code>{html.escape(DEPLOY_APP_DIR)}</code>\n"
-        f"вЂў script: <code>{html.escape(DEPLOY_SCRIPT_PATH)}</code>",
+        "🚀 <b>Запускаю деплой</b>\n"
+        f"• branch: <code>{html.escape(branch)}</code>\n"
+        f"• app_dir: <code>{html.escape(DEPLOY_APP_DIR)}</code>\n"
+        f"• script: <code>{html.escape(DEPLOY_SCRIPT_PATH)}</code>",
     )
 
     async with lock:
         try:
             return_code, stdout, stderr = await run_deploy_script(branch)
-            stdout_short = truncate_output(stdout)
-            stderr_short = truncate_output(stderr)
+            stdout_main, stdout_tests = split_deploy_stdout(stdout)
 
             if return_code == 0:
                 text = (
-                    "вњ… <b>Р”РµРїР»РѕР№ Р·Р°РІРµСЂС€РµРЅ СѓСЃРїРµС€РЅРѕ</b>\n"
-                    f"вЂў branch: <code>{html.escape(branch)}</code>\n"
+                    "✅ <b>Деплой завершен успешно</b>\n"
+                    f"• branch: <code>{html.escape(branch)}</code>\n"
                 )
-                if stdout_short:
-                    text += f"\n<b>stdout</b>\n<pre>{html.escape(stdout_short)}</pre>"
-                if stderr_short:
-                    text += f"\n<b>stderr</b>\n<pre>{html.escape(stderr_short)}</pre>"
                 await send_pretty_message(update, text)
+                if stdout_main:
+                    await send_output_chunks(update, "stdout deploy", stdout_main)
+                if stdout_tests:
+                    await send_output_chunks(update, "автотесты post-deploy", stdout_tests)
+                if stderr.strip():
+                    await send_output_chunks(update, "stderr deploy", stderr)
                 return
 
             text = (
-                "рџљЁ <b>Р”РµРїР»РѕР№ Р·Р°РІРµСЂС€РёР»СЃСЏ СЃ РѕС€РёР±РєРѕР№</b>\n"
-                f"вЂў code: <code>{return_code}</code>\n"
-                f"вЂў branch: <code>{html.escape(branch)}</code>\n"
+                "🚨 <b>Деплой завершился с ошибкой</b>\n"
+                f"• code: <code>{return_code}</code>\n"
+                f"• branch: <code>{html.escape(branch)}</code>\n"
             )
-            if stdout_short:
-                text += f"\n<b>stdout</b>\n<pre>{html.escape(stdout_short)}</pre>"
-            if stderr_short:
-                text += f"\n<b>stderr</b>\n<pre>{html.escape(stderr_short)}</pre>"
             await send_pretty_message(update, text)
+            if stdout_main:
+                await send_output_chunks(update, "stdout deploy", stdout_main)
+            if stdout_tests:
+                await send_output_chunks(update, "автотесты post-deploy", stdout_tests)
+            if stderr.strip():
+                await send_output_chunks(update, "stderr deploy", stderr)
         except Exception as exc:
-            logger.exception("РћС€РёР±РєР° deploy-РєРѕРјР°РЅРґС‹")
+            logger.exception("Ошибка deploy-команды")
             await send_pretty_message(
                 update,
-                "рџљЁ <b>РћС€РёР±РєР° Р·Р°РїСѓСЃРєР° РґРµРїР»РѕСЏ</b>\n"
+                "🚨 <b>Ошибка запуска деплоя</b>\n"
                 f"<code>{html.escape(str(exc))}</code>",
             )
 
@@ -1314,7 +1430,7 @@ async def handle_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     if not is_chat_allowed(chat.id):
-        await send_pretty_message(update, "в›” <b>Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ РґР»СЏ СЌС‚РѕРіРѕ С‡Р°С‚Р°</b>")
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
         return
 
     register_runtime_chat(context.application, chat.id)
@@ -1344,8 +1460,8 @@ async def handle_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
     if mapping is None:
         await send_pretty_message(
             update,
-            "рџ¤” <b>РќРµ РїРѕРЅСЏР» РєРѕРјР°РЅРґСѓ</b>\n"
-            "РСЃРїРѕР»СЊР·СѓР№С‚Рµ РєРЅРѕРїРєРё РЅРёР¶Рµ РёР»Рё /help",
+            "🤔 <b>Не понял команду</b>\n"
+            "Используйте кнопки ниже или /help",
         )
         return
 
@@ -1356,7 +1472,7 @@ async def handle_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def broadcast_alert(application: Application, text: str) -> None:
     recipients = resolve_alert_recipients(application)
     if not recipients:
-        logger.warning("РќРµ Р·Р°РґР°РЅС‹ РїРѕР»СѓС‡Р°С‚РµР»Рё РґР»СЏ Р°Р»РµСЂС‚РѕРІ")
+        logger.warning("Не заданы получатели для алертов")
         return
 
     for chat_id in recipients:
@@ -1368,7 +1484,7 @@ async def broadcast_alert(application: Application, text: str) -> None:
                 disable_web_page_preview=True,
             )
         except Exception:
-            logger.exception("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ Р°Р»РµСЂС‚ chat_id=%s", chat_id)
+            logger.exception("Не удалось отправить алерт chat_id=%s", chat_id)
 
 
 def now_utc() -> str:
@@ -1387,33 +1503,33 @@ async def watchdog_loop(application: Application) -> None:
         if previous_backend_state is None:
             if ALERT_NOTIFY_ON_START:
                 startup_text = (
-                    "вњ… <b>РњРѕРЅРёС‚РѕСЂРёРЅРі Р·Р°РїСѓС‰РµРЅ</b>\n"
-                    f"рџ•’ <code>{now_utc()}</code>\n"
-                    f"рџ”Ћ РџСЂРѕРІРµСЂРєР°: <code>{html.escape(BACKEND_HEALTH_PATH)}</code>\n"
-                    f"рџ“Ў РЎС‚Р°С‚СѓСЃ backend: <b>{'UP' if is_up else 'DOWN'}</b>\n"
-                    f"в„№пёЏ Р”РµС‚Р°Р»Рё: <code>{html.escape(detail)}</code>"
+                    "✅ <b>Мониторинг запущен</b>\n"
+                    f"🕒 <code>{now_utc()}</code>\n"
+                    f"🔎 Проверка: <code>{html.escape(BACKEND_HEALTH_PATH)}</code>\n"
+                    f"📡 Статус backend: <b>{'UP' if is_up else 'DOWN'}</b>\n"
+                    f"ℹ️ Детали: <code>{html.escape(detail)}</code>"
                 )
                 await broadcast_alert(application, startup_text)
         elif previous_backend_state and not is_up:
             alert_text = (
-                "рџљЁ <b>CloudTune Alert: BACKEND РќР•Р”РћРЎРўРЈРџР•Рќ</b>\n"
-                f"рџ•’ <code>{now_utc()}</code>\n"
-                f"рџ”Ћ РџСЂРѕРІРµСЂРєР°: <code>{html.escape(BACKEND_HEALTH_PATH)}</code>\n"
-                f"в„№пёЏ Р”РµС‚Р°Р»Рё: <code>{html.escape(detail)}</code>"
+                "🚨 <b>CloudTune Alert: BACKEND НЕДОСТУПЕН</b>\n"
+                f"🕒 <code>{now_utc()}</code>\n"
+                f"🔎 Проверка: <code>{html.escape(BACKEND_HEALTH_PATH)}</code>\n"
+                f"ℹ️ Детали: <code>{html.escape(detail)}</code>"
             )
             await broadcast_alert(application, alert_text)
         elif not previous_backend_state and is_up:
             recovery_text = (
-                "вњ… <b>CloudTune Alert: BACKEND Р’РћРЎРЎРўРђРќРћР’Р›Р•Рќ</b>\n"
-                f"рџ•’ <code>{now_utc()}</code>\n"
-                f"рџ”Ћ РџСЂРѕРІРµСЂРєР°: <code>{html.escape(BACKEND_HEALTH_PATH)}</code>\n"
-                f"в„№пёЏ Р”РµС‚Р°Р»Рё: <code>{html.escape(detail)}</code>"
+                "✅ <b>CloudTune Alert: BACKEND ВОССТАНОВЛЕН</b>\n"
+                f"🕒 <code>{now_utc()}</code>\n"
+                f"🔎 Проверка: <code>{html.escape(BACKEND_HEALTH_PATH)}</code>\n"
+                f"ℹ️ Детали: <code>{html.escape(detail)}</code>"
             )
             await broadcast_alert(application, recovery_text)
 
         previous_backend_state = is_up
 
-        # РџРѕСЂРѕРіРѕРІС‹Рµ Р°Р»РµСЂС‚С‹ РґРѕСЃС‚СѓРїРЅС‹, С‚РѕР»СЊРєРѕ РµСЃР»Рё backend СЃРµР№С‡Р°СЃ РѕС‚РІРµС‡Р°РµС‚.
+        # Пороговые алерты доступны, только если backend сейчас отвечает.
         if is_up:
             try:
                 snapshot = await fetch_snapshot()
@@ -1424,27 +1540,27 @@ async def watchdog_loop(application: Application) -> None:
                     if prev_text != issue_text:
                         await broadcast_alert(
                             application,
-                            "вљ пёЏ <b>РџРѕСЂРѕРі РјРѕРЅРёС‚РѕСЂРёРЅРіР° РїСЂРµРІС‹С€РµРЅ</b>\n"
-                            f"рџ•’ <code>{now_utc()}</code>\n"
-                            f"в„№пёЏ <code>{html.escape(issue_text)}</code>",
+                            "⚠️ <b>Порог мониторинга превышен</b>\n"
+                            f"🕒 <code>{now_utc()}</code>\n"
+                            f"ℹ️ <code>{html.escape(issue_text)}</code>",
                         )
 
                 for recovered_key in set(previous_issue_states.keys()) - set(current_issues.keys()):
                     await broadcast_alert(
                         application,
-                        "вњ… <b>РџРѕСЂРѕРі РјРѕРЅРёС‚РѕСЂРёРЅРіР° РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅ</b>\n"
-                        f"рџ•’ <code>{now_utc()}</code>\n"
-                        f"в„№пёЏ <code>{html.escape(recovered_key)}</code>",
+                        "✅ <b>Порог мониторинга восстановлен</b>\n"
+                        f"🕒 <code>{now_utc()}</code>\n"
+                        f"ℹ️ <code>{html.escape(recovered_key)}</code>",
                     )
 
                 previous_issue_states = current_issues
             except Exception as exc:
-                logger.exception("РћС€РёР±РєР° РїРѕР»СѓС‡РµРЅРёСЏ snapshot РІ watchdog")
+                logger.exception("Ошибка получения snapshot в watchdog")
                 await broadcast_alert(
                     application,
-                    "вљ пёЏ <b>РћС€РёР±РєР° СЂР°СЃС€РёСЂРµРЅРЅРѕРіРѕ РјРѕРЅРёС‚РѕСЂРёРЅРіР°</b>\n"
-                    f"рџ•’ <code>{now_utc()}</code>\n"
-                    f"в„№пёЏ <code>{html.escape(str(exc))}</code>",
+                    "⚠️ <b>Ошибка расширенного мониторинга</b>\n"
+                    f"🕒 <code>{now_utc()}</code>\n"
+                    f"ℹ️ <code>{html.escape(str(exc))}</code>",
                 )
                 previous_issue_states = {}
         else:
@@ -1455,12 +1571,12 @@ async def watchdog_loop(application: Application) -> None:
 
 async def on_startup(application: Application) -> None:
     if not ALERTS_ENABLED:
-        logger.info("РђР»РµСЂС‚С‹ РѕС‚РєР»СЋС‡РµРЅС‹: ALERTS_ENABLED=false")
+        logger.info("Алерты отключены: ALERTS_ENABLED=false")
         return
 
     task = asyncio.create_task(watchdog_loop(application))
     application.bot_data["watchdog_task"] = task
-    logger.info("Watchdog Р·Р°РїСѓС‰РµРЅ: interval=%s СЃРµРє", ALERT_CHECK_INTERVAL_SECONDS)
+    logger.info("Watchdog запущен: interval=%s сек", ALERT_CHECK_INTERVAL_SECONDS)
 
 
 async def on_shutdown(application: Application) -> None:
@@ -1512,7 +1628,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(handle_user_callback, pattern=r"^user:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_buttons))
 
-    logger.info("Р—Р°РїСѓСЃРє CloudTune monitoring bot")
+    logger.info("Запуск CloudTune monitoring bot")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
