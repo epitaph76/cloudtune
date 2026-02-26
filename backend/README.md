@@ -103,6 +103,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 - `GET /api/monitor/connections`
 - `GET /api/monitor/users`
 - `GET /api/monitor/users/list?page=1&limit=8`
+- `DELETE /api/monitor/users/delete?email=user@example.com`
 - `GET /api/monitor/all`
 
 ## Основные API эндпоинты
@@ -122,6 +123,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 - `DELETE /api/songs/:id`
 - `GET /api/songs/download/:id`
 - `GET /api/storage/usage`
+- `DELETE /api/profile`
 - `POST /api/playlists`
 - `GET /api/playlists`
 - `DELETE /api/playlists/:playlist_id`

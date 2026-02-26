@@ -182,6 +182,26 @@ async def fetch_monitoring_text(path: str) -> str:
     return text
 
 
+async def delete_user_profile_by_email(email: str) -> dict[str, Any]:
+    normalized_email = email.strip().lower()
+    if not normalized_email:
+        raise RuntimeError("Email не задан")
+
+    url = f"{BACKEND_BASE_URL}/api/monitor/users/delete"
+    headers = {"X-Monitoring-Key": BACKEND_MONITORING_API_KEY}
+
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        response = await client.delete(url, headers=headers, params={"email": normalized_email})
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Backend вернул {response.status_code}: {response.text}")
+
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("Некорректный формат ответа backend")
+    return payload
+
+
 async def fetch_snapshot() -> dict[str, Any]:
     return await fetch_monitoring_json("/api/monitor/snapshot")
 
@@ -377,6 +397,7 @@ def format_help_message() -> str:
         "• /runtime\n"
         "• /users\n"
         "• /user &lt;email&gt;\n"
+        "• /delete_user &lt;email&gt;\n"
         "• /snapshot\n"
         "• /all\n"
         "• /deploy [branch]\n"
@@ -1077,6 +1098,66 @@ async def cmd_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_user_home(update, context, email)
 
 
+async def cmd_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    if update.message is None or chat is None:
+        return
+
+    if not is_chat_allowed(chat.id):
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
+        return
+
+    if not is_deploy_chat_allowed(chat.id):
+        await send_pretty_message(update, "⛔ <b>Удаление пользователей запрещено для этого чата</b>")
+        return
+
+    register_runtime_chat(context.application, chat.id)
+
+    if not context.args:
+        await send_pretty_message(
+            update,
+            "Использование: <code>/delete_user user@example.com</code>",
+        )
+        return
+
+    email = " ".join(context.args).strip().lower()
+    if not looks_like_email(email):
+        await send_pretty_message(
+            update,
+            "⚠️ <b>Неверный формат email</b>\n"
+            "Использование: <code>/delete_user user@example.com</code>",
+        )
+        return
+
+    await send_pretty_message(
+        update,
+        "🗑️ <b>Запускаю удаление пользователя</b>\n"
+        f"Email: <code>{html.escape(email)}</code>",
+    )
+
+    try:
+        payload = await delete_user_profile_by_email(email)
+        summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+
+        await send_pretty_message(
+            update,
+            "✅ <b>Пользователь удален</b>\n"
+            f"Email: <code>{html.escape(str(payload.get('email', email)))}</code>\n"
+            f"ID: <code>{html.escape(str(payload.get('user_id', '-')))}</code>\n"
+            f"Кандидатов песен: <code>{html.escape(str(summary.get('candidate_songs', 0)))}</code>\n"
+            f"Удалено песен: <code>{html.escape(str(summary.get('deleted_songs', 0)))}</code>\n"
+            f"Удалено файлов: <code>{html.escape(str(summary.get('deleted_files', 0)))}</code>\n"
+            f"Ошибок удаления файлов: <code>{html.escape(str(summary.get('file_delete_errors', 0)))}</code>",
+        )
+    except Exception as exc:
+        logger.exception("Ошибка удаления пользователя email=%s", email)
+        await send_pretty_message(
+            update,
+            "🚨 <b>Ошибка удаления пользователя</b>\n"
+            f"<code>{html.escape(str(exc))}</code>",
+        )
+
+
 async def cmd_snapshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_snapshot(update, context)
 
@@ -1370,6 +1451,7 @@ def main() -> None:
     app.add_handler(CommandHandler("runtime", cmd_runtime))
     app.add_handler(CommandHandler("users", cmd_users))
     app.add_handler(CommandHandler("user", cmd_user))
+    app.add_handler(CommandHandler("delete_user", cmd_delete_user))
     app.add_handler(CommandHandler("snapshot", cmd_snapshot))
     app.add_handler(CommandHandler("all", cmd_all))
     app.add_handler(CommandHandler("deploy", cmd_deploy))

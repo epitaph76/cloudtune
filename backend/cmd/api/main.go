@@ -38,6 +38,7 @@ func main() {
 	router.GET("/api/monitor/runtime", handlers.MonitorRuntime)
 	router.GET("/api/monitor/snapshot", handlers.MonitorSnapshot)
 	router.GET("/api/monitor/all", handlers.MonitorAll)
+	router.DELETE("/api/monitor/users/delete", handlers.MonitorDeleteUserByEmail)
 
 	authRoutes := router.Group("/auth")
 	{
@@ -54,6 +55,7 @@ func main() {
 		protectedRoutes.DELETE("/songs/:id", handlers.DeleteSong)
 		protectedRoutes.GET("/songs/download/:id", handlers.DownloadSong)
 		protectedRoutes.GET("/storage/usage", handlers.GetStorageUsage)
+		protectedRoutes.DELETE("/profile", handlers.DeleteProfile)
 
 		protectedRoutes.POST("/playlists", handlers.CreatePlaylist)
 		protectedRoutes.GET("/playlists", handlers.GetUserPlaylists)

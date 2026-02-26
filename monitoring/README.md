@@ -3,7 +3,7 @@
 Telegram-бот для мониторинга CloudTune backend через защищенные Monitoring API-эндпоинты.
 
 ## Что умеет
-- Команды: `/status`, `/storage`, `/connections`, `/runtime`, `/users`, `/user <email>`, `/snapshot`, `/all`, `/deploy [branch]`, `/help`.
+- Команды: `/status`, `/storage`, `/connections`, `/runtime`, `/users`, `/user <email>`, `/delete_user <email>`, `/snapshot`, `/all`, `/deploy [branch]`, `/help`.
 - Кнопочное меню в Telegram.
 - Пагинация пользователей через inline-кнопки.
 - Watchdog backend по `/health`.
