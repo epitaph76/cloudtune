@@ -6,6 +6,8 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
+  static const String toggleLikeAction = 'toggle_like';
+
   final AudioPlayer _player = AudioPlayer();
   bool _hasPreparedShuffleForCurrentQueue = false;
   bool _isDelayedAdvanceInProgress = false;
@@ -13,6 +15,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   DateTime? _lastSpeedAuditAt;
   Duration? _lastSpeedAuditPosition;
   int _speedDriftStrikes = 0;
+  bool _currentTrackLiked = false;
+  Future<bool> Function(String trackPath)? _onToggleLike;
+  bool Function(String trackPath)? _isTrackLiked;
 
   bool get shuffleEnabled => _player.shuffleModeEnabled;
   Stream<bool> get shuffleEnabledStream => _player.shuffleModeEnabledStream;
@@ -22,6 +27,29 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Stream<double> get volumeStream => _player.volumeStream;
   int? get currentQueueIndex => _player.currentIndex;
   bool get hasQueue => queue.value.isNotEmpty;
+
+  void bindLikeHandlers({
+    required Future<bool> Function(String trackPath) onToggleLike,
+    required bool Function(String trackPath) isTrackLiked,
+  }) {
+    _onToggleLike = onToggleLike;
+    _isTrackLiked = isTrackLiked;
+    refreshLikeState();
+  }
+
+  void refreshLikeState() {
+    final nextLiked = _resolveCurrentTrackLiked();
+    if (_currentTrackLiked == nextLiked) return;
+    _currentTrackLiked = nextLiked;
+    playbackState.add(_mapPlaybackState(_player));
+  }
+
+  bool _resolveCurrentTrackLiked() {
+    final currentPath = mediaItem.value?.id;
+    final isTrackLiked = _isTrackLiked;
+    if (currentPath == null || isTrackLiked == null) return false;
+    return isTrackLiked(currentPath);
+  }
 
   Future<T> _runSerialized<T>(Future<T> Function() action) {
     if (!Platform.isWindows) {
@@ -64,6 +92,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     _player.currentIndexStream.listen((index) {
       if (index != null && index >= 0 && index < queue.value.length) {
         mediaItem.add(queue.value[index]);
+        refreshLikeState();
       }
     });
   }
@@ -169,6 +198,28 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
   }
 
+  @override
+  Future<dynamic> customAction(
+    String name, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    if (name != toggleLikeAction) {
+      return super.customAction(name, extras);
+    }
+
+    final currentPath = mediaItem.value?.id;
+    final onToggleLike = _onToggleLike;
+    if (currentPath == null || onToggleLike == null) return null;
+
+    final liked = await onToggleLike(currentPath);
+    if (_currentTrackLiked != liked) {
+      _currentTrackLiked = liked;
+      playbackState.add(_mapPlaybackState(_player));
+    }
+
+    return <String, dynamic>{'liked': liked, 'path': currentPath};
+  }
+
   Future<void> setVolumeLevel(double value) async {
     await _runSerialized(() async {
       final safeValue = value.clamp(0.0, 1.0);
@@ -224,6 +275,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       );
 
       mediaItem.add(items[safeInitialIndex]);
+      refreshLikeState();
       playbackState.add(_mapPlaybackState(_player));
     });
   }
@@ -299,14 +351,24 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   PlaybackState _mapPlaybackState(AudioPlayer player) {
+    final likeControl = MediaControl.custom(
+      androidIcon: _currentTrackLiked
+          ? 'drawable/ic_notification_like_on'
+          : 'drawable/ic_notification_like_off',
+      label: _currentTrackLiked ? 'Unlike' : 'Like',
+      name: toggleLikeAction,
+      extras: <String, dynamic>{'liked': _currentTrackLiked},
+    );
+
     return PlaybackState(
       controls: [
         MediaControl.skipToPrevious,
         if (player.playing) MediaControl.pause else MediaControl.play,
+        likeControl,
         MediaControl.stop,
         MediaControl.skipToNext,
       ],
-      androidCompactActionIndices: const [0, 1, 3],
+      androidCompactActionIndices: const [0, 1, 2],
       processingState: const {
         ProcessingState.idle: AudioProcessingState.idle,
         ProcessingState.loading: AudioProcessingState.loading,
@@ -329,5 +391,4 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await pause();
     }
   }
-
 }

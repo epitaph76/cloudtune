@@ -29,6 +29,8 @@ enum _StorageType { local, cloud }
 
 enum _LocalTrackSort { addedToPlayer, name, fileModified }
 
+enum _CloudTrackSort { uploadDate, name, fileSize }
+
 class _FolderImportFilters {
   const _FolderImportFilters({
     required this.allowedExtensions,
@@ -83,6 +85,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   int? _selectedCloudPlaylistId;
   String _localTracksSearchQuery = '';
   _LocalTrackSort _localTrackSort = _LocalTrackSort.addedToPlayer;
+  _CloudTrackSort _cloudTrackSort = _CloudTrackSort.uploadDate;
   String _cloudTracksSearchQuery = '';
   Timer? _cloudSearchDebounce;
   final Set<String> _selectedLocalTrackPaths = <String>{};
@@ -1012,6 +1015,15 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
           );
       if ((position.pixels - targetOffset).abs() < 20) return;
 
+      final platform = Theme.of(context).platform;
+      final isMobilePlatform =
+          platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+
+      if (isMobilePlatform) {
+        _localTracksScrollController.jumpTo(targetOffset);
+        return;
+      }
+
       _localTracksScrollController.animateTo(
         targetOffset,
         duration: const Duration(milliseconds: 280),
@@ -1454,6 +1466,28 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     }
   }
 
+  String _cloudTrackSortLabel(_CloudTrackSort sort) {
+    switch (sort) {
+      case _CloudTrackSort.uploadDate:
+        return 'By upload date';
+      case _CloudTrackSort.name:
+        return 'By name';
+      case _CloudTrackSort.fileSize:
+        return 'By file size';
+    }
+  }
+
+  String _cloudTrackSortButtonLabel() {
+    switch (_cloudTrackSort) {
+      case _CloudTrackSort.uploadDate:
+        return 'Date';
+      case _CloudTrackSort.name:
+        return 'Name';
+      case _CloudTrackSort.fileSize:
+        return 'Size';
+    }
+  }
+
   int _safeFileModifiedEpoch(File file) {
     try {
       return file.statSync().modified.millisecondsSinceEpoch;
@@ -1493,6 +1527,39 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
           (left, right) => _safeFileModifiedEpoch(
             right,
           ).compareTo(_safeFileModifiedEpoch(left)),
+        );
+        break;
+    }
+
+    return sorted;
+  }
+
+  List<Track> _sortCloudTracks(List<Track> tracks) {
+    final sorted = List<Track>.from(tracks);
+
+    String trackName(Track track) {
+      final original = track.originalFilename?.trim();
+      if (original != null && original.isNotEmpty) return original;
+      return track.filename;
+    }
+
+    switch (_cloudTrackSort) {
+      case _CloudTrackSort.uploadDate:
+        sorted.sort(
+          (left, right) => right.uploadDate.compareTo(left.uploadDate),
+        );
+        break;
+      case _CloudTrackSort.name:
+        sorted.sort(
+          (left, right) => trackName(
+            left,
+          ).toLowerCase().compareTo(trackName(right).toLowerCase()),
+        );
+        break;
+      case _CloudTrackSort.fileSize:
+        sorted.sort(
+          (left, right) =>
+              (right.filesize ?? -1).compareTo(left.filesize ?? -1),
         );
         break;
     }
@@ -2837,7 +2904,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
             ? cloudMusicProvider.playlists
             : const <Playlist>[];
         final selectedCloudPlaylistId = _selectedCloudPlaylistId;
-        final visibleCloudTracks = _storageType == _StorageType.cloud
+        final cloudTrackSource = _storageType == _StorageType.cloud
             ? (selectedCloudPlaylistId == null
                       ? cloudTracks
                       : cloudMusicProvider.getTracksForPlaylist(
@@ -2845,6 +2912,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                         ))
                   .toList()
             : const <Track>[];
+        final visibleCloudTracks = _sortCloudTracks(cloudTrackSource);
         final isCloudPlaylistLoading =
             _storageType == _StorageType.cloud &&
             selectedCloudPlaylistId != null &&
@@ -3596,6 +3664,76 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                               prefixIcon: Icon(
                                                 Icons.search_rounded,
                                               ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        PopupMenuButton<_CloudTrackSort>(
+                                          tooltip: 'Sort tracks',
+                                          initialValue: _cloudTrackSort,
+                                          onSelected: (value) {
+                                            if (_cloudTrackSort == value) {
+                                              return;
+                                            }
+                                            setState(
+                                              () => _cloudTrackSort = value,
+                                            );
+                                          },
+                                          itemBuilder: (context) => _CloudTrackSort
+                                              .values
+                                              .map(
+                                                (
+                                                  sort,
+                                                ) => PopupMenuItem<_CloudTrackSort>(
+                                                  value: sort,
+                                                  child: Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: Text(
+                                                          _cloudTrackSortLabel(
+                                                            sort,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      if (sort ==
+                                                          _cloudTrackSort)
+                                                        Icon(
+                                                          Icons.check_rounded,
+                                                          size: 18,
+                                                          color: colorScheme
+                                                              .primary,
+                                                        ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              )
+                                              .toList(),
+                                          child: Container(
+                                            height: 44,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: colorScheme.surface,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: colorScheme.outline,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                  Icons.sort_rounded,
+                                                  size: 20,
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  _cloudTrackSortButtonLabel(),
+                                                  style: textTheme.labelMedium,
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ),

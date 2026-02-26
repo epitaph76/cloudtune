@@ -12,6 +12,7 @@ import '../services/audio_handler.dart';
 class AudioPlayerProvider with ChangeNotifier {
   LocalMusicProvider _localMusicProvider;
   final MyAudioHandler _audioHandler;
+  late final VoidCallback _localMusicProviderListener;
 
   final List<StreamSubscription<dynamic>> _subscriptions = [];
 
@@ -35,10 +36,26 @@ class AudioPlayerProvider with ChangeNotifier {
     _shuffleEnabled = false;
     _repeatOneEnabled = _audioHandler.loopMode == LoopMode.one;
     _volume = _audioHandler.volume;
+    _localMusicProviderListener = _handleLocalMusicProviderChanged;
+    _localMusicProvider.addListener(_localMusicProviderListener);
+    _audioHandler.bindLikeHandlers(
+      onToggleLike: _toggleTrackLikeFromNotification,
+      isTrackLiked: _localMusicProvider.isTrackLiked,
+    );
     _setupStreams();
   }
 
   void updateLocalMusicProvider(LocalMusicProvider localMusicProvider) {
+    if (!identical(_localMusicProvider, localMusicProvider)) {
+      _localMusicProvider.removeListener(_localMusicProviderListener);
+      _localMusicProvider = localMusicProvider;
+      _localMusicProvider.addListener(_localMusicProviderListener);
+      _audioHandler.bindLikeHandlers(
+        onToggleLike: _toggleTrackLikeFromNotification,
+        isTrackLiked: _localMusicProvider.isTrackLiked,
+      );
+    }
+
     _localMusicProvider = localMusicProvider;
     final existingPaths = _localMusicProvider.selectedFiles
         .map((file) => file.path)
@@ -68,6 +85,16 @@ class AudioPlayerProvider with ChangeNotifier {
       _bufferedPosition = Duration.zero;
     }
     notifyListeners();
+  }
+
+  Future<bool> _toggleTrackLikeFromNotification(String trackPath) async {
+    final changed = await _localMusicProvider.toggleTrackLike(trackPath);
+    if (!changed) return _localMusicProvider.isTrackLiked(trackPath);
+    return _localMusicProvider.isTrackLiked(trackPath);
+  }
+
+  void _handleLocalMusicProviderChanged() {
+    _audioHandler.refreshLikeState();
   }
 
   List<File> get audioFiles => _localMusicProvider.selectedFiles;
@@ -526,6 +553,7 @@ class AudioPlayerProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _localMusicProvider.removeListener(_localMusicProviderListener);
     for (final sub in _subscriptions) {
       sub.cancel();
     }
