@@ -1045,7 +1045,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
     return normalized == localizedLiked ||
         normalized == 'liked songs' ||
-        normalized == 'Р»СЋР±РёРјС‹Рµ';
+        normalized == '\u043b\u044e\u0431\u0438\u043c\u044b\u0435';
   }
 
   String _cloudPlaylistDisplayName(Playlist playlist) {
@@ -1458,11 +1458,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   String _localTrackSortLabel(_LocalTrackSort sort, BuildContext context) {
     switch (sort) {
       case _LocalTrackSort.addedToPlayer:
-        return 'РџРѕ РґР°С‚Рµ РґРѕР±Р°РІР»РµРЅРёСЏ';
+        return '\u041f\u043e \u0434\u0430\u0442\u0435 \u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u044f';
       case _LocalTrackSort.name:
-        return 'РџРѕ РЅР°Р·РІР°РЅРёСЋ';
+        return '\u041f\u043e \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044e';
       case _LocalTrackSort.fileModified:
-        return 'РџРѕ РґР°С‚Рµ РёР·РјРµРЅРµРЅРёСЏ С„Р°Р№Р»Р°';
+        return '\u041f\u043e \u0434\u0430\u0442\u0435 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u044f \u0444\u0430\u0439\u043b\u0430';
     }
   }
 
@@ -3019,7 +3019,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                             children: [
                               Expanded(
                                 child: Text(
-                                  '${localPlaylists.length + 2} ${t('playlists')} вЂў ${visibleLocalTracks.length} ${t('tracks')}',
+                                  '${localPlaylists.length + 2} ${t('playlists')} | ${visibleLocalTracks.length} ${t('tracks')}',
                                   style: textTheme.bodyMedium?.copyWith(
                                     color: colorScheme.onSurface.withValues(
                                       alpha: 0.65,
@@ -3236,7 +3236,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                       ),
                                       const SizedBox(width: 8),
                                       PopupMenuButton<_LocalTrackSort>(
-                                        tooltip: 'РЎРѕСЂС‚РёСЂРѕРІРєР°',
+                                        tooltip:
+                                            '\u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430',
                                         initialValue: _localTrackSort,
                                         onSelected: (value) {
                                           if (_localTrackSort == value) return;
@@ -3298,7 +3299,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                               ),
                                               const SizedBox(width: 6),
                                               Text(
-                                                'РЎРѕСЂС‚РёСЂРѕРІРєР°',
+                                                '\u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430',
                                                 style: textTheme.labelMedium,
                                               ),
                                             ],
