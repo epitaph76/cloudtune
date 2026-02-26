@@ -131,6 +131,8 @@ func createUserLibraryTable() {
 }
 
 func ensureSongsSchema() {
+	ensureTrigramExtension()
+
 	if _, err := DB.Exec(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)`); err != nil {
 		log.Fatal("Failed to ensure songs.content_hash column:", err)
 	}
@@ -142,9 +144,15 @@ func ensureSongsSchema() {
 	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS songs_uploader_upload_date_idx ON songs(uploader_id, upload_date DESC)`); err != nil {
 		log.Fatal("Failed to ensure songs uploader/upload_date index:", err)
 	}
+
+	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS songs_library_search_trgm_idx ON songs USING gin ((lower(COALESCE(original_filename, '') || ' ' || COALESCE(filename, '') || ' ' || COALESCE(title, '') || ' ' || COALESCE(artist, '') || ' ' || COALESCE(album, '') || ' ' || COALESCE(genre, ''))) gin_trgm_ops)`); err != nil {
+		log.Fatal("Failed to ensure songs library search trigram index:", err)
+	}
 }
 
 func ensurePlaylistsSchema() {
+	ensureTrigramExtension()
+
 	if _, err := DB.Exec(`ALTER TABLE playlists ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE`); err != nil {
 		log.Fatal("Failed to ensure playlists.is_favorite column:", err)
 	}
@@ -155,6 +163,14 @@ func ensurePlaylistsSchema() {
 
 	if _, err := DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS playlists_owner_favorite_unique ON playlists(owner_id) WHERE is_favorite = TRUE`); err != nil {
 		log.Fatal("Failed to ensure playlists favorite uniqueness index:", err)
+	}
+
+	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS playlists_owner_favorite_created_idx ON playlists(owner_id, is_favorite DESC, created_at DESC, id DESC)`); err != nil {
+		log.Fatal("Failed to ensure playlists owner/sort index:", err)
+	}
+
+	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS playlists_search_trgm_idx ON playlists USING gin ((lower(COALESCE(name, '') || ' ' || COALESCE(description, ''))) gin_trgm_ops)`); err != nil {
+		log.Fatal("Failed to ensure playlists search trigram index:", err)
 	}
 }
 
@@ -173,7 +189,17 @@ func ensureUserLibrarySchema() {
 		log.Fatal("Failed to ensure user_library user/added index:", err)
 	}
 
+	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS user_library_user_added_song_idx ON user_library(user_id, added_at DESC, song_id)`); err != nil {
+		log.Fatal("Failed to ensure user_library user/added/song index:", err)
+	}
+
 	if _, err := DB.Exec(`CREATE INDEX IF NOT EXISTS user_library_song_idx ON user_library(song_id)`); err != nil {
 		log.Fatal("Failed to ensure user_library song index:", err)
+	}
+}
+
+func ensureTrigramExtension() {
+	if _, err := DB.Exec(`CREATE EXTENSION IF NOT EXISTS pg_trgm`); err != nil {
+		log.Fatal("Failed to ensure pg_trgm extension:", err)
 	}
 }

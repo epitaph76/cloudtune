@@ -23,6 +23,7 @@ func main() {
 	database.CreateTables()
 
 	router := gin.Default()
+	router.Use(middleware.RequestIDMiddleware())
 	router.Use(monitoring.RequestMetricsMiddleware())
 
 	monitoringService := monitoring.NewService(time.Now())

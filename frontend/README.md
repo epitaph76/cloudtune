@@ -47,6 +47,17 @@ flutter run --dart-define=API_BASE_URL=https://api.your-domain.com
 flutter build apk --release --dart-define=API_BASE_URL=https://api.your-domain.com
 ```
 
+Важно для single-backend режима:
+- в release используется только `API_BASE_URL`;
+- fallback-хосты отключены в release принудительно;
+- fallback можно включать только для debug-диагностики:
+
+```bash
+flutter run --dart-define=API_BASE_URL=https://api.your-domain.com --dart-define=API_ENABLE_FALLBACK_URLS=true
+```
+
+Проверить активный backend-host можно на debug-экране `API Tester` в приложении.
+
 ## Схема взаимодействия
 
 ```mermaid

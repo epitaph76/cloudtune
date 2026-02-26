@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -17,8 +18,12 @@ import '../providers/cloud_music_provider.dart';
 import '../providers/local_music_provider.dart';
 import '../providers/main_nav_provider.dart';
 import '../services/api_service.dart';
+import '../services/playlist_progress_tracker.dart';
+import '../services/server_music_sync_controller.dart';
 import '../services/upload_notification_service.dart';
 import '../utils/app_localizations.dart';
+
+part '../widgets/server_music_screen_components.dart';
 
 enum _StorageType { local, cloud }
 
@@ -49,24 +54,28 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     with AutomaticKeepAliveClientMixin {
   static const double _storageHeaderControlWidth = 156;
   static const double _storageHeaderControlHeight = 46;
+  static const int _cloudUploadParallelism = 3;
 
   final ApiService _apiService = ApiService();
+  final ServerMusicSyncController _syncController = ServerMusicSyncController(
+    parallelism: _cloudUploadParallelism,
+  );
   final Set<int> _downloadingTrackIds = <int>{};
   final Set<String> _uploadingPaths = <String>{};
   final Set<String> _syncingLocalPlaylistIds = <String>{};
   final Set<int> _downloadingCloudPlaylistIds = <int>{};
   final Set<int> _deletingCloudPlaylistIds = <int>{};
-  final Set<int> _loadingCloudPlaylistIds = <int>{};
-  final Map<int, List<Track>> _cloudPlaylistTracksCache = <int, List<Track>>{};
   final Map<String, String> _localFileSizeCache = <String, String>{};
   final Set<String> _localFileSizeLoadingPaths = <String>{};
-  final Map<String, ({int uploaded, int total})> _playlistUploadProgress =
-      <String, ({int uploaded, int total})>{};
+  final PlaylistProgressTracker _playlistProgressTracker =
+      PlaylistProgressTracker();
 
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final ScrollController _localTracksScrollController = ScrollController();
+  final ScrollController _cloudTracksScrollController = ScrollController();
+  final ScrollController _cloudPlaylistsScrollController = ScrollController();
 
   _StorageType _storageType = _StorageType.local;
   bool _cloudAuthRegisterMode = false;
@@ -75,6 +84,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   String _localTracksSearchQuery = '';
   _LocalTrackSort _localTrackSort = _LocalTrackSort.addedToPlayer;
   String _cloudTracksSearchQuery = '';
+  Timer? _cloudSearchDebounce;
   final Set<String> _selectedLocalTrackPaths = <String>{};
   String? _lastLocalTracksAutoScrollKey;
   static const double _storageSwipeVelocityThreshold = 280;
@@ -84,15 +94,26 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     '.wav',
     '.flac',
     '.m4a',
+    '.mp4',
     '.aac',
     '.ogg',
     '.opus',
   ];
-  static const int _cloudUploadParallelism = 3;
-
+  static const Set<String> _supportedAudioExtensionsSet = <String>{
+    '.mp3',
+    '.wav',
+    '.flac',
+    '.m4a',
+    '.mp4',
+    '.aac',
+    '.ogg',
+    '.opus',
+  };
   @override
   void initState() {
     super.initState();
+    _cloudTracksScrollController.addListener(_handleCloudTracksLazyLoad);
+    _cloudPlaylistsScrollController.addListener(_handleCloudPlaylistsLazyLoad);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final navProvider = context.read<MainNavProvider>();
@@ -108,10 +129,13 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
   @override
   void dispose() {
+    _cloudSearchDebounce?.cancel();
     _emailController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
     _localTracksScrollController.dispose();
+    _cloudTracksScrollController.dispose();
+    _cloudPlaylistsScrollController.dispose();
     super.dispose();
   }
 
@@ -123,11 +147,13 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     final cloudMusicProvider = context.read<CloudMusicProvider>();
     final localMusicProvider = context.read<LocalMusicProvider>();
     await Future.wait([
-      cloudMusicProvider.fetchUserLibrary(),
-      cloudMusicProvider.fetchUserPlaylists(),
+      cloudMusicProvider.fetchUserLibrary(
+        reset: true,
+        search: _selectedCloudPlaylistId == null ? _cloudTracksSearchQuery : '',
+      ),
+      cloudMusicProvider.fetchUserPlaylists(reset: true),
       cloudMusicProvider.fetchStorageUsage(),
     ]);
-    _cloudPlaylistTracksCache.clear();
 
     final selectedId = _selectedCloudPlaylistId;
     if (selectedId != null &&
@@ -139,21 +165,38 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
     final selectedCloudPlaylistId = _selectedCloudPlaylistId;
     if (selectedCloudPlaylistId != null) {
-      final result = await _apiService.getPlaylistSongs(
+      await cloudMusicProvider.fetchPlaylistTracks(
         selectedCloudPlaylistId,
+        reset: true,
+        search: _cloudTracksSearchQuery,
       );
-      if (result['success'] == true) {
-        _cloudPlaylistTracksCache[selectedCloudPlaylistId] =
-            (result['songs'] as List<dynamic>)
-                .map((item) => Track.fromJson(item as Map<String, dynamic>))
-                .toList();
-      }
     }
 
     await _syncCloudFavoritesLikesToLocal(
       cloudMusicProvider: cloudMusicProvider,
       localMusicProvider: localMusicProvider,
     );
+  }
+
+  void _handleCloudTracksLazyLoad() {
+    if (!mounted || !_cloudTracksScrollController.hasClients) return;
+    final position = _cloudTracksScrollController.position;
+    if (position.extentAfter > 240) return;
+
+    final cloudMusicProvider = context.read<CloudMusicProvider>();
+    final selectedCloudPlaylistId = _selectedCloudPlaylistId;
+    if (selectedCloudPlaylistId == null) {
+      cloudMusicProvider.loadMoreUserLibrary();
+      return;
+    }
+    cloudMusicProvider.loadMorePlaylistTracks(selectedCloudPlaylistId);
+  }
+
+  void _handleCloudPlaylistsLazyLoad() {
+    if (!mounted || !_cloudPlaylistsScrollController.hasClients) return;
+    final position = _cloudPlaylistsScrollController.position;
+    if (position.extentAfter > 200) return;
+    context.read<CloudMusicProvider>().loadMoreUserPlaylists();
   }
 
   Future<void> _pickLocalFiles() async {
@@ -990,7 +1033,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
     return normalized == localizedLiked ||
         normalized == 'liked songs' ||
-        normalized == 'любимые';
+        normalized == 'Р»СЋР±РёРјС‹Рµ';
   }
 
   String _cloudPlaylistDisplayName(Playlist playlist) {
@@ -1020,6 +1063,74 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     } catch (_) {
       return null;
     }
+  }
+
+  String _supportedUploadFormatsLabel() {
+    return _supportedAudioExtensions
+        .map((item) => item.replaceFirst('.', '').toUpperCase())
+        .join(', ');
+  }
+
+  bool _isUploadableAudioFile(File file) {
+    final extension = p.extension(file.path).toLowerCase();
+    return _supportedAudioExtensionsSet.contains(extension);
+  }
+
+  String _uploadFailureReason(Object? rawReason) {
+    if (rawReason is String && rawReason.trim().isNotEmpty) {
+      return rawReason.trim();
+    }
+    return 'Upload failed';
+  }
+
+  String _unsupportedUploadMessage(File file) {
+    final extension = p.extension(file.path).toLowerCase();
+    final extensionLabel = extension.isEmpty ? 'unknown' : extension;
+    return 'Unsupported format "$extensionLabel". Allowed: ${_supportedUploadFormatsLabel()}';
+  }
+
+  Future<({bool success, List<Track> tracks, String? message})>
+  _fetchAllCloudPlaylistTracks(int playlistId) async {
+    const pageLimit = 200;
+    var offset = 0;
+    final tracks = <Track>[];
+    final seenTrackIds = <int>{};
+
+    while (true) {
+      final result = await _apiService.getPlaylistSongs(
+        playlistId,
+        limit: pageLimit,
+        offset: offset,
+      );
+      if (result['success'] != true) {
+        return (
+          success: false,
+          tracks: tracks,
+          message: _uploadFailureReason(result['message']),
+        );
+      }
+
+      final pageTracks = (result['songs'] as List<dynamic>)
+          .map((item) => Track.fromJson(item as Map<String, dynamic>))
+          .toList();
+      if (pageTracks.isEmpty) {
+        break;
+      }
+
+      for (final track in pageTracks) {
+        if (seenTrackIds.add(track.id)) {
+          tracks.add(track);
+        }
+      }
+
+      final hasMore = result['has_more'] == true;
+      if (!hasMore) {
+        break;
+      }
+      offset += pageTracks.length;
+    }
+
+    return (success: true, tracks: tracks, message: null);
   }
 
   int? _resolveCloudSongIdForLocalTrack({
@@ -1084,11 +1195,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     required String syncKey,
     required int trackCount,
   }) {
-    final progress = _playlistUploadProgress[syncKey];
-    if (progress != null) {
-      return '${progress.uploaded}/${progress.total} ${AppLocalizations.text(context, 'tracks')}';
-    }
-    return '$trackCount ${AppLocalizations.text(context, 'tracks')}';
+    return _playlistProgressTracker.counterLabel(
+      syncKey: syncKey,
+      trackCount: trackCount,
+      tracksLabel: AppLocalizations.text(context, 'tracks'),
+    );
   }
 
   Future<void> _syncCloudFavoritesLikesToLocal({
@@ -1103,15 +1214,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         );
     if (favoritePlaylist == null) return;
 
-    final favoriteSongsResult = await _apiService.getPlaylistSongs(
+    await cloudMusicProvider.fetchPlaylistTracks(
+      favoritePlaylist.id,
+      reset: true,
+    );
+    while (cloudMusicProvider.hasMorePlaylistTracks(favoritePlaylist.id)) {
+      await cloudMusicProvider.loadMorePlaylistTracks(favoritePlaylist.id);
+    }
+
+    final favoriteSongs = cloudMusicProvider.getTracksForPlaylist(
       favoritePlaylist.id,
     );
-    if (favoriteSongsResult['success'] != true) return;
-
-    final favoriteSongs = (favoriteSongsResult['songs'] as List<dynamic>)
-        .map((item) => Track.fromJson(item as Map<String, dynamic>))
-        .toList();
-    _cloudPlaylistTracksCache[favoritePlaylist.id] = favoriteSongs;
 
     final cloudLibraryNames = cloudMusicProvider.tracks
         .map((item) => _trackLookupName(item.originalFilename ?? item.filename))
@@ -1205,15 +1318,28 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     }
   }
 
-  Future<bool> _uploadLocalTrack(
+  Future<({bool success, String? failureReason})> _uploadLocalTrack(
     File file, {
     bool silent = false,
     bool refreshCloudData = true,
   }) async {
-    if (_uploadingPaths.contains(file.path)) return false;
+    if (!_isUploadableAudioFile(file)) {
+      final reason = _unsupportedUploadMessage(file);
+      if (!silent && mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(reason)));
+      }
+      return (success: false, failureReason: reason);
+    }
+
+    if (_uploadingPaths.contains(file.path)) {
+      return (success: false, failureReason: 'Upload already in progress');
+    }
     setState(() => _uploadingPaths.add(file.path));
 
     var uploaded = false;
+    String? failureReason;
     try {
       final cloudMusicProvider = context.read<CloudMusicProvider>();
       if (_isTrackAlreadyInCloudLibrary(file, cloudMusicProvider)) {
@@ -1225,26 +1351,36 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
             ),
           );
         }
-        return uploaded;
+        return (success: true, failureReason: null);
       }
 
       final result = await _apiService.uploadFile(file);
-      if (!mounted) return false;
-
       if (result['success'] == true) {
         uploaded = true;
         if (refreshCloudData) {
           await _refreshCloudData();
         }
-        if (!mounted) return uploaded;
-        if (!silent) {
+        if (!mounted) {
+          return (success: true, failureReason: null);
+        }
+        if (!silent && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Uploaded: ${p.basename(file.path)}')),
           );
         }
-      } else if (!silent) {
+      } else {
+        failureReason = _uploadFailureReason(result['message']);
+        if (!silent && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Upload failed: $failureReason')),
+          );
+        }
+      }
+    } catch (error) {
+      failureReason = _uploadFailureReason(error.toString());
+      if (!silent && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: ${result['message']}')),
+          SnackBar(content: Text('Upload failed: $failureReason')),
         );
       }
     } finally {
@@ -1252,7 +1388,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         setState(() => _uploadingPaths.remove(file.path));
       }
     }
-    return uploaded;
+    return (success: uploaded, failureReason: failureReason);
   }
 
   Future<void> _submitCloudLogin(AuthProvider authProvider) async {
@@ -1310,11 +1446,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   String _localTrackSortLabel(_LocalTrackSort sort, BuildContext context) {
     switch (sort) {
       case _LocalTrackSort.addedToPlayer:
-        return 'По дате добавления';
+        return 'РџРѕ РґР°С‚Рµ РґРѕР±Р°РІР»РµРЅРёСЏ';
       case _LocalTrackSort.name:
-        return 'По названию';
+        return 'РџРѕ РЅР°Р·РІР°РЅРёСЋ';
       case _LocalTrackSort.fileModified:
-        return 'По дате изменения файла';
+        return 'РџРѕ РґР°С‚Рµ РёР·РјРµРЅРµРЅРёСЏ С„Р°Р№Р»Р°';
     }
   }
 
@@ -1372,11 +1508,24 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     return fileName.contains(query) || fileTitle.contains(query);
   }
 
-  bool _matchesCloudTrackSearch(Track track) {
-    if (_cloudTracksSearchQuery.trim().isEmpty) return true;
-    final query = _cloudTracksSearchQuery.toLowerCase().trim();
-    final title = (track.originalFilename ?? track.filename).toLowerCase();
-    return title.contains(query);
+  void _onCloudTrackSearchChanged(String value) {
+    _cloudSearchDebounce?.cancel();
+    _cloudSearchDebounce = Timer(const Duration(milliseconds: 320), () async {
+      if (!mounted) return;
+      final query = value.trim();
+      setState(() => _cloudTracksSearchQuery = query);
+      final cloudMusicProvider = context.read<CloudMusicProvider>();
+      final selectedCloudPlaylistId = _selectedCloudPlaylistId;
+      if (selectedCloudPlaylistId == null) {
+        await cloudMusicProvider.fetchUserLibrary(reset: true, search: query);
+        return;
+      }
+      await cloudMusicProvider.fetchPlaylistTracks(
+        selectedCloudPlaylistId,
+        reset: true,
+        search: query,
+      );
+    });
   }
 
   void _openCreatePlaylistDialog(
@@ -1658,7 +1807,13 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     );
   }
 
-  Future<({Map<String, int> uploadedSongIDsByPath, int completedTracks})>
+  Future<
+    ({
+      Map<String, int> uploadedSongIDsByPath,
+      Map<String, String> failedUploadsByPath,
+      int completedTracks,
+    })
+  >
   _uploadMissingCloudTracks({
     required List<File> missingFiles,
     required String syncKey,
@@ -1666,62 +1821,45 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     required int completedTracks,
     required int totalTracks,
   }) async {
-    final entries = missingFiles.toList(growable: false);
-    if (entries.isEmpty) {
+    if (missingFiles.isEmpty) {
       return (
         uploadedSongIDsByPath: <String, int>{},
+        failedUploadsByPath: <String, String>{},
         completedTracks: completedTracks,
       );
     }
 
-    final uploadedSongIDsByPath = <String, int>{};
-    var nextIndex = 0;
-    final workerCount = math
-        .max(1, math.min(_cloudUploadParallelism, entries.length))
-        .toInt();
-
-    Future<void> worker() async {
-      while (true) {
-        if (nextIndex >= entries.length) {
-          return;
-        }
-        final file = entries[nextIndex];
-        nextIndex += 1;
-
-        try {
-          final uploadResult = await _apiService.uploadFile(file);
-          if (uploadResult['success'] == true) {
-            final uploadedSongId = _extractSongIdFromUploadResult(uploadResult);
-            if (uploadedSongId != null) {
-              uploadedSongIDsByPath[file.path] = uploadedSongId;
-              completedTracks += 1;
-            }
-          }
-        } catch (_) {
-          // Ignore per-file failures to let remaining uploads continue.
-        }
-
+    final uploadBatch = await _syncController.uploadMissingTracks(
+      missingFiles: missingFiles,
+      completedTracks: completedTracks,
+      totalTracks: totalTracks,
+      isUploadableAudioFile: _isUploadableAudioFile,
+      unsupportedUploadMessage: _unsupportedUploadMessage,
+      uploadFailureReason: _uploadFailureReason,
+      extractSongIdFromUploadResult: _extractSongIdFromUploadResult,
+      onProgress: (completed, total) async {
         if (mounted) {
           setState(() {
-            _playlistUploadProgress[syncKey] = (
-              uploaded: completedTracks,
-              total: totalTracks,
+            _playlistProgressTracker.setProgress(
+              syncKey,
+              uploaded: completed,
+              total: total,
             );
           });
         }
         await UploadNotificationService.showPlaylistUploadProgress(
           syncKey: syncKey,
           playlistName: playlistName,
-          uploadedTracks: completedTracks,
-          totalTracks: totalTracks,
+          uploadedTracks: completed,
+          totalTracks: total,
         );
-      }
-    }
+      },
+    );
 
-    await Future.wait(List.generate(workerCount, (_) => worker()));
     return (
-      uploadedSongIDsByPath: uploadedSongIDsByPath,
-      completedTracks: completedTracks,
+      uploadedSongIDsByPath: uploadBatch.uploadedSongIDsByPath,
+      failedUploadsByPath: uploadBatch.failedUploadsByPath,
+      completedTracks: uploadBatch.completedTracks,
     );
   }
 
@@ -1745,7 +1883,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
     setState(() {
       _syncingLocalPlaylistIds.add(syncKey);
-      _playlistUploadProgress.remove(syncKey);
+      _playlistProgressTracker.clear(syncKey);
     });
 
     final totalTracks = playlistTracks.length;
@@ -1753,8 +1891,14 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
     try {
       final cloudMusicProvider = context.read<CloudMusicProvider>();
-      await cloudMusicProvider.fetchUserLibrary();
-      await cloudMusicProvider.fetchUserPlaylists();
+      await cloudMusicProvider.fetchUserLibrary(reset: true, search: '');
+      while (cloudMusicProvider.hasMoreTracks) {
+        await cloudMusicProvider.loadMoreUserLibrary();
+      }
+      await cloudMusicProvider.fetchUserPlaylists(reset: true);
+      while (cloudMusicProvider.hasMorePlaylists) {
+        await cloudMusicProvider.loadMoreUserPlaylists();
+      }
 
       final cloudSongIdByName = <String, int>{};
       final cloudSongIdByNameAndSize = <String, int>{};
@@ -1810,7 +1954,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
       if (mounted) {
         setState(() {
-          _playlistUploadProgress[syncKey] = (
+          _playlistProgressTracker.setProgress(
+            syncKey,
             uploaded: completedTracks,
             total: totalTracks,
           );
@@ -1834,15 +1979,22 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       final uploadedSongIDsByPath = Map<String, int>.from(
         uploadedBatch.uploadedSongIDsByPath,
       );
+      final failedUploadsByPath = Map<String, String>.from(
+        uploadedBatch.failedUploadsByPath,
+      );
       for (final file in missingFiles) {
         final uploadedSongID = uploadedSongIDsByPath[file.path];
         if (uploadedSongID != null) {
           desiredSongIDsInOrder.add(uploadedSongID);
+          failedUploadsByPath.remove(file.path);
         }
       }
 
       if (missingFiles.isNotEmpty) {
-        await cloudMusicProvider.fetchUserLibrary();
+        await cloudMusicProvider.fetchUserLibrary(reset: true, search: '');
+        while (cloudMusicProvider.hasMoreTracks) {
+          await cloudMusicProvider.loadMoreUserLibrary();
+        }
         cloudSongIdByName.clear();
         cloudSongIdByNameAndSize.clear();
         seedCloudLookupMaps(cloudMusicProvider.tracks);
@@ -1858,10 +2010,18 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
             cloudSongIdByNameAndSize: cloudSongIdByNameAndSize,
             cloudSongIdByName: cloudSongIdByName,
           );
-          if (resolvedSongID == null) continue;
+          if (resolvedSongID == null) {
+            failedUploadsByPath.putIfAbsent(
+              file.path,
+              () =>
+                  'Track is still missing in cloud library after upload verification',
+            );
+            continue;
+          }
 
           uploadedSongIDsByPath[file.path] = resolvedSongID;
           desiredSongIDsInOrder.add(resolvedSongID);
+          failedUploadsByPath.remove(file.path);
           resolvedAfterUploadCount += 1;
         }
 
@@ -1869,7 +2029,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
           completedTracks += resolvedAfterUploadCount;
           if (mounted) {
             setState(() {
-              _playlistUploadProgress[syncKey] = (
+              _playlistProgressTracker.setProgress(
+                syncKey,
                 uploaded: completedTracks,
                 total: totalTracks,
               );
@@ -1887,14 +2048,25 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       if (desiredSongIDsInOrder.isEmpty) {
         if (!mounted) return;
         if (!silent) {
+          final failureDetails = failedUploadsByPath.entries
+              .map((entry) => '${p.basename(entry.key)}: ${entry.value}')
+              .join(' | ');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'No tracks from "$playlistName" were matched in cloud library',
+                failureDetails.isEmpty
+                    ? 'No tracks from "$playlistName" were matched in cloud library'
+                    : 'Sync partial for "$playlistName": $failureDetails',
               ),
             ),
           );
         }
+        await UploadNotificationService.showPlaylistUploadFinished(
+          syncKey: syncKey,
+          playlistName: playlistName,
+          uploadedTracks: 0,
+          totalTracks: totalTracks,
+        );
         return;
       }
 
@@ -1907,15 +2079,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
             return _normalizePlaylistName(item.name) == normalizedName;
           }, orElse: () => null);
       if (existingPlaylist != null) {
-        final existingSongsResult = await _apiService.getPlaylistSongs(
-          existingPlaylist.id,
-        );
-        if (existingSongsResult['success'] == true) {
-          _cloudPlaylistTracksCache[existingPlaylist.id] =
-              (existingSongsResult['songs'] as List<dynamic>)
-                  .map((item) => Track.fromJson(item as Map<String, dynamic>))
-                  .toList();
-        }
+        cloudMusicProvider.invalidatePlaylistTracks(existingPlaylist.id);
       }
 
       final createResult = await _apiService.createPlaylist(
@@ -1967,59 +2131,181 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         }
       }
 
+      final desiredSongIDsSet = uniqueSongIDsInOrder.toSet();
+      final deduplicatedBySongIdCount =
+          completedTracks - uniqueSongIDsInOrder.length;
+      var finalLinkedCount = 0;
+      var lastReconcileReason = '';
+
       final bulkResult = await _apiService.addSongsToPlaylistBulk(
         playlistId: cloudPlaylistID,
         songIds: uniqueSongIDsInOrder,
       );
       if (bulkResult['success'] != true) {
+        lastReconcileReason =
+            'bulk add failed: ${_uploadFailureReason(bulkResult['message'])}';
         for (final songID in uniqueSongIDsInOrder) {
-          await _apiService.addSongToPlaylist(
+          final addResult = await _apiService.addSongToPlaylist(
             playlistId: cloudPlaylistID,
             songId: songID,
           );
+          if (addResult['success'] != true) {
+            lastReconcileReason = _uploadFailureReason(addResult['message']);
+          }
+        }
+      } else {
+        final skippedNotInLibraryCount =
+            (bulkResult['skipped_not_in_library_song_ids'] as List<dynamic>?)
+                ?.length ??
+            0;
+        if (skippedNotInLibraryCount > 0 && lastReconcileReason.isEmpty) {
+          lastReconcileReason =
+              '$skippedNotInLibraryCount song(s) were skipped as not in cloud library';
         }
       }
 
-      final verifyResult = await _apiService.getPlaylistSongs(cloudPlaylistID);
-      if (verifyResult['success'] == true) {
-        final existingSongIDs = (verifyResult['songs'] as List<dynamic>)
-            .map((item) => Track.fromJson(item as Map<String, dynamic>).id)
+      for (var attempt = 0; attempt < 3; attempt++) {
+        final verifySnapshot = await _fetchAllCloudPlaylistTracks(
+          cloudPlaylistID,
+        );
+        if (!verifySnapshot.success) {
+          lastReconcileReason =
+              'playlist verify failed: ${verifySnapshot.message ?? 'unknown'}';
+          break;
+        }
+
+        final currentSongIDs = verifySnapshot.tracks
+            .map((item) => item.id)
             .toSet();
-        for (final songID in uniqueSongIDsInOrder) {
-          if (existingSongIDs.contains(songID)) continue;
-          await _apiService.addSongToPlaylist(
+        finalLinkedCount = desiredSongIDsSet
+            .where((songID) => currentSongIDs.contains(songID))
+            .length;
+        final missingSongIDs = uniqueSongIDsInOrder
+            .where((songID) => !currentSongIDs.contains(songID))
+            .toList();
+
+        if (missingSongIDs.isEmpty) {
+          break;
+        }
+
+        var addedInAttempt = 0;
+        for (final songID in missingSongIDs) {
+          final addResult = await _apiService.addSongToPlaylist(
             playlistId: cloudPlaylistID,
             songId: songID,
           );
+          if (addResult['success'] == true) {
+            addedInAttempt += 1;
+            continue;
+          }
+          lastReconcileReason =
+              'song_id=$songID: ${_uploadFailureReason(addResult['message'])}';
         }
+
+        if (addedInAttempt == 0) {
+          if (lastReconcileReason.isEmpty) {
+            lastReconcileReason = 'reconcile could not add missing songs';
+          }
+          break;
+        }
+      }
+
+      final finalVerifySnapshot = await _fetchAllCloudPlaylistTracks(
+        cloudPlaylistID,
+      );
+      final missingSongIDsAfterReconcile = <int>[];
+      if (finalVerifySnapshot.success) {
+        final currentSongIDs = finalVerifySnapshot.tracks
+            .map((item) => item.id)
+            .toSet();
+        for (final songID in uniqueSongIDsInOrder) {
+          if (!currentSongIDs.contains(songID)) {
+            missingSongIDsAfterReconcile.add(songID);
+          }
+        }
+        finalLinkedCount = desiredSongIDsSet
+            .where((songID) => currentSongIDs.contains(songID))
+            .length;
+      } else if (lastReconcileReason.isEmpty) {
+        lastReconcileReason =
+            'final verify failed: ${finalVerifySnapshot.message ?? 'unknown'}';
+      }
+
+      final unresolvedUploadCount = (totalTracks - completedTracks)
+          .clamp(0, totalTracks)
+          .toInt();
+      final missingLinkCount = missingSongIDsAfterReconcile.length;
+      final syncComplete =
+          unresolvedUploadCount == 0 &&
+          deduplicatedBySongIdCount <= 0 &&
+          missingLinkCount == 0 &&
+          finalLinkedCount >= uniqueSongIDsInOrder.length;
+
+      final reasonParts = <String>[];
+      if (unresolvedUploadCount > 0) {
+        final uniqueUploadFailures = failedUploadsByPath.values
+            .toSet()
+            .toList();
+        if (uniqueUploadFailures.isEmpty) {
+          reasonParts.add('$unresolvedUploadCount track(s) failed upload');
+        } else {
+          reasonParts.add(
+            '$unresolvedUploadCount track(s) failed upload: ${uniqueUploadFailures.take(3).join(' | ')}',
+          );
+        }
+      }
+      if (deduplicatedBySongIdCount > 0) {
+        reasonParts.add(
+          '$deduplicatedBySongIdCount track(s) were merged by server deduplication',
+        );
+      }
+      if (missingLinkCount > 0) {
+        reasonParts.add(
+          '$missingLinkCount playlist link(s) are still missing after reconcile',
+        );
+      }
+      if (lastReconcileReason.isNotEmpty) {
+        reasonParts.add(lastReconcileReason);
       }
 
       await _refreshCloudData();
       await UploadNotificationService.showPlaylistUploadFinished(
         syncKey: syncKey,
         playlistName: playlistName,
-        uploadedTracks: completedTracks,
+        uploadedTracks: finalLinkedCount,
         totalTracks: totalTracks,
       );
       if (!mounted) return;
       if (!silent) {
+        final reasonText = reasonParts.join('; ');
+        final message = syncComplete
+            ? 'Playlist "$playlistName" sync complete ($finalLinkedCount/$totalTracks)'
+            : reasonText.isEmpty
+            ? 'Playlist "$playlistName" sync partial ($finalLinkedCount/$totalTracks)'
+            : 'Playlist "$playlistName" sync partial ($finalLinkedCount/$totalTracks): $reasonText';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Playlist "$playlistName" synced to cloud')),
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 8),
+          ),
         );
       }
-    } catch (_) {
+    } catch (error) {
       await UploadNotificationService.showPlaylistUploadFinished(
         syncKey: syncKey,
         playlistName: playlistName,
         uploadedTracks: completedTracks,
         totalTracks: totalTracks,
       );
-      rethrow;
+      if (!mounted || silent) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Playlist sync partial: ${error.toString()}')),
+      );
     } finally {
       if (mounted) {
         setState(() {
           _syncingLocalPlaylistIds.remove(syncKey);
-          _playlistUploadProgress.remove(syncKey);
+          _playlistProgressTracker.clear(syncKey);
         });
       }
     }
@@ -2035,22 +2321,20 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
     try {
       final playlistDisplayName = _cloudPlaylistDisplayName(playlist);
-      final result = await _apiService.getPlaylistSongs(playlist.id);
-      if (result['success'] != true) {
+      final playlistSnapshot = await _fetchAllCloudPlaylistTracks(playlist.id);
+      if (!playlistSnapshot.success) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Failed to load cloud playlist: ${result['message']}',
+              'Failed to load cloud playlist: ${playlistSnapshot.message ?? 'unknown'}',
             ),
           ),
         );
         return;
       }
 
-      final songs = (result['songs'] as List<dynamic>)
-          .map((item) => Track.fromJson(item as Map<String, dynamic>))
-          .toList();
+      final songs = playlistSnapshot.tracks;
       if (songs.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2120,13 +2404,12 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   }
 
   Future<void> _deleteCloudTrack(Track track) async {
+    final cloudMusicProvider = context.read<CloudMusicProvider>();
     final result = await _apiService.deleteSong(track.id);
     if (!mounted) return;
 
     if (result['success'] == true) {
-      _cloudPlaylistTracksCache.removeWhere(
-        (_, songs) => songs.any((item) => item.id == track.id),
-      );
+      cloudMusicProvider.invalidatePlaylistTracks();
       await _refreshCloudData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2145,13 +2428,14 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   Future<void> _deleteCloudPlaylist(Playlist playlist) async {
     if (_deletingCloudPlaylistIds.contains(playlist.id)) return;
     setState(() => _deletingCloudPlaylistIds.add(playlist.id));
+    final cloudMusicProvider = context.read<CloudMusicProvider>();
 
     try {
       final result = await _apiService.deletePlaylist(playlist.id);
       if (!mounted) return;
 
       if (result['success'] == true) {
-        _cloudPlaylistTracksCache.remove(playlist.id);
+        cloudMusicProvider.invalidatePlaylistTracks(playlist.id);
         if (_selectedCloudPlaylistId == playlist.id) {
           setState(() {
             _selectedCloudPlaylistId = null;
@@ -2179,45 +2463,28 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   }
 
   Future<void> _selectCloudPlaylist(int? playlistId) async {
+    final cloudMusicProvider = context.read<CloudMusicProvider>();
     if (playlistId == null) {
       if (!mounted) return;
       setState(() {
         _selectedCloudPlaylistId = null;
       });
-      return;
-    }
-
-    if (_loadingCloudPlaylistIds.contains(playlistId)) return;
-    if (_cloudPlaylistTracksCache.containsKey(playlistId)) {
-      if (!mounted) return;
-      setState(() {
-        _selectedCloudPlaylistId = playlistId;
-      });
+      await cloudMusicProvider.fetchUserLibrary(
+        reset: true,
+        search: _cloudTracksSearchQuery,
+      );
       return;
     }
 
     setState(() {
       _selectedCloudPlaylistId = playlistId;
-      _loadingCloudPlaylistIds.add(playlistId);
     });
 
-    try {
-      final result = await _apiService.getPlaylistSongs(playlistId);
-      final songs = result['success'] == true
-          ? (result['songs'] as List<dynamic>)
-                .map((item) => Track.fromJson(item as Map<String, dynamic>))
-                .toList()
-          : <Track>[];
-
-      if (!mounted) return;
-      setState(() {
-        _cloudPlaylistTracksCache[playlistId] = songs;
-      });
-    } finally {
-      if (mounted) {
-        setState(() => _loadingCloudPlaylistIds.remove(playlistId));
-      }
-    }
+    await cloudMusicProvider.fetchPlaylistTracks(
+      playlistId,
+      reset: true,
+      search: _cloudTracksSearchQuery,
+    );
   }
 
   void _handleLocalTracksSwipe(DragEndDetails details) {
@@ -2267,17 +2534,27 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     final authProvider = context.read<AuthProvider>();
     final cloudMusicProvider = context.read<CloudMusicProvider>();
     if (authProvider.currentUser != null) {
-      await cloudMusicProvider.fetchUserLibrary();
+      await cloudMusicProvider.fetchUserLibrary(reset: true, search: '');
+      while (cloudMusicProvider.hasMoreTracks) {
+        await cloudMusicProvider.loadMoreUserLibrary();
+      }
     }
 
     var successCount = 0;
+    final failureReasonsByFile = <String, String>{};
     for (final file in uniqueFiles) {
-      final uploaded = await _uploadLocalTrack(
+      final uploadResult = await _uploadLocalTrack(
         file,
         silent: true,
         refreshCloudData: false,
       );
-      if (uploaded) successCount += 1;
+      if (uploadResult.success) {
+        successCount += 1;
+        continue;
+      }
+      failureReasonsByFile[p.basename(file.path)] = _uploadFailureReason(
+        uploadResult.failureReason,
+      );
     }
     if (successCount > 0) {
       await _refreshCloudData();
@@ -2286,23 +2563,38 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
     if (uniqueFiles.length == 1) {
       final fileName = p.basename(uniqueFiles.first.path);
+      final failureReason = failureReasonsByFile[fileName];
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             successCount == 1
                 ? 'Uploaded: $fileName'
-                : 'Upload failed: $fileName',
+                : 'Upload failed: $fileName${failureReason == null ? "" : " ($failureReason)"}',
           ),
         ),
       );
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Uploaded $successCount/${uniqueFiles.length} tracks'),
-      ),
-    );
+    if (failureReasonsByFile.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Uploaded $successCount/${uniqueFiles.length} tracks'),
+        ),
+      );
+    } else {
+      final failureSummary = failureReasonsByFile.entries
+          .map((entry) => '${entry.key}: ${entry.value}')
+          .join(' | ');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Uploaded $successCount/${uniqueFiles.length}. Failed ${failureReasonsByFile.length}: $failureSummary',
+          ),
+          duration: const Duration(seconds: 8),
+        ),
+      );
+    }
     _clearLocalTrackSelection();
   }
 
@@ -2544,18 +2836,26 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         final cloudPlaylists = _storageType == _StorageType.cloud
             ? cloudMusicProvider.playlists
             : const <Playlist>[];
+        final selectedCloudPlaylistId = _selectedCloudPlaylistId;
         final visibleCloudTracks = _storageType == _StorageType.cloud
-            ? (_selectedCloudPlaylistId == null
+            ? (selectedCloudPlaylistId == null
                       ? cloudTracks
-                      : (_cloudPlaylistTracksCache[_selectedCloudPlaylistId!] ??
-                            const <Track>[]))
-                  .where(_matchesCloudTrackSearch)
+                      : cloudMusicProvider.getTracksForPlaylist(
+                          selectedCloudPlaylistId,
+                        ))
                   .toList()
             : const <Track>[];
         final isCloudPlaylistLoading =
             _storageType == _StorageType.cloud &&
-            _selectedCloudPlaylistId != null &&
-            _loadingCloudPlaylistIds.contains(_selectedCloudPlaylistId);
+            selectedCloudPlaylistId != null &&
+            cloudMusicProvider.isPlaylistTracksLoading(selectedCloudPlaylistId);
+        final hasMoreCloudTracks =
+            _storageType == _StorageType.cloud &&
+            (selectedCloudPlaylistId == null
+                ? cloudMusicProvider.hasMoreTracks
+                : cloudMusicProvider.hasMorePlaylistTracks(
+                    selectedCloudPlaylistId,
+                  ));
         final isWindowsDesktop =
             Theme.of(context).platform == TargetPlatform.windows &&
             MediaQuery.of(context).size.width >= 920;
@@ -2651,7 +2951,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                             children: [
                               Expanded(
                                 child: Text(
-                                  '${localPlaylists.length + 2} ${t('playlists')} • ${visibleLocalTracks.length} ${t('tracks')}',
+                                  '${localPlaylists.length + 2} ${t('playlists')} вЂў ${visibleLocalTracks.length} ${t('tracks')}',
                                   style: textTheme.bodyMedium?.copyWith(
                                     color: colorScheme.onSurface.withValues(
                                       alpha: 0.65,
@@ -2868,7 +3168,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                       ),
                                       const SizedBox(width: 8),
                                       PopupMenuButton<_LocalTrackSort>(
-                                        tooltip: 'Сортировка',
+                                        tooltip: 'РЎРѕСЂС‚РёСЂРѕРІРєР°',
                                         initialValue: _localTrackSort,
                                         onSelected: (value) {
                                           if (_localTrackSort == value) return;
@@ -2930,7 +3230,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                               ),
                                               const SizedBox(width: 6),
                                               Text(
-                                                'Сортировка',
+                                                'РЎРѕСЂС‚РёСЂРѕРІРєР°',
                                                 style: textTheme.labelMedium,
                                               ),
                                             ],
@@ -2961,6 +3261,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                               visibleLocalTracks[index];
                                           final uploading = _uploadingPaths
                                               .contains(file.path);
+                                          final canUploadTrack =
+                                              _isUploadableAudioFile(file);
                                           final isCurrentTrack =
                                               _isCurrentTrackPath(
                                                 currentTrackPath,
@@ -3013,11 +3315,30 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                               _TrackMenuAction(
                                                 label: uploading
                                                     ? 'Uploading...'
-                                                    : t('upload'),
+                                                    : canUploadTrack
+                                                    ? t('upload')
+                                                    : 'Unsupported format',
                                                 icon:
                                                     Icons.cloud_upload_rounded,
-                                                enabled: !uploading,
+                                                enabled:
+                                                    !uploading &&
+                                                    canUploadTrack,
                                                 onTap: () async {
+                                                  if (!canUploadTrack) {
+                                                    if (!mounted) return;
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(
+                                                          _unsupportedUploadMessage(
+                                                            file,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    );
+                                                    return;
+                                                  }
                                                   final targets =
                                                       _resolveTrackActionTargets(
                                                         anchorTrack: file,
@@ -3169,7 +3490,13 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                               height: 130,
                               child: ListView.separated(
                                 scrollDirection: Axis.horizontal,
-                                itemCount: cloudPlaylists.length + 1,
+                                controller: _cloudPlaylistsScrollController,
+                                itemCount:
+                                    cloudPlaylists.length +
+                                    1 +
+                                    (cloudMusicProvider.hasMorePlaylists
+                                        ? 1
+                                        : 0),
                                 separatorBuilder: (context, index) =>
                                     const SizedBox(width: 10),
                                 itemBuilder: (context, index) {
@@ -3180,6 +3507,15 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                       selected:
                                           _selectedCloudPlaylistId == null,
                                       onTap: () => _selectCloudPlaylist(null),
+                                    );
+                                  }
+
+                                  if (index == cloudPlaylists.length + 1) {
+                                    return const SizedBox(
+                                      width: 88,
+                                      child: Center(
+                                        child: CircularProgressIndicator(),
+                                      ),
                                     );
                                   }
 
@@ -3252,12 +3588,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                         const SizedBox(width: 10),
                                         Expanded(
                                           child: TextField(
-                                            onChanged: (value) {
-                                              setState(
-                                                () => _cloudTracksSearchQuery =
-                                                    value,
-                                              );
-                                            },
+                                            onChanged:
+                                                _onCloudTrackSearchChanged,
                                             decoration: InputDecoration(
                                               isDense: true,
                                               hintText: t('search_track'),
@@ -3270,7 +3602,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                       ],
                                     ),
                                     const SizedBox(height: 10),
-                                    if ((cloudMusicProvider.isLoading &&
+                                    if ((cloudMusicProvider.isLibraryLoading &&
                                             cloudTracks.isEmpty) ||
                                         isCloudPlaylistLoading)
                                       const Center(
@@ -3292,10 +3624,26 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                             0.56,
                                         child: ListView.separated(
                                           primary: false,
-                                          itemCount: visibleCloudTracks.length,
+                                          controller:
+                                              _cloudTracksScrollController,
+                                          itemCount:
+                                              visibleCloudTracks.length +
+                                              (hasMoreCloudTracks ? 1 : 0),
                                           separatorBuilder: (context, index) =>
                                               const SizedBox(height: 10),
                                           itemBuilder: (context, index) {
+                                            if (index >=
+                                                visibleCloudTracks.length) {
+                                              return const Padding(
+                                                padding: EdgeInsets.symmetric(
+                                                  vertical: 10,
+                                                ),
+                                                child: Center(
+                                                  child:
+                                                      CircularProgressIndicator(),
+                                                ),
+                                              );
+                                            }
                                             final track =
                                                 visibleCloudTracks[index];
                                             final downloading =
@@ -3406,1038 +3754,5 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     }
 
     return '${prettyBytes(usedBytes)} / ${prettyBytes(quotaBytes)}';
-  }
-}
-
-class _ModeButton extends StatelessWidget {
-  const _ModeButton({
-    required this.selected,
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final bool selected;
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? colorScheme.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 18),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                softWrap: false,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GradientHeaderButton extends StatelessWidget {
-  const _GradientHeaderButton({
-    required this.width,
-    required this.height,
-    required this.label,
-    required this.onTap,
-  });
-
-  final double width;
-  final double height;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        width: width,
-        height: height,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: LinearGradient(
-            colors: [colorScheme.primary, colorScheme.tertiary],
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: colorScheme.onPrimary,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PlaylistCard extends StatefulWidget {
-  const _PlaylistCard({
-    required this.playlistName,
-    required this.trackCount,
-    this.selected = false,
-    this.isTransferring = false,
-    this.onTap,
-    this.menuActions,
-  });
-
-  final String playlistName;
-  final int trackCount;
-  final bool selected;
-  final bool isTransferring;
-  final VoidCallback? onTap;
-  final List<_PlaylistMenuAction>? menuActions;
-
-  @override
-  State<_PlaylistCard> createState() => _PlaylistCardState();
-}
-
-class _PlaylistCardState extends State<_PlaylistCard> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          width: 150,
-          margin: const EdgeInsets.only(right: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: widget.selected
-                ? colorScheme.secondary
-                : colorScheme.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: widget.selected || _hovered
-                  ? colorScheme.primary
-                  : colorScheme.outline,
-            ),
-          ),
-          child: Stack(
-            children: [
-              if (widget.isTransferring)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: _PlaylistTransferWaveFill(
-                        primaryColor: colorScheme.primary,
-                        secondaryColor: colorScheme.tertiary,
-                      ),
-                    ),
-                  ),
-                ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: LinearGradient(
-                        colors: [colorScheme.primary, colorScheme.tertiary],
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.queue_music_rounded,
-                      color: colorScheme.onPrimary,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    widget.playlistName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${widget.trackCount} ${AppLocalizations.text(context, 'tracks')}',
-                    style: textTheme.labelMedium?.copyWith(
-                      color: colorScheme.onSurface.withValues(alpha: 0.65),
-                    ),
-                  ),
-                ],
-              ),
-              if (widget.menuActions != null && widget.menuActions!.isNotEmpty)
-                Positioned(
-                  right: -6,
-                  top: -6,
-                  child: PopupMenuButton<int>(
-                    icon: const Icon(Icons.more_vert_rounded, size: 18),
-                    onSelected: (index) => widget.menuActions![index].onTap(),
-                    itemBuilder: (context) {
-                      return List.generate(widget.menuActions!.length, (index) {
-                        final action = widget.menuActions![index];
-                        return PopupMenuItem<int>(
-                          value: index,
-                          child: Row(
-                            children: [
-                              Icon(action.icon, size: 18),
-                              const SizedBox(width: 8),
-                              Text(action.label),
-                            ],
-                          ),
-                        );
-                      });
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PlaylistMenuAction {
-  const _PlaylistMenuAction({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-}
-
-class _CreatePlaylistCard extends StatefulWidget {
-  const _CreatePlaylistCard({required this.onTap, required this.label});
-
-  final VoidCallback onTap;
-  final String label;
-
-  @override
-  State<_CreatePlaylistCard> createState() => _CreatePlaylistCardState();
-}
-
-class _CreatePlaylistCardState extends State<_CreatePlaylistCard> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          width: 150,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: colorScheme.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: _hovered ? colorScheme.primary : colorScheme.outline,
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: colorScheme.secondary,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(Icons.add_rounded, color: colorScheme.primary),
-              ),
-              const SizedBox(height: 10),
-              Text(widget.label),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PlaylistTransferWaveFill extends StatefulWidget {
-  const _PlaylistTransferWaveFill({
-    required this.primaryColor,
-    required this.secondaryColor,
-  });
-
-  final Color primaryColor;
-  final Color secondaryColor;
-
-  @override
-  State<_PlaylistTransferWaveFill> createState() =>
-      _PlaylistTransferWaveFillState();
-}
-
-class _PlaylistTransferWaveFillState extends State<_PlaylistTransferWaveFill>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3600),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final wavePhase = _controller.value * 2 * math.pi;
-        final fillLevel =
-            0.15 + Curves.easeInOut.transform(_controller.value) * 0.85;
-
-        return FractionallySizedBox(
-          alignment: Alignment.bottomCenter,
-          heightFactor: fillLevel.clamp(0.0, 1.0),
-          child: CustomPaint(
-            painter: _PlaylistTransferWavePainter(
-              phase: wavePhase,
-              baseColor: widget.primaryColor.withValues(alpha: 0.14),
-              waveColor: widget.primaryColor.withValues(alpha: 0.22),
-              crestColor: widget.secondaryColor.withValues(alpha: 0.30),
-            ),
-            child: const SizedBox.expand(),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _PlaylistTransferWavePainter extends CustomPainter {
-  const _PlaylistTransferWavePainter({
-    required this.phase,
-    required this.baseColor,
-    required this.waveColor,
-    required this.crestColor,
-  });
-
-  final double phase;
-  final Color baseColor;
-  final Color waveColor;
-  final Color crestColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-
-    canvas.drawRect(Offset.zero & size, Paint()..color = baseColor);
-
-    final crestY = size.height * 0.16;
-    final firstAmplitude = math.max(2.0, size.height * 0.08);
-    final secondAmplitude = math.max(1.6, size.height * 0.055);
-
-    Path buildWave(double phaseShift, double amplitude) {
-      final path = Path();
-      final startY = crestY + math.sin(phaseShift) * amplitude;
-      path.moveTo(0, startY);
-
-      final width = size.width;
-      for (double x = 0; x <= width; x += 4) {
-        final normalized = width == 0 ? 0.0 : x / width;
-        final y =
-            crestY +
-            math.sin((normalized * 2 * math.pi) + phaseShift) * amplitude;
-        path.lineTo(x, y);
-      }
-      path.lineTo(width, size.height);
-      path.lineTo(0, size.height);
-      path.close();
-      return path;
-    }
-
-    canvas.drawPath(
-      buildWave(phase, firstAmplitude),
-      Paint()..color = waveColor,
-    );
-    canvas.drawPath(
-      buildWave(phase + (math.pi / 1.8), secondAmplitude),
-      Paint()..color = crestColor,
-    );
-
-    final sheenPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Colors.white.withValues(alpha: 0.16), Colors.transparent],
-        stops: const [0.0, 0.55],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, sheenPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _PlaylistTransferWavePainter oldDelegate) {
-    return oldDelegate.phase != phase ||
-        oldDelegate.baseColor != baseColor ||
-        oldDelegate.waveColor != waveColor ||
-        oldDelegate.crestColor != crestColor;
-  }
-}
-
-class _SelectablePlaylistCard extends StatefulWidget {
-  const _SelectablePlaylistCard({
-    required this.playlistName,
-    required this.trackCount,
-    this.trackCounterText,
-    required this.selected,
-    this.isTransferring = false,
-    required this.onTap,
-    this.menuActions,
-  });
-
-  final String playlistName;
-  final int trackCount;
-  final String? trackCounterText;
-  final bool selected;
-  final bool isTransferring;
-  final VoidCallback onTap;
-  final List<_PlaylistMenuAction>? menuActions;
-
-  @override
-  State<_SelectablePlaylistCard> createState() =>
-      _SelectablePlaylistCardState();
-}
-
-class _SelectablePlaylistCardState extends State<_SelectablePlaylistCard> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          width: 150,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: widget.selected
-                ? colorScheme.secondary
-                : colorScheme.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: widget.selected || _hovered
-                  ? colorScheme.primary
-                  : colorScheme.outline,
-            ),
-          ),
-          child: Stack(
-            children: [
-              if (widget.isTransferring)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: _PlaylistTransferWaveFill(
-                        primaryColor: colorScheme.primary,
-                        secondaryColor: colorScheme.tertiary,
-                      ),
-                    ),
-                  ),
-                ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: LinearGradient(
-                        colors: [colorScheme.primary, colorScheme.tertiary],
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.queue_music_rounded,
-                      color: colorScheme.onPrimary,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    widget.playlistName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.trackCounterText ??
-                        '${widget.trackCount} ${AppLocalizations.text(context, 'tracks')}',
-                    style: textTheme.labelMedium?.copyWith(
-                      color: colorScheme.onSurface.withValues(alpha: 0.65),
-                    ),
-                  ),
-                ],
-              ),
-              if (widget.menuActions != null && widget.menuActions!.isNotEmpty)
-                Positioned(
-                  right: -6,
-                  top: -6,
-                  child: PopupMenuButton<int>(
-                    icon: const Icon(Icons.more_vert_rounded, size: 18),
-                    onSelected: (index) => widget.menuActions![index].onTap(),
-                    itemBuilder: (context) {
-                      return List.generate(widget.menuActions!.length, (index) {
-                        final action = widget.menuActions![index];
-                        return PopupMenuItem<int>(
-                          value: index,
-                          child: Row(
-                            children: [
-                              Icon(action.icon, size: 18),
-                              const SizedBox(width: 8),
-                              Text(action.label),
-                            ],
-                          ),
-                        );
-                      });
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TrackMenuAction {
-  const _TrackMenuAction({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    this.enabled = true,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool enabled;
-}
-
-class _TrackRow extends StatefulWidget {
-  const _TrackRow({
-    required this.title,
-    required this.subtitle,
-    required this.menuItems,
-    this.selected = false,
-    this.batchSelected = false,
-    this.isUploading = false,
-    this.isPlaying = false,
-    this.onTap,
-    this.onLongPress,
-  });
-
-  final String title;
-  final String subtitle;
-  final List<_TrackMenuAction> menuItems;
-  final bool selected;
-  final bool batchSelected;
-  final bool isUploading;
-  final bool isPlaying;
-  final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
-
-  @override
-  State<_TrackRow> createState() => _TrackRowState();
-}
-
-class _TrackRowState extends State<_TrackRow> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: widget.onTap,
-        onLongPress: widget.onLongPress,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 170),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: widget.batchSelected
-                ? colorScheme.primary.withValues(alpha: 0.14)
-                : widget.selected
-                ? colorScheme.secondary
-                : colorScheme.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: widget.batchSelected
-                  ? colorScheme.primary
-                  : widget.selected || _hovered
-                  ? colorScheme.primary
-                  : colorScheme.outline,
-            ),
-          ),
-          child: Stack(
-            children: [
-              if (widget.isUploading)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: _TrackUploadWaveFill(
-                        primaryColor: colorScheme.primary,
-                        secondaryColor: colorScheme.tertiary,
-                      ),
-                    ),
-                  ),
-                ),
-              Row(
-                children: [
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      gradient: LinearGradient(
-                        colors: [colorScheme.primary, colorScheme.tertiary],
-                      ),
-                    ),
-                    child: widget.isPlaying
-                        ? _AnimatedPlayingBars(color: colorScheme.onPrimary)
-                        : Icon(
-                            Icons.music_note_rounded,
-                            color: colorScheme.onPrimary,
-                          ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.subtitle,
-                          style: textTheme.labelMedium?.copyWith(
-                            color: colorScheme.onSurface.withValues(
-                              alpha: 0.65,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (widget.batchSelected)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 2),
-                      child: Icon(
-                        Icons.check_circle_rounded,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                  PopupMenuButton<int>(
-                    icon: const Icon(Icons.more_vert_rounded),
-                    onSelected: (index) => widget.menuItems[index].onTap(),
-                    itemBuilder: (context) {
-                      return List.generate(widget.menuItems.length, (index) {
-                        final item = widget.menuItems[index];
-                        return PopupMenuItem<int>(
-                          value: index,
-                          enabled: item.enabled,
-                          child: Row(
-                            children: [
-                              Icon(item.icon, size: 18),
-                              const SizedBox(width: 8),
-                              Text(item.label),
-                            ],
-                          ),
-                        );
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TrackUploadWaveFill extends StatefulWidget {
-  const _TrackUploadWaveFill({
-    required this.primaryColor,
-    required this.secondaryColor,
-  });
-
-  final Color primaryColor;
-  final Color secondaryColor;
-
-  @override
-  State<_TrackUploadWaveFill> createState() => _TrackUploadWaveFillState();
-}
-
-class _TrackUploadWaveFillState extends State<_TrackUploadWaveFill>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 4200),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final t = Curves.easeInOut.transform(_controller.value);
-        final widthFactor = 0.2 + (t * 0.8);
-        final phase = _controller.value * 2 * math.pi;
-        return FractionallySizedBox(
-          alignment: Alignment.centerLeft,
-          widthFactor: widthFactor.clamp(0.0, 1.0),
-          child: CustomPaint(
-            painter: _TrackUploadWavePainter(
-              phase: phase,
-              baseColor: widget.primaryColor.withValues(alpha: 0.1),
-              waveColor: widget.primaryColor.withValues(alpha: 0.17),
-              crestColor: widget.secondaryColor.withValues(alpha: 0.24),
-            ),
-            child: const SizedBox.expand(),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _TrackUploadWavePainter extends CustomPainter {
-  const _TrackUploadWavePainter({
-    required this.phase,
-    required this.baseColor,
-    required this.waveColor,
-    required this.crestColor,
-  });
-
-  final double phase;
-  final Color baseColor;
-  final Color waveColor;
-  final Color crestColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-
-    canvas.drawRect(Offset.zero & size, Paint()..color = baseColor);
-
-    Path buildVerticalWave(double localPhase, double baseX, double amp) {
-      final path = Path();
-      final startX = baseX + (math.sin(localPhase) * amp);
-      path.moveTo(startX, 0);
-
-      final height = size.height;
-      for (double y = 0; y <= height; y += 3) {
-        final normalized = height == 0 ? 0.0 : y / height;
-        final x =
-            baseX + (math.sin((normalized * 2 * math.pi) + localPhase) * amp);
-        path.lineTo(x, y);
-      }
-      path.lineTo(0, size.height);
-      path.lineTo(0, 0);
-      path.close();
-      return path;
-    }
-
-    canvas.drawPath(
-      buildVerticalWave(
-        phase,
-        size.width * 0.78,
-        math.max(1.3, size.width * 0.06),
-      ),
-      Paint()..color = waveColor,
-    );
-    canvas.drawPath(
-      buildVerticalWave(
-        phase + (math.pi / 1.5),
-        size.width * 0.62,
-        math.max(1.0, size.width * 0.045),
-      ),
-      Paint()..color = crestColor,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _TrackUploadWavePainter oldDelegate) {
-    return oldDelegate.phase != phase ||
-        oldDelegate.baseColor != baseColor ||
-        oldDelegate.waveColor != waveColor ||
-        oldDelegate.crestColor != crestColor;
-  }
-}
-
-class _AnimatedPlayingBars extends StatefulWidget {
-  const _AnimatedPlayingBars({required this.color});
-
-  final Color color;
-
-  @override
-  State<_AnimatedPlayingBars> createState() => _AnimatedPlayingBarsState();
-}
-
-class _AnimatedPlayingBarsState extends State<_AnimatedPlayingBars>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  double _barHeight(int index, double t) {
-    final phase = (t * 2 * math.pi) + (index * 0.9);
-    final normalized = (math.sin(phase) + 1) / 2;
-    return 8 + (normalized * 12);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SizedBox(
-        width: 18,
-        height: 22,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(3, (index) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 1),
-                  child: Container(
-                    width: 4,
-                    height: _barHeight(index, _controller.value),
-                    decoration: BoxDecoration(
-                      color: widget.color,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                );
-              }),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _CloudLoginCard extends StatelessWidget {
-  const _CloudLoginCard({
-    required this.emailController,
-    required this.usernameController,
-    required this.passwordController,
-    required this.loading,
-    required this.isRegisterMode,
-    required this.onSubmit,
-    required this.onToggleMode,
-  });
-
-  final TextEditingController emailController;
-  final TextEditingController usernameController;
-  final TextEditingController passwordController;
-  final bool loading;
-  final bool isRegisterMode;
-  final VoidCallback onSubmit;
-  final VoidCallback onToggleMode;
-
-  @override
-  Widget build(BuildContext context) {
-    String t(String key) => AppLocalizations.text(context, key);
-    final textTheme = Theme.of(context).textTheme;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Theme.of(context).colorScheme.outline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            isRegisterMode ? t('cloud_register') : t('cloud_login'),
-            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            isRegisterMode ? t('cloud_register_hint') : t('cloud_login_hint'),
-            style: textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: emailController,
-            keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(
-              labelText: 'Email',
-              prefixIcon: Icon(Icons.alternate_email_rounded),
-            ),
-          ),
-          if (isRegisterMode) ...[
-            const SizedBox(height: 10),
-            TextField(
-              controller: usernameController,
-              decoration: InputDecoration(
-                labelText: t('username'),
-                prefixIcon: Icon(Icons.person_rounded),
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          TextField(
-            controller: passwordController,
-            obscureText: true,
-            decoration: InputDecoration(
-              labelText: t('password'),
-              prefixIcon: Icon(Icons.lock_rounded),
-            ),
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: loading ? null : onSubmit,
-              child: loading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(isRegisterMode ? t('create_account') : t('sign_in')),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: loading ? null : onToggleMode,
-              child: Text(
-                isRegisterMode
-                    ? t('already_have_account')
-                    : t('no_account_register'),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyInlineState extends StatelessWidget {
-  const _EmptyInlineState({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colorScheme.outline),
-      ),
-      child: Text(
-        message,
-        style: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.65)),
-      ),
-    );
   }
 }

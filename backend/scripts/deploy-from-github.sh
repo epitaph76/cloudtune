@@ -30,6 +30,7 @@ POST_DEPLOY_TEST_MAIN_LANDING_URL="${POST_DEPLOY_TEST_MAIN_LANDING_URL:-https://
 POST_DEPLOY_TEST_RESUME_LANDING_URL="${POST_DEPLOY_TEST_RESUME_LANDING_URL:-https://resume.api-mp3-player.ru}"
 POST_DEPLOY_TEST_TIMEOUT_SECONDS="${POST_DEPLOY_TEST_TIMEOUT_SECONDS:-20}"
 ROLLBACK_ON_TEST_FAILURE="${ROLLBACK_ON_TEST_FAILURE:-true}"
+ALLOW_DEPLOY_AS_ROOT="${ALLOW_DEPLOY_AS_ROOT:-false}"
 
 is_true() {
   local value="${1:-}"
@@ -37,6 +38,14 @@ is_true() {
     1|true|yes|on) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+enforce_root_policy() {
+  if [[ "$(id -u)" -eq 0 ]] && ! is_true "${ALLOW_DEPLOY_AS_ROOT}"; then
+    echo "Refusing to deploy as root (ALLOW_DEPLOY_AS_ROOT=false)."
+    echo "Use a dedicated deploy user with least privileges."
+    exit 1
+  fi
 }
 
 sync_dir() {
@@ -120,17 +129,21 @@ run_post_deploy_tests() {
     return 1
   fi
 
+  echo "Running post-deploy smoke checks..."
   POST_DEPLOY_TEST_API_BASE_URL="${POST_DEPLOY_TEST_API_BASE_URL}" \
   POST_DEPLOY_TEST_MAIN_LANDING_URL="${POST_DEPLOY_TEST_MAIN_LANDING_URL}" \
   POST_DEPLOY_TEST_RESUME_LANDING_URL="${POST_DEPLOY_TEST_RESUME_LANDING_URL}" \
   POST_DEPLOY_TEST_TIMEOUT_SECONDS="${POST_DEPLOY_TEST_TIMEOUT_SECONDS}" \
   python3 "${POST_DEPLOY_TEST_SCRIPT}"
+  echo "Post-deploy smoke checks passed."
 }
 
 if [[ -z "${REPO_URL}" ]]; then
   echo "REPO_URL is required"
   exit 1
 fi
+
+enforce_root_policy
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker is not installed"

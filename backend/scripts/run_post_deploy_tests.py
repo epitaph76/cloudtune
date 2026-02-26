@@ -310,6 +310,19 @@ def run() -> None:
                 fail("GET /api/songs/library: 'songs' is not a list")
             if not any(str(item.get("id")) == str(song_id) for item in songs if isinstance(item, dict)):
                 fail("GET /api/songs/library: uploaded song not found")
+            log_step("Проверка пагинации/поиска /api/songs/library")
+            status, raw, _ = http_request(
+                "GET",
+                f"{cfg.api_base_url}/api/songs/library?{parse.urlencode({'limit': 1, 'offset': 0, 'search': 'test'})}",
+                headers=token_headers(token),
+                timeout=cfg.timeout_seconds,
+            )
+            ensure_status(status, 200, "GET /api/songs/library?limit=1&offset=0&search=test")
+            paged_lib_payload = read_json(raw, "GET /api/songs/library paged")
+            if int(paged_lib_payload.get("limit", 0)) != 1:
+                fail("GET /api/songs/library paged: expected limit=1")
+            if "offset" not in paged_lib_payload:
+                fail("GET /api/songs/library paged: missing offset")
             log_ok("библиотека содержит загруженный трек")
 
             log_step("получение деталей загруженного трека")
@@ -362,6 +375,32 @@ def run() -> None:
                 fail("GET /api/playlists/:playlist_id/songs: 'songs' is not a list")
             if not any(str(item.get("id")) == str(song_id) for item in pl_songs if isinstance(item, dict)):
                 fail("GET /api/playlists/:playlist_id/songs: uploaded song not found in playlist")
+            log_step("Проверка пагинации/поиска /api/playlists и /api/playlists/:id/songs")
+            status, raw, _ = http_request(
+                "GET",
+                f"{cfg.api_base_url}/api/playlists?{parse.urlencode({'limit': 1, 'offset': 0, 'search': 'Deploy'})}",
+                headers=token_headers(token),
+                timeout=cfg.timeout_seconds,
+            )
+            ensure_status(status, 200, "GET /api/playlists?limit=1&offset=0&search=Deploy")
+            paged_playlists = read_json(raw, "GET /api/playlists paged")
+            if int(paged_playlists.get("limit", 0)) != 1:
+                fail("GET /api/playlists paged: expected limit=1")
+
+            status, raw, _ = http_request(
+                "GET",
+                f"{cfg.api_base_url}/api/playlists/{playlist_id}/songs?{parse.urlencode({'limit': 1, 'offset': 0, 'search': 'test'})}",
+                headers=token_headers(token),
+                timeout=cfg.timeout_seconds,
+            )
+            ensure_status(
+                status,
+                200,
+                "GET /api/playlists/:playlist_id/songs?limit=1&offset=0&search=test",
+            )
+            paged_playlist_songs = read_json(raw, "GET /api/playlists/:playlist_id/songs paged")
+            if int(paged_playlist_songs.get("limit", 0)) != 1:
+                fail("GET /api/playlists/:playlist_id/songs paged: expected limit=1")
             log_ok("плейлист содержит загруженный трек")
 
             log_step("скачивание загруженного трека")

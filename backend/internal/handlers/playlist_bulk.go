@@ -174,16 +174,32 @@ func AddSongsToPlaylistBulk(c *gin.Context) {
 	}
 
 	toInsert := make([]int, 0, len(allowedInOrder))
+	skippedExistingSongIDs := make([]int, 0, len(allowedInOrder))
 	for _, songID := range allowedInOrder {
 		if _, exists := existingSet[songID]; exists {
+			skippedExistingSongIDs = append(skippedExistingSongIDs, songID)
 			continue
 		}
 		toInsert = append(toInsert, songID)
 	}
 
+	allowedSet := make(map[int]struct{}, len(allowedInOrder))
+	for _, songID := range allowedInOrder {
+		allowedSet[songID] = struct{}{}
+	}
+
+	skippedNotOwnedSongIDs := make([]int, 0, len(uniqueSongIDs))
+	for _, songID := range uniqueSongIDs {
+		if _, exists := allowedSet[songID]; exists {
+			continue
+		}
+		skippedNotOwnedSongIDs = append(skippedNotOwnedSongIDs, songID)
+	}
+
 	addedCount := 0
 	firstPosition := 0
 	lastPosition := 0
+	addedSongIDs := make([]int, 0, len(toInsert))
 
 	if len(toInsert) > 0 {
 		tx, err := db.Begin()
@@ -218,7 +234,7 @@ func AddSongsToPlaylistBulk(c *gin.Context) {
 			  SELECT $2, input.song_id, $3 + ROW_NUMBER() OVER (ORDER BY input.ord)
 			  FROM input
 			  ORDER BY input.ord
-			  RETURNING position`,
+			  RETURNING song_id, position`,
 			pq.Array(toInsert),
 			playlistID,
 			maxPosition,
@@ -232,12 +248,14 @@ func AddSongsToPlaylistBulk(c *gin.Context) {
 
 		positions := make([]int, 0, len(toInsert))
 		for insertRows.Next() {
+			var songID int
 			var pos int
-			if scanErr := insertRows.Scan(&pos); scanErr != nil {
+			if scanErr := insertRows.Scan(&songID, &pos); scanErr != nil {
 				log.Printf("Error scanning inserted playlist position: %v", scanErr)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error reading inserted rows"})
 				return
 			}
+			addedSongIDs = append(addedSongIDs, songID)
 			positions = append(positions, pos)
 		}
 		if err := insertRows.Err(); err != nil {
@@ -263,14 +281,17 @@ func AddSongsToPlaylistBulk(c *gin.Context) {
 	skippedExisting := len(allowedInOrder) - len(toInsert)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":                "Songs processed successfully",
-		"requested_count":        len(req.SongIDs),
-		"unique_count":           len(uniqueSongIDs),
-		"allowed_count":          len(allowedInOrder),
-		"added_count":            addedCount,
-		"skipped_not_in_library": skippedNotOwned,
-		"skipped_existing":       skippedExisting,
-		"first_position":         firstPosition,
-		"last_position":          lastPosition,
+		"message":                         "Songs processed successfully",
+		"requested_count":                 len(req.SongIDs),
+		"unique_count":                    len(uniqueSongIDs),
+		"allowed_count":                   len(allowedInOrder),
+		"added_count":                     addedCount,
+		"added_song_ids":                  addedSongIDs,
+		"skipped_not_in_library":          skippedNotOwned,
+		"skipped_not_in_library_song_ids": skippedNotOwnedSongIDs,
+		"skipped_existing":                skippedExisting,
+		"skipped_existing_song_ids":       skippedExistingSongIDs,
+		"first_position":                  firstPosition,
+		"last_position":                   lastPosition,
 	})
 }

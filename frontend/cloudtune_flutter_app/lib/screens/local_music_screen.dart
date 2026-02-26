@@ -71,7 +71,7 @@ class _LocalMusicScreenState extends State<LocalMusicScreen> {
       if (!context.mounted) return;
 
       if (result['success'] == true) {
-        await cloudMusicProvider.fetchUserLibrary();
+        await cloudMusicProvider.fetchUserLibrary(reset: true);
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Uploaded: ${p.basename(file.path)}')),

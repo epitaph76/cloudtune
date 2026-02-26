@@ -135,3 +135,56 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 - Схема БД создается автоматически при старте.
 - Допустимые MIME-типы для загрузки: `audio/mpeg`, `audio/wav`, `audio/mp4`, `audio/flac`.
 - В Dockerfile для сборки используется образ `golang:1.25`, при этом `go.mod` зафиксирован на `go 1.24.0`.
+
+## Pagination and Search
+
+The following endpoints now support server-side `limit`, `offset`, and `search` query params:
+
+- `GET /api/songs/library`
+- `GET /api/playlists`
+- `GET /api/playlists/:playlist_id/songs`
+
+Each response includes:
+
+- `count` (items in current page)
+- `total` (total matching rows)
+- `limit`
+- `offset`
+- `has_more`
+- `next_offset`
+- `search`
+
+This prevents oversized responses for large libraries and enables lazy loading on clients.
+
+## Quotas and Limits
+
+Storage/upload behavior is controlled by env vars:
+
+- `CLOUD_STORAGE_QUOTA_BYTES` (default `3221225472`, 3 GB per user)
+- `CLOUD_MAX_UPLOAD_SIZE_BYTES` (default `104857600`, 100 MB per file)
+- `CLOUD_MAX_PARALLEL_UPLOADS` (default `4`)
+- `CLOUD_UPLOADS_PATH` (default `./uploads`)
+
+## Observability Notes
+
+- Every request now has `X-Request-ID`; the backend logs include `request_id=...` for correlation.
+- Monitoring snapshot now includes upload failure reasons and upload status-class counters (`2xx/4xx/5xx`) with rates.
+- Monitoring bot supports threshold alerts for upload `4xx`/`5xx` spikes.
+
+## Release Process and Rollback
+
+- Release checklist: `backend/docs/release-checklist.md`
+- Deploy script: `backend/scripts/deploy-from-github.sh`
+- Post-deploy smoke tests: `backend/scripts/run_post_deploy_tests.py`
+
+Rollback criteria are codified in deploy flow:
+
+- If post-deploy smoke tests fail and `ROLLBACK_ON_TEST_FAILURE=true`, deploy rolls back to previous commit.
+- Rollback re-runs backend + landing deployment and restarts monitoring bot.
+
+## Root Access Policy
+
+For safer ops, deploy script blocks root execution by default.
+
+- `ALLOW_DEPLOY_AS_ROOT=false` (default): deployment as root is rejected.
+- Set `ALLOW_DEPLOY_AS_ROOT=true` only for controlled emergency scenarios.

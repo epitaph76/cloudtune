@@ -258,7 +258,7 @@ func GetUserPlaylists(c *gin.Context) {
 		return
 	}
 
-	// userID уже преобразован в int в middleware
+	// userID already converted to int in middleware
 	userID, ok := userIDInterface.(int)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
@@ -266,10 +266,35 @@ func GetUserPlaylists(c *gin.Context) {
 	}
 
 	db := database.DB
+	params := parseListQueryParams(
+		c.Query("limit"),
+		c.Query("offset"),
+		c.Query("search"),
+		defaultPageLimit,
+		maxPageLimit,
+	)
 
 	if err := ensureFavoritesPlaylist(userID); err != nil {
 		log.Printf("Error ensuring favorites playlist: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error ensuring favorites playlist"})
+		return
+	}
+
+	countQuery := `
+		SELECT COUNT(*)
+		FROM playlists p
+		WHERE p.owner_id = $1
+		  AND (
+			$2 = '' OR
+			lower(p.name) LIKE $2 OR
+			lower(COALESCE(p.description, '')) LIKE $2
+		  )
+	`
+
+	var totalCount int
+	if err := db.QueryRow(countQuery, userID, params.Pattern).Scan(&totalCount); err != nil {
+		log.Printf("Error retrieving playlists count: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error retrieving playlists"})
 		return
 	}
 
@@ -279,11 +304,17 @@ func GetUserPlaylists(c *gin.Context) {
 		FROM playlists p
 		LEFT JOIN playlist_songs ps ON ps.playlist_id = p.id
 		WHERE p.owner_id = $1
+		  AND (
+			$2 = '' OR
+			lower(p.name) LIKE $2 OR
+			lower(COALESCE(p.description, '')) LIKE $2
+		  )
 		GROUP BY p.id, p.name, p.description, p.owner_id, p.is_public, p.is_favorite, p.created_at, p.updated_at
-		ORDER BY p.is_favorite DESC, p.created_at DESC
+		ORDER BY p.is_favorite DESC, p.created_at DESC, p.id DESC
+		LIMIT $3 OFFSET $4
 	`
 
-	rows, err := db.Query(query, userID)
+	rows, err := db.Query(query, userID, params.Pattern, params.Limit, params.Offset)
 	if err != nil {
 		log.Printf("Error retrieving playlists: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error retrieving playlists"})
@@ -322,9 +353,21 @@ func GetUserPlaylists(c *gin.Context) {
 		playlists = append(playlists, playlist)
 	}
 
+	pageCount := len(playlists)
 	c.JSON(http.StatusOK, gin.H{
 		"playlists": playlists,
-		"count":     len(playlists),
+		"count":     pageCount,
+		"total":     totalCount,
+		"limit":     params.Limit,
+		"offset":    params.Offset,
+		"has_more":  params.Offset+pageCount < totalCount,
+		"next_offset": func() int {
+			if params.Offset+pageCount < totalCount {
+				return params.Offset + pageCount
+			}
+			return -1
+		}(),
+		"search": params.Search,
 	})
 }
 
@@ -501,7 +544,7 @@ func GetPlaylistSongs(c *gin.Context) {
 		return
 	}
 
-	// userID уже преобразован в int в middleware
+	// userID already converted to int in middleware
 	userID, ok := userIDInterface.(int)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
@@ -514,7 +557,15 @@ func GetPlaylistSongs(c *gin.Context) {
 		return
 	}
 
-	// Проверяем, что пользователь имеет доступ к плейлисту (владелец или публичный)
+	params := parseListQueryParams(
+		c.Query("limit"),
+		c.Query("offset"),
+		c.Query("search"),
+		defaultPageLimit,
+		maxPageLimit,
+	)
+
+	// Check that the user can access the playlist (owner or public).
 	db := database.DB
 	var ownerID int
 	var isPublic bool
@@ -530,22 +581,53 @@ func GetPlaylistSongs(c *gin.Context) {
 		return
 	}
 
-	// Пользователь должен быть владельцем или плейлист должен быть публичным
 	if ownerID != userID && !isPublic {
 		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to view this playlist"})
 		return
 	}
 
-	// Получаем песни из плейлиста
+	countQuery := `
+		SELECT COUNT(*)
+		FROM songs s
+		JOIN playlist_songs ps ON s.id = ps.song_id
+		WHERE ps.playlist_id = $1
+		  AND (
+			$2 = '' OR
+			lower(s.original_filename) LIKE $2 OR
+			lower(s.filename) LIKE $2 OR
+			lower(COALESCE(s.title, '')) LIKE $2 OR
+			lower(COALESCE(s.artist, '')) LIKE $2 OR
+			lower(COALESCE(s.album, '')) LIKE $2 OR
+			lower(COALESCE(s.genre, '')) LIKE $2
+		  )
+	`
+
+	var totalCount int
+	if err := db.QueryRow(countQuery, playlistID, params.Pattern).Scan(&totalCount); err != nil {
+		log.Printf("Error retrieving playlist songs count: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error retrieving playlist songs"})
+		return
+	}
+
 	songsQuery := `
 		SELECT s.id, s.filename, s.original_filename, s.filesize, s.artist, s.title, s.album, s.genre, s.year, s.mime_type, s.upload_date, ps.position
 		FROM songs s
 		JOIN playlist_songs ps ON s.id = ps.song_id
 		WHERE ps.playlist_id = $1
+		  AND (
+			$2 = '' OR
+			lower(s.original_filename) LIKE $2 OR
+			lower(s.filename) LIKE $2 OR
+			lower(COALESCE(s.title, '')) LIKE $2 OR
+			lower(COALESCE(s.artist, '')) LIKE $2 OR
+			lower(COALESCE(s.album, '')) LIKE $2 OR
+			lower(COALESCE(s.genre, '')) LIKE $2
+		  )
 		ORDER BY ps.position ASC
+		LIMIT $3 OFFSET $4
 	`
 
-	rows, err := db.Query(songsQuery, playlistID)
+	rows, err := db.Query(songsQuery, playlistID, params.Pattern, params.Limit, params.Offset)
 	if err != nil {
 		log.Printf("Error retrieving playlist songs: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error retrieving playlist songs"})
@@ -573,7 +655,6 @@ func GetPlaylistSongs(c *gin.Context) {
 			return
 		}
 
-		// Устанавливаем значения, если они не равны NULL
 		if artist.Valid {
 			song.Artist = &artist.String
 		}
@@ -594,8 +675,20 @@ func GetPlaylistSongs(c *gin.Context) {
 		songs = append(songs, song)
 	}
 
+	pageCount := len(songs)
 	c.JSON(http.StatusOK, gin.H{
-		"songs": songs,
-		"count": len(songs),
+		"songs":    songs,
+		"count":    pageCount,
+		"total":    totalCount,
+		"limit":    params.Limit,
+		"offset":   params.Offset,
+		"has_more": params.Offset+pageCount < totalCount,
+		"next_offset": func() int {
+			if params.Offset+pageCount < totalCount {
+				return params.Offset + pageCount
+			}
+			return -1
+		}(),
+		"search": params.Search,
 	})
 }

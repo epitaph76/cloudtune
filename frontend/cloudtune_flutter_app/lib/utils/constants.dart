@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class Constants {
   // API Constants
   // Override in run/build with:
@@ -6,9 +8,28 @@ class Constants {
     'API_BASE_URL',
     defaultValue: 'https://api-mp3-player.ru',
   );
-  static const List<String> fallbackBaseUrls = [
+  // Keep fallback disabled by default so every client talks to one backend.
+  // Enable only for explicit diagnostics:
+  // --dart-define=API_ENABLE_FALLBACK_URLS=true
+  static const bool _fallbackRequestedByDefine = bool.fromEnvironment(
+    'API_ENABLE_FALLBACK_URLS',
+    defaultValue: false,
+  );
+
+  // Safety: fallback URLs are never enabled in release builds.
+  static bool get enableFallbackBaseUrls =>
+      !kReleaseMode && _fallbackRequestedByDefine;
+
+  static const List<String> _fallbackBaseUrlsRaw = [
     'http://168.222.252.159',
     'http://168.222.252.159:8080',
+  ];
+  static List<String> get fallbackBaseUrls =>
+      enableFallbackBaseUrls ? _fallbackBaseUrlsRaw : const <String>[];
+
+  static List<String> get activeBaseUrls => <String>[
+    primaryBaseUrl,
+    ...fallbackBaseUrls,
   ];
 
   // Storage Keys

@@ -71,8 +71,10 @@ class AppLocalizations {
       'upload_tracks': 'Загрузить треки',
       'pick_folder': 'Выбрать папку',
       'auto_scan_device': 'Автопоиск на устройстве',
-      'pick_one_or_multiple_audio': 'Выберите один или несколько аудиофайлов',
-      'import_from_folder_with_filters': 'Импорт из папки с фильтрами',
+      'pick_one_or_multiple_audio':
+          'Выберите один или несколько аудиофайлов (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
+      'import_from_folder_with_filters':
+          'Импорт из папки с фильтрами (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
       'find_new_audio_on_device': 'Найти новые аудиофайлы на устройстве',
       'cant_access_folder_directly':
           'Нельзя открыть эту папку напрямую на Android. Используйте "Загрузить треки" и выберите файлы.',
@@ -160,9 +162,10 @@ class AppLocalizations {
       'upload_tracks': 'Upload tracks',
       'pick_folder': 'Pick folder',
       'auto_scan_device': 'Auto scan device',
-      'pick_one_or_multiple_audio': 'Pick one or multiple audio files',
+      'pick_one_or_multiple_audio':
+          'Pick one or multiple audio files (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
       'import_from_folder_with_filters':
-          'Import files from folder with filters',
+          'Import files from folder with filters (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
       'find_new_audio_on_device': 'Find new audio files on device',
       'cant_access_folder_directly':
           'Can not access this folder directly on Android. Use "Upload tracks" and select files.',
@@ -251,8 +254,10 @@ class AppLocalizations {
       'upload_tracks': 'Subir pistas',
       'pick_folder': 'Elegir carpeta',
       'auto_scan_device': 'Búsqueda automática',
-      'pick_one_or_multiple_audio': 'Elige uno o varios archivos de audio',
-      'import_from_folder_with_filters': 'Importar desde carpeta con filtros',
+      'pick_one_or_multiple_audio':
+          'Elige uno o varios archivos de audio (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
+      'import_from_folder_with_filters':
+          'Importar desde carpeta con filtros (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
       'find_new_audio_on_device': 'Buscar nuevos audios en el dispositivo',
       'cant_access_folder_directly':
           'No se puede acceder a esta carpeta directamente en Android. Usa "Subir pistas" y elige archivos.',

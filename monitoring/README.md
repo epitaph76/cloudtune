@@ -85,3 +85,22 @@ journalctl -u cloudtune-monitoring-bot -f
 cd monitoring
 docker compose up --build -d
 ```
+
+## Upload Spike Alerts
+
+Snapshot now includes upload error diagnostics:
+
+- `upload_failed_by_reason`
+- `upload_status_class_total`
+- `upload_4xx_total`
+- `upload_5xx_total`
+- `upload_4xx_rate_pct`
+- `upload_5xx_rate_pct`
+
+Additional bot thresholds:
+
+- `ALERT_MIN_UPLOAD_REQUESTS_FOR_RATE`
+- `ALERT_MAX_UPLOAD_4XX_RATE_PCT`
+- `ALERT_MAX_UPLOAD_5XX_RATE_PCT`
+- `ALERT_MAX_UPLOAD_4XX_TOTAL`
+- `ALERT_MAX_UPLOAD_5XX_TOTAL`

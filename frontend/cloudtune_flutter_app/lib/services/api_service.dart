@@ -38,12 +38,81 @@ class ApiService {
     return <String, dynamic>{};
   }
 
+  int? _asInt(Object? raw) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw.trim());
+    return null;
+  }
+
+  List<int> _asIntList(Object? raw) {
+    if (raw is! List) return const <int>[];
+
+    final out = <int>[];
+    for (final item in raw) {
+      final parsed = _asInt(item);
+      if (parsed == null) continue;
+      out.add(parsed);
+    }
+    return out;
+  }
+
+  String _extractApiMessage(Object? raw, {required String fallback}) {
+    if (raw is Map<String, dynamic>) {
+      final apiError = raw['error'];
+      if (apiError is String && apiError.trim().isNotEmpty) {
+        return apiError.trim();
+      }
+
+      final apiMessage = raw['message'];
+      if (apiMessage is String && apiMessage.trim().isNotEmpty) {
+        return apiMessage.trim();
+      }
+    }
+    if (raw is Map) {
+      return _extractApiMessage(
+        Map<String, dynamic>.from(raw),
+        fallback: fallback,
+      );
+    }
+    if (raw is String && raw.trim().isNotEmpty) {
+      return raw.trim();
+    }
+    return fallback;
+  }
+
+  int? _extractSongIdFromUploadResponse(Map<String, dynamic> data) {
+    final topLevelSongId = _asInt(data['song_id']);
+    if (topLevelSongId != null && topLevelSongId > 0) {
+      return topLevelSongId;
+    }
+
+    final nestedSongId = _asInt(_mapOrEmpty(data['song'])['id']);
+    if (nestedSongId != null && nestedSongId > 0) {
+      return nestedSongId;
+    }
+
+    return null;
+  }
+
   Future<Options> _getAuthOptions() async {
     final token = await _sessionStorage.readToken();
     if (token != null && token.isNotEmpty) {
       return Options(headers: {'Authorization': 'Bearer $token'});
     }
     throw StateError('User is not authenticated');
+  }
+
+  Future<bool> _verifySongExistsInLibrary({
+    required int songId,
+    required Options options,
+  }) async {
+    final response = await _requestWithFallback(
+      method: 'GET',
+      path: '/api/songs/$songId',
+      options: options,
+    );
+    return response.statusCode == 200;
   }
 
   Future<Map<String, dynamic>> uploadFile(File file) async {
@@ -61,35 +130,92 @@ class ApiService {
         options: options,
       );
 
-      if (response.statusCode == 200) {
-        return {'success': true, 'data': response.data};
+      final statusCode = response.statusCode ?? -1;
+      final data = _mapOrEmpty(response.data);
+      if (statusCode != 200) {
+        return {
+          'success': false,
+          'status_code': statusCode,
+          'message': _extractApiMessage(
+            response.data,
+            fallback: 'Upload failed (HTTP $statusCode)',
+          ),
+        };
       }
 
-      return {'success': false, 'message': 'Ошибка при загрузке файла'};
+      final songId = _extractSongIdFromUploadResponse(data);
+      if (songId == null) {
+        return {
+          'success': false,
+          'status_code': statusCode,
+          'message':
+              'Upload failed: backend response does not include valid song_id',
+          'data': data,
+        };
+      }
+
+      final existsInLibrary = await _verifySongExistsInLibrary(
+        songId: songId,
+        options: options,
+      );
+      if (!existsInLibrary) {
+        return {
+          'success': false,
+          'song_id': songId,
+          'message':
+              'Upload failed: song_id=$songId is not visible in cloud library after upload',
+          'data': data,
+        };
+      }
+
+      return {'success': true, 'song_id': songId, 'data': data};
     } catch (error) {
+      final statusCode = error is DioException
+          ? error.response?.statusCode
+          : null;
       return {
         'success': false,
+        'status_code': statusCode,
         'message': _backendClient.describeError(
           error,
-          fallbackMessage: 'Ошибка при загрузке файла',
+          fallbackMessage: 'Upload failed',
         ),
       };
     }
   }
 
-  Future<Map<String, dynamic>> getUserLibrary() async {
+  Future<Map<String, dynamic>> getUserLibrary({
+    int limit = 50,
+    int offset = 0,
+    String search = '',
+  }) async {
     try {
       final options = await _getAuthOptions();
       final response = await _requestWithFallback(
         method: 'GET',
         path: '/api/songs/library',
         options: options,
+        queryParameters: {
+          'limit': limit,
+          'offset': offset,
+          if (search.trim().isNotEmpty) 'search': search.trim(),
+        },
       );
 
       final data = _mapOrEmpty(response.data);
       if (response.statusCode == 200) {
         final songs = data['songs'];
-        return {'success': true, 'songs': songs is List ? songs : <dynamic>[]};
+        return {
+          'success': true,
+          'songs': songs is List ? songs : <dynamic>[],
+          'count': _asInt(data['count']) ?? 0,
+          'total': _asInt(data['total']) ?? 0,
+          'limit': _asInt(data['limit']) ?? limit,
+          'offset': _asInt(data['offset']) ?? offset,
+          'has_more': data['has_more'] == true,
+          'next_offset': _asInt(data['next_offset']) ?? -1,
+          'search': (data['search'] as String?) ?? search,
+        };
       }
 
       return {'success': false, 'message': 'Ошибка при получении библиотеки'};
@@ -104,13 +230,22 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> getUserPlaylists() async {
+  Future<Map<String, dynamic>> getUserPlaylists({
+    int limit = 50,
+    int offset = 0,
+    String search = '',
+  }) async {
     try {
       final options = await _getAuthOptions();
       final response = await _requestWithFallback(
         method: 'GET',
         path: '/api/playlists',
         options: options,
+        queryParameters: {
+          'limit': limit,
+          'offset': offset,
+          if (search.trim().isNotEmpty) 'search': search.trim(),
+        },
       );
 
       final data = _mapOrEmpty(response.data);
@@ -119,6 +254,13 @@ class ApiService {
         return {
           'success': true,
           'playlists': playlistsRaw is List ? playlistsRaw : <dynamic>[],
+          'count': _asInt(data['count']) ?? 0,
+          'total': _asInt(data['total']) ?? 0,
+          'limit': _asInt(data['limit']) ?? limit,
+          'offset': _asInt(data['offset']) ?? offset,
+          'has_more': data['has_more'] == true,
+          'next_offset': _asInt(data['next_offset']) ?? -1,
+          'search': (data['search'] as String?) ?? search,
         };
       }
 
@@ -216,10 +358,7 @@ class ApiService {
       normalized.add(id);
     }
     if (normalized.isEmpty) {
-      return {
-        'success': false,
-        'message': 'No valid songs to add',
-      };
+      return {'success': false, 'message': 'No valid songs to add'};
     }
 
     try {
@@ -238,6 +377,13 @@ class ApiService {
           'added_count': data['added_count'] ?? 0,
           'skipped_existing': data['skipped_existing'] ?? 0,
           'skipped_not_in_library': data['skipped_not_in_library'] ?? 0,
+          'added_song_ids': _asIntList(data['added_song_ids']),
+          'skipped_existing_song_ids': _asIntList(
+            data['skipped_existing_song_ids'],
+          ),
+          'skipped_not_in_library_song_ids': _asIntList(
+            data['skipped_not_in_library_song_ids'],
+          ),
           'data': data,
         };
       }
@@ -254,13 +400,23 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> getPlaylistSongs(int playlistId) async {
+  Future<Map<String, dynamic>> getPlaylistSongs(
+    int playlistId, {
+    int limit = 50,
+    int offset = 0,
+    String search = '',
+  }) async {
     try {
       final options = await _getAuthOptions();
       final response = await _requestWithFallback(
         method: 'GET',
         path: '/api/playlists/$playlistId/songs',
         options: options,
+        queryParameters: {
+          'limit': limit,
+          'offset': offset,
+          if (search.trim().isNotEmpty) 'search': search.trim(),
+        },
       );
 
       final data = _mapOrEmpty(response.data);
@@ -268,7 +424,13 @@ class ApiService {
         return {
           'success': true,
           'songs': data['songs'] is List ? data['songs'] : <dynamic>[],
-          'count': data['count'] is num ? (data['count'] as num).toInt() : 0,
+          'count': _asInt(data['count']) ?? 0,
+          'total': _asInt(data['total']) ?? 0,
+          'limit': _asInt(data['limit']) ?? limit,
+          'offset': _asInt(data['offset']) ?? offset,
+          'has_more': data['has_more'] == true,
+          'next_offset': _asInt(data['next_offset']) ?? -1,
+          'search': (data['search'] as String?) ?? search,
         };
       }
 

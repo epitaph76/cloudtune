@@ -19,31 +19,39 @@ type Service struct {
 }
 
 type Snapshot struct {
-	TimestampUTC        string  `json:"timestamp_utc"`
-	UptimeSeconds       int64   `json:"uptime_seconds"`
-	HTTPActiveRequests  int64   `json:"http_active_requests"`
-	HTTPTotalRequests   uint64  `json:"http_total_requests"`
-	DBOpenConnections   int     `json:"db_open_connections"`
-	DBInUseConnections  int     `json:"db_in_use_connections"`
-	DBWaitCount         int64   `json:"db_wait_count"`
-	Goroutines          int     `json:"goroutines"`
-	GoMemoryAllocBytes  uint64  `json:"go_memory_alloc_bytes"`
-	GoMemorySysBytes    uint64  `json:"go_memory_sys_bytes"`
-	GoHeapInUseBytes    uint64  `json:"go_heap_in_use_bytes"`
-	GoGCCount           uint32  `json:"go_gc_count"`
-	UsersTotal          int64   `json:"users_total"`
-	SongsTotal          int64   `json:"songs_total"`
-	PlaylistsTotal      int64   `json:"playlists_total"`
-	SongsTotalSizeBytes int64   `json:"songs_total_size_bytes"`
-	DBSizeBytes         int64   `json:"db_size_bytes"`
-	UploadsSizeBytes    int64   `json:"uploads_size_bytes"`
-	UploadsFilesCount   int64   `json:"uploads_files_count"`
-	UploadsFSTotalBytes uint64  `json:"uploads_fs_total_bytes"`
-	UploadsFSFreeBytes  uint64  `json:"uploads_fs_free_bytes"`
-	UploadRequestsTotal uint64  `json:"upload_requests_total"`
-	UploadFailedTotal   uint64  `json:"upload_failed_total"`
-	UploadBytesInTotal  int64   `json:"upload_bytes_in_total"`
-	UploadAvgDurationMS float64 `json:"upload_avg_duration_ms"`
+	TimestampUTC              string            `json:"timestamp_utc"`
+	UptimeSeconds             int64             `json:"uptime_seconds"`
+	HTTPActiveRequests        int64             `json:"http_active_requests"`
+	HTTPTotalRequests         uint64            `json:"http_total_requests"`
+	DBOpenConnections         int               `json:"db_open_connections"`
+	DBInUseConnections        int               `json:"db_in_use_connections"`
+	DBWaitCount               int64             `json:"db_wait_count"`
+	Goroutines                int               `json:"goroutines"`
+	GoMemoryAllocBytes        uint64            `json:"go_memory_alloc_bytes"`
+	GoMemorySysBytes          uint64            `json:"go_memory_sys_bytes"`
+	GoHeapInUseBytes          uint64            `json:"go_heap_in_use_bytes"`
+	GoGCCount                 uint32            `json:"go_gc_count"`
+	UsersTotal                int64             `json:"users_total"`
+	SongsTotal                int64             `json:"songs_total"`
+	PlaylistsTotal            int64             `json:"playlists_total"`
+	SongsTotalSizeBytes       int64             `json:"songs_total_size_bytes"`
+	DBSizeBytes               int64             `json:"db_size_bytes"`
+	UploadsSizeBytes          int64             `json:"uploads_size_bytes"`
+	UploadsFilesCount         int64             `json:"uploads_files_count"`
+	UploadsFSTotalBytes       uint64            `json:"uploads_fs_total_bytes"`
+	UploadsFSFreeBytes        uint64            `json:"uploads_fs_free_bytes"`
+	UploadRequestsTotal       uint64            `json:"upload_requests_total"`
+	UploadFailedTotal         uint64            `json:"upload_failed_total"`
+	UploadBytesInTotal        int64             `json:"upload_bytes_in_total"`
+	UploadAvgDurationMS       float64           `json:"upload_avg_duration_ms"`
+	UploadFailedByReason      map[string]uint64 `json:"upload_failed_by_reason"`
+	UploadStatusClassTotal    map[string]uint64 `json:"upload_status_class_total"`
+	Upload4xxTotal            uint64            `json:"upload_4xx_total"`
+	Upload5xxTotal            uint64            `json:"upload_5xx_total"`
+	Upload4xxRatePct          float64           `json:"upload_4xx_rate_pct"`
+	Upload5xxRatePct          float64           `json:"upload_5xx_rate_pct"`
+	UploadTopFailureReason    string            `json:"upload_top_failure_reason"`
+	UploadTopFailureReasonCnt uint64            `json:"upload_top_failure_reason_count"`
 }
 
 func NewService(startedAt time.Time) *Service {
@@ -69,6 +77,9 @@ func (s *Service) StatusText() string {
 		fmt.Sprintf("HTTP total requests: %d", totalHTTP),
 		fmt.Sprintf("Upload requests total: %d", uploadStats.RequestsTotal),
 		fmt.Sprintf("Upload failed total: %d", uploadStats.FailedTotal),
+		fmt.Sprintf("Upload 4xx/5xx: %d/%d", uploadStats.StatusClassTotals["4xx"], uploadStats.StatusClassTotals["5xx"]),
+		fmt.Sprintf("Upload 4xx%%/5xx%%: %.2f/%.2f", uploadStats.ClientErrorRatePct, uploadStats.ServerErrorRatePct),
+		fmt.Sprintf("Upload top failure: %s (%d)", uploadStats.TopFailureReason, uploadStats.TopFailureReasonCnt),
 		fmt.Sprintf("DB open connections: %d", generic.OpenConnections),
 		fmt.Sprintf("Go goroutines: %d", runtime.NumGoroutine()),
 	}, "\n")
@@ -129,6 +140,8 @@ func (s *Service) RuntimeText() string {
 		fmt.Sprintf("GC cycles: %d", memory.NumGC),
 		fmt.Sprintf("Upload requests: %d", uploadStats.RequestsTotal),
 		fmt.Sprintf("Upload failed: %d", uploadStats.FailedTotal),
+		fmt.Sprintf("Upload 4xx: %d", uploadStats.StatusClassTotals["4xx"]),
+		fmt.Sprintf("Upload 5xx: %d", uploadStats.StatusClassTotals["5xx"]),
 		fmt.Sprintf("Upload avg duration: %.2f ms", uploadStats.AvgDurationMS),
 		fmt.Sprintf("Upload bytes in: %s", formatBytes(uploadStats.BytesTotal)),
 	}, "\n")
@@ -145,26 +158,34 @@ func (s *Service) Snapshot() Snapshot {
 	runtime.ReadMemStats(&memory)
 
 	snap := Snapshot{
-		TimestampUTC:        time.Now().UTC().Format(time.RFC3339),
-		UptimeSeconds:       int64(time.Since(s.startedAt).Seconds()),
-		HTTPActiveRequests:  activeHTTP,
-		HTTPTotalRequests:   totalHTTP,
-		DBOpenConnections:   stats.OpenConnections,
-		DBInUseConnections:  stats.InUse,
-		DBWaitCount:         int64(stats.WaitCount),
-		Goroutines:          runtime.NumGoroutine(),
-		GoMemoryAllocBytes:  memory.Alloc,
-		GoMemorySysBytes:    memory.Sys,
-		GoHeapInUseBytes:    memory.HeapInuse,
-		GoGCCount:           memory.NumGC,
-		UploadsSizeBytes:    dirSize(uploadsDir),
-		UploadsFilesCount:   dirFileCount(uploadsDir),
-		UploadsFSTotalBytes: uploadsTotal,
-		UploadsFSFreeBytes:  uploadsFree,
-		UploadRequestsTotal: uploadStats.RequestsTotal,
-		UploadFailedTotal:   uploadStats.FailedTotal,
-		UploadBytesInTotal:  uploadStats.BytesTotal,
-		UploadAvgDurationMS: uploadStats.AvgDurationMS,
+		TimestampUTC:              time.Now().UTC().Format(time.RFC3339),
+		UptimeSeconds:             int64(time.Since(s.startedAt).Seconds()),
+		HTTPActiveRequests:        activeHTTP,
+		HTTPTotalRequests:         totalHTTP,
+		DBOpenConnections:         stats.OpenConnections,
+		DBInUseConnections:        stats.InUse,
+		DBWaitCount:               int64(stats.WaitCount),
+		Goroutines:                runtime.NumGoroutine(),
+		GoMemoryAllocBytes:        memory.Alloc,
+		GoMemorySysBytes:          memory.Sys,
+		GoHeapInUseBytes:          memory.HeapInuse,
+		GoGCCount:                 memory.NumGC,
+		UploadsSizeBytes:          dirSize(uploadsDir),
+		UploadsFilesCount:         dirFileCount(uploadsDir),
+		UploadsFSTotalBytes:       uploadsTotal,
+		UploadsFSFreeBytes:        uploadsFree,
+		UploadRequestsTotal:       uploadStats.RequestsTotal,
+		UploadFailedTotal:         uploadStats.FailedTotal,
+		UploadBytesInTotal:        uploadStats.BytesTotal,
+		UploadAvgDurationMS:       uploadStats.AvgDurationMS,
+		UploadFailedByReason:      uploadStats.FailureByReason,
+		UploadStatusClassTotal:    uploadStats.StatusClassTotals,
+		Upload4xxTotal:            uploadStats.StatusClassTotals["4xx"],
+		Upload5xxTotal:            uploadStats.StatusClassTotals["5xx"],
+		Upload4xxRatePct:          uploadStats.ClientErrorRatePct,
+		Upload5xxRatePct:          uploadStats.ServerErrorRatePct,
+		UploadTopFailureReason:    uploadStats.TopFailureReason,
+		UploadTopFailureReasonCnt: uploadStats.TopFailureReasonCnt,
 	}
 
 	_ = database.DB.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&snap.UsersTotal)
