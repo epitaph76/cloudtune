@@ -246,6 +246,9 @@ class _WindowsDesktopShellState extends State<WindowsDesktopShell> {
                         decoration: BoxDecoration(
                           color: colorScheme.surface,
                           borderRadius: BorderRadius.circular(26),
+                        ),
+                        foregroundDecoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(26),
                           border: Border.all(color: colorScheme.outline),
                         ),
                         clipBehavior: Clip.antiAlias,

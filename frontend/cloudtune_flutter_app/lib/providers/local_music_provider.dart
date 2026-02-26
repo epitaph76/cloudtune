@@ -95,7 +95,7 @@ class LocalMusicProvider with ChangeNotifier {
     }
   }
 
-  Future<void> addFiles(List<File> files) async {
+  Future<Set<String>> addFiles(List<File> files) async {
     final existingPaths = _selectedFiles.map((file) => file.path).toSet();
     for (final file in files) {
       if (!existingPaths.contains(file.path)) {
@@ -109,6 +109,7 @@ class LocalMusicProvider with ChangeNotifier {
     await _savePlaylists();
     await _saveLikedTracks();
     notifyListeners();
+    return _resolveCanonicalPaths(files);
   }
 
   Future<void> refreshLocalLibrary() async {
@@ -315,6 +316,30 @@ class LocalMusicProvider with ChangeNotifier {
     if (setEquals(before, _likedTrackPaths)) return;
     await _saveLikedTracks();
     notifyListeners();
+  }
+
+  Set<String> _resolveCanonicalPaths(Iterable<File> files) {
+    final existingByPath = _selectedFiles.map((file) => file.path).toSet();
+    final existingByDedupKey = <String, String>{};
+    for (final selected in _selectedFiles) {
+      existingByDedupKey.putIfAbsent(
+        _fileDedupKey(selected),
+        () => selected.path,
+      );
+    }
+
+    final resolved = <String>{};
+    for (final file in files) {
+      if (existingByPath.contains(file.path)) {
+        resolved.add(file.path);
+        continue;
+      }
+      final canonicalPath = existingByDedupKey[_fileDedupKey(file)];
+      if (canonicalPath != null) {
+        resolved.add(canonicalPath);
+      }
+    }
+    return resolved;
   }
 
   Set<String> _validTrackPaths(Set<String> rawPaths) {

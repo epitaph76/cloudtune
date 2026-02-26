@@ -1469,22 +1469,22 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   String _cloudTrackSortLabel(_CloudTrackSort sort) {
     switch (sort) {
       case _CloudTrackSort.uploadDate:
-        return 'By upload date';
+        return AppLocalizations.text(context, 'sort_by_upload_date');
       case _CloudTrackSort.name:
-        return 'By name';
+        return AppLocalizations.text(context, 'sort_by_name');
       case _CloudTrackSort.fileSize:
-        return 'By file size';
+        return AppLocalizations.text(context, 'sort_by_file_size');
     }
   }
 
   String _cloudTrackSortButtonLabel() {
     switch (_cloudTrackSort) {
       case _CloudTrackSort.uploadDate:
-        return 'Date';
+        return AppLocalizations.text(context, 'sort_date');
       case _CloudTrackSort.name:
-        return 'Name';
+        return AppLocalizations.text(context, 'sort_name');
       case _CloudTrackSort.fileSize:
-        return 'Size';
+        return AppLocalizations.text(context, 'sort_size');
     }
   }
 
@@ -2432,8 +2432,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         return;
       }
 
-      await localMusicProvider.addFiles(downloadedFiles);
-      final downloadedPaths = downloadedFiles.map((file) => file.path).toSet();
+      final downloadedPaths = await localMusicProvider.addFiles(downloadedFiles);
 
       String? localPlaylistId;
       if (_isCloudFavoritesPlaylist(playlist)) {
@@ -3670,7 +3669,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                         ),
                                         const SizedBox(width: 8),
                                         PopupMenuButton<_CloudTrackSort>(
-                                          tooltip: 'Sort tracks',
+                                          tooltip: t('sort_tracks'),
                                           initialValue: _cloudTrackSort,
                                           onSelected: (value) {
                                             if (_cloudTrackSort == value) {
