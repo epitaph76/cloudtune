@@ -1004,13 +1004,57 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     return p.basename(value).trim().toLowerCase();
   }
 
+  String _trackLookupNameWithSizeKey({
+    required String trackName,
+    required int? fileSize,
+  }) {
+    if (fileSize == null || fileSize < 0) return trackName;
+    return '$trackName|$fileSize';
+  }
+
+  int? _safeLocalFileSize(File file) {
+    try {
+      final fileSize = file.lengthSync();
+      if (fileSize < 0) return null;
+      return fileSize;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int? _resolveCloudSongIdForLocalTrack({
+    required String trackName,
+    required int? fileSize,
+    required Map<String, int> cloudSongIdByNameAndSize,
+    required Map<String, int> cloudSongIdByName,
+  }) {
+    if (fileSize != null && fileSize >= 0) {
+      final sizedKey = _trackLookupNameWithSizeKey(
+        trackName: trackName,
+        fileSize: fileSize,
+      );
+      final sizedMatch = cloudSongIdByNameAndSize[sizedKey];
+      if (sizedMatch != null) return sizedMatch;
+      return null;
+    }
+    return cloudSongIdByName[trackName];
+  }
+
   bool _isTrackAlreadyInCloudLibrary(File file, CloudMusicProvider provider) {
     final key = _trackLookupName(file.path);
+    final localFileSize = _safeLocalFileSize(file);
     for (final track in provider.tracks) {
       final cloudKey = _trackLookupName(
         track.originalFilename ?? track.filename,
       );
-      if (cloudKey == key) return true;
+      if (cloudKey != key) continue;
+
+      final cloudFileSize = track.filesize;
+      if (localFileSize != null) {
+        if (cloudFileSize == null || cloudFileSize < 0) continue;
+        if (localFileSize != cloudFileSize) continue;
+      }
+      return true;
     }
     return false;
   }
@@ -1022,6 +1066,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     if (rawSongID is int) return rawSongID;
     if (rawSongID is num) return rawSongID.toInt();
     if (rawSongID is String) return int.tryParse(rawSongID);
+
+    final nestedSongID = uploadResult['data']?['song']?['id'];
+    if (nestedSongID is int) return nestedSongID;
+    if (nestedSongID is num) return nestedSongID.toInt();
+    if (nestedSongID is String) return int.tryParse(nestedSongID);
+
+    final topLevelSongID = uploadResult['song_id'];
+    if (topLevelSongID is int) return topLevelSongID;
+    if (topLevelSongID is num) return topLevelSongID.toInt();
+    if (topLevelSongID is String) return int.tryParse(topLevelSongID);
+
     return null;
   }
 
@@ -1603,21 +1658,23 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     );
   }
 
-  Future<({Map<String, int> uploadedSongIDs, int completedTracks})>
+  Future<({Map<String, int> uploadedSongIDsByPath, int completedTracks})>
   _uploadMissingCloudTracks({
-    required Map<String, File> missingFilesByName,
-    required Map<String, int> keyOccurrences,
+    required List<File> missingFiles,
     required String syncKey,
     required String playlistName,
     required int completedTracks,
     required int totalTracks,
   }) async {
-    final entries = missingFilesByName.entries.toList(growable: false);
+    final entries = missingFiles.toList(growable: false);
     if (entries.isEmpty) {
-      return (uploadedSongIDs: <String, int>{}, completedTracks: completedTracks);
+      return (
+        uploadedSongIDsByPath: <String, int>{},
+        completedTracks: completedTracks,
+      );
     }
 
-    final uploadedSongIDs = <String, int>{};
+    final uploadedSongIDsByPath = <String, int>{};
     var nextIndex = 0;
     final workerCount = math
         .max(1, math.min(_cloudUploadParallelism, entries.length))
@@ -1628,16 +1685,16 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         if (nextIndex >= entries.length) {
           return;
         }
-        final entry = entries[nextIndex];
+        final file = entries[nextIndex];
         nextIndex += 1;
 
         try {
-          final uploadResult = await _apiService.uploadFile(entry.value);
+          final uploadResult = await _apiService.uploadFile(file);
           if (uploadResult['success'] == true) {
             final uploadedSongId = _extractSongIdFromUploadResult(uploadResult);
             if (uploadedSongId != null) {
-              uploadedSongIDs[entry.key] = uploadedSongId;
-              completedTracks += keyOccurrences[entry.key] ?? 1;
+              uploadedSongIDsByPath[file.path] = uploadedSongId;
+              completedTracks += 1;
             }
           }
         } catch (_) {
@@ -1662,7 +1719,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     }
 
     await Future.wait(List.generate(workerCount, (_) => worker()));
-    return (uploadedSongIDs: uploadedSongIDs, completedTracks: completedTracks);
+    return (
+      uploadedSongIDsByPath: uploadedSongIDsByPath,
+      completedTracks: completedTracks,
+    );
   }
 
   Future<void> _uploadTracksAsCloudPlaylist({
@@ -1697,28 +1757,54 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       await cloudMusicProvider.fetchUserPlaylists();
 
       final cloudSongIdByName = <String, int>{};
-      for (final track in cloudMusicProvider.tracks) {
-        final key = _trackLookupName(track.originalFilename ?? track.filename);
-        cloudSongIdByName.putIfAbsent(key, () => track.id);
-      }
+      final cloudSongIdByNameAndSize = <String, int>{};
+      void seedCloudLookupMaps(Iterable<Track> tracks) {
+        for (final track in tracks) {
+          final key = _trackLookupName(
+            track.originalFilename ?? track.filename,
+          );
+          cloudSongIdByName.putIfAbsent(key, () => track.id);
 
-      final keyOccurrences = <String, int>{};
-      final firstFileByKey = <String, File>{};
-      for (final file in playlistTracks) {
-        final key = _trackLookupName(file.path);
-        keyOccurrences[key] = (keyOccurrences[key] ?? 0) + 1;
-        firstFileByKey.putIfAbsent(key, () => file);
-      }
-
-      final missingFilesByName = <String, File>{};
-      for (final entry in keyOccurrences.entries) {
-        if (cloudSongIdByName.containsKey(entry.key)) {
-          completedTracks += entry.value;
-          continue;
+          final trackSize = track.filesize;
+          if (trackSize == null || trackSize < 0) continue;
+          final sizedKey = _trackLookupNameWithSizeKey(
+            trackName: key,
+            fileSize: trackSize,
+          );
+          cloudSongIdByNameAndSize.putIfAbsent(sizedKey, () => track.id);
         }
-        final file = firstFileByKey[entry.key];
-        if (file != null) {
-          missingFilesByName[entry.key] = file;
+      }
+
+      seedCloudLookupMaps(cloudMusicProvider.tracks);
+
+      final localLookupByPath = <String, ({String trackName, int? fileSize})>{};
+      ({String trackName, int? fileSize}) localLookup(File file) {
+        final cached = localLookupByPath[file.path];
+        if (cached != null) return cached;
+
+        final lookup = (
+          trackName: _trackLookupName(file.path),
+          fileSize: _safeLocalFileSize(file),
+        );
+        localLookupByPath[file.path] = lookup;
+        return lookup;
+      }
+
+      final desiredSongIDsInOrder = <int>[];
+      final missingFiles = <File>[];
+      for (final file in playlistTracks) {
+        final lookup = localLookup(file);
+        final matchedSongId = _resolveCloudSongIdForLocalTrack(
+          trackName: lookup.trackName,
+          fileSize: lookup.fileSize,
+          cloudSongIdByNameAndSize: cloudSongIdByNameAndSize,
+          cloudSongIdByName: cloudSongIdByName,
+        );
+        if (matchedSongId != null) {
+          desiredSongIDsInOrder.add(matchedSongId);
+          completedTracks += 1;
+        } else {
+          missingFiles.add(file);
         }
       }
 
@@ -1738,22 +1824,64 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       );
 
       final uploadedBatch = await _uploadMissingCloudTracks(
-        missingFilesByName: missingFilesByName,
-        keyOccurrences: keyOccurrences,
+        missingFiles: missingFiles,
         syncKey: syncKey,
         playlistName: playlistName,
         completedTracks: completedTracks,
         totalTracks: totalTracks,
       );
       completedTracks = uploadedBatch.completedTracks;
-      cloudSongIdByName.addAll(uploadedBatch.uploadedSongIDs);
+      final uploadedSongIDsByPath = Map<String, int>.from(
+        uploadedBatch.uploadedSongIDsByPath,
+      );
+      for (final file in missingFiles) {
+        final uploadedSongID = uploadedSongIDsByPath[file.path];
+        if (uploadedSongID != null) {
+          desiredSongIDsInOrder.add(uploadedSongID);
+        }
+      }
 
-      final desiredSongIDsInOrder = <int>[];
-      for (final file in playlistTracks) {
-        final key = _trackLookupName(file.path);
-        final songId = cloudSongIdByName[key];
-        if (songId == null) continue;
-        desiredSongIDsInOrder.add(songId);
+      if (missingFiles.isNotEmpty) {
+        await cloudMusicProvider.fetchUserLibrary();
+        cloudSongIdByName.clear();
+        cloudSongIdByNameAndSize.clear();
+        seedCloudLookupMaps(cloudMusicProvider.tracks);
+
+        var resolvedAfterUploadCount = 0;
+        for (final file in missingFiles) {
+          if (uploadedSongIDsByPath.containsKey(file.path)) continue;
+
+          final lookup = localLookup(file);
+          final resolvedSongID = _resolveCloudSongIdForLocalTrack(
+            trackName: lookup.trackName,
+            fileSize: lookup.fileSize,
+            cloudSongIdByNameAndSize: cloudSongIdByNameAndSize,
+            cloudSongIdByName: cloudSongIdByName,
+          );
+          if (resolvedSongID == null) continue;
+
+          uploadedSongIDsByPath[file.path] = resolvedSongID;
+          desiredSongIDsInOrder.add(resolvedSongID);
+          resolvedAfterUploadCount += 1;
+        }
+
+        if (resolvedAfterUploadCount > 0) {
+          completedTracks += resolvedAfterUploadCount;
+          if (mounted) {
+            setState(() {
+              _playlistUploadProgress[syncKey] = (
+                uploaded: completedTracks,
+                total: totalTracks,
+              );
+            });
+          }
+          await UploadNotificationService.showPlaylistUploadProgress(
+            syncKey: syncKey,
+            playlistName: playlistName,
+            uploadedTracks: completedTracks,
+            totalTracks: totalTracks,
+          );
+        }
       }
 
       if (desiredSongIDsInOrder.isEmpty) {
@@ -1845,6 +1973,20 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       );
       if (bulkResult['success'] != true) {
         for (final songID in uniqueSongIDsInOrder) {
+          await _apiService.addSongToPlaylist(
+            playlistId: cloudPlaylistID,
+            songId: songID,
+          );
+        }
+      }
+
+      final verifyResult = await _apiService.getPlaylistSongs(cloudPlaylistID);
+      if (verifyResult['success'] == true) {
+        final existingSongIDs = (verifyResult['songs'] as List<dynamic>)
+            .map((item) => Track.fromJson(item as Map<String, dynamic>).id)
+            .toSet();
+        for (final songID in uniqueSongIDsInOrder) {
+          if (existingSongIDs.contains(songID)) continue;
           await _apiService.addSongToPlaylist(
             playlistId: cloudPlaylistID,
             songId: songID,
