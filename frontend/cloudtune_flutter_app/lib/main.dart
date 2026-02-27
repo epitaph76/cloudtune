@@ -43,8 +43,8 @@ void main() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.cloudtune.audio',
       androidNotificationChannelName: 'CloudTune Playback',
-      androidNotificationOngoing: false,
-      androidStopForegroundOnPause: false,
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
     ),
   );
 

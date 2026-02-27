@@ -39,7 +39,6 @@ class AudioPlayerProvider with ChangeNotifier {
     _localMusicProviderListener = _handleLocalMusicProviderChanged;
     _localMusicProvider.addListener(_localMusicProviderListener);
     _audioHandler.bindLikeHandlers(
-      onToggleLike: _toggleTrackLikeFromNotification,
       isTrackLiked: _localMusicProvider.isTrackLiked,
     );
     _setupStreams();
@@ -51,7 +50,6 @@ class AudioPlayerProvider with ChangeNotifier {
       _localMusicProvider = localMusicProvider;
       _localMusicProvider.addListener(_localMusicProviderListener);
       _audioHandler.bindLikeHandlers(
-        onToggleLike: _toggleTrackLikeFromNotification,
         isTrackLiked: _localMusicProvider.isTrackLiked,
       );
     }
@@ -85,12 +83,6 @@ class AudioPlayerProvider with ChangeNotifier {
       _bufferedPosition = Duration.zero;
     }
     notifyListeners();
-  }
-
-  Future<bool> _toggleTrackLikeFromNotification(String trackPath) async {
-    final changed = await _localMusicProvider.toggleTrackLike(trackPath);
-    if (!changed) return _localMusicProvider.isTrackLiked(trackPath);
-    return _localMusicProvider.isTrackLiked(trackPath);
   }
 
   void _handleLocalMusicProviderChanged() {

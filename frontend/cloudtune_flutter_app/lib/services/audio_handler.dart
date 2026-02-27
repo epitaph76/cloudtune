@@ -6,8 +6,6 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
-  static const String toggleLikeAction = 'toggle_like';
-
   final AudioPlayer _player = AudioPlayer();
   bool _hasPreparedShuffleForCurrentQueue = false;
   bool _isDelayedAdvanceInProgress = false;
@@ -16,7 +14,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Duration? _lastSpeedAuditPosition;
   int _speedDriftStrikes = 0;
   bool _currentTrackLiked = false;
-  Future<bool> Function(String trackPath)? _onToggleLike;
   bool Function(String trackPath)? _isTrackLiked;
 
   bool get shuffleEnabled => _player.shuffleModeEnabled;
@@ -29,10 +26,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   bool get hasQueue => queue.value.isNotEmpty;
 
   void bindLikeHandlers({
-    required Future<bool> Function(String trackPath) onToggleLike,
     required bool Function(String trackPath) isTrackLiked,
   }) {
-    _onToggleLike = onToggleLike;
     _isTrackLiked = isTrackLiked;
     refreshLikeState();
   }
@@ -198,28 +193,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
   }
 
-  @override
-  Future<dynamic> customAction(
-    String name, [
-    Map<String, dynamic>? extras,
-  ]) async {
-    if (name != toggleLikeAction) {
-      return super.customAction(name, extras);
-    }
-
-    final currentPath = mediaItem.value?.id;
-    final onToggleLike = _onToggleLike;
-    if (currentPath == null || onToggleLike == null) return null;
-
-    final liked = await onToggleLike(currentPath);
-    if (_currentTrackLiked != liked) {
-      _currentTrackLiked = liked;
-      playbackState.add(_mapPlaybackState(_player));
-    }
-
-    return <String, dynamic>{'liked': liked, 'path': currentPath};
-  }
-
   Future<void> setVolumeLevel(double value) async {
     await _runSerialized(() async {
       final safeValue = value.clamp(0.0, 1.0);
@@ -351,24 +324,14 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   PlaybackState _mapPlaybackState(AudioPlayer player) {
-    final likeControl = MediaControl.custom(
-      androidIcon: _currentTrackLiked
-          ? 'drawable/ic_notification_like_on'
-          : 'drawable/ic_notification_like_off',
-      label: _currentTrackLiked ? 'Unlike' : 'Like',
-      name: toggleLikeAction,
-      extras: <String, dynamic>{'liked': _currentTrackLiked},
-    );
-
     return PlaybackState(
       controls: [
         MediaControl.skipToPrevious,
         if (player.playing) MediaControl.pause else MediaControl.play,
-        likeControl,
         MediaControl.stop,
         MediaControl.skipToNext,
       ],
-      androidCompactActionIndices: const [0, 1, 2],
+      androidCompactActionIndices: const [0, 1, 3],
       processingState: const {
         ProcessingState.idle: AudioProcessingState.idle,
         ProcessingState.loading: AudioProcessingState.loading,
