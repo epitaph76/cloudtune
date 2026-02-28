@@ -160,8 +160,10 @@ func UploadSong(c *gin.Context) {
 
 	if !tryAcquireUploadSlot() {
 		uploadFailureReason = "parallel_upload_limit"
+		c.Header("Retry-After", "1")
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error": "Too many concurrent uploads. Please retry shortly",
+			"code":  "parallel_upload_limit",
 		})
 		return
 	}

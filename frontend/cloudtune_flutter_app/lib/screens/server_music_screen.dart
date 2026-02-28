@@ -56,7 +56,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     with AutomaticKeepAliveClientMixin {
   static const double _storageHeaderControlWidth = 156;
   static const double _storageHeaderControlHeight = 46;
-  static const int _cloudUploadParallelism = 3;
+  static const int _cloudUploadParallelism = 2;
 
   final ApiService _apiService = ApiService();
   final ServerMusicSyncController _syncController = ServerMusicSyncController(
@@ -2432,7 +2432,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         return;
       }
 
-      final downloadedPaths = await localMusicProvider.addFiles(downloadedFiles);
+      final downloadedPaths = await localMusicProvider.addFiles(
+        downloadedFiles,
+      );
 
       String? localPlaylistId;
       if (_isCloudFavoritesPlaylist(playlist)) {

@@ -15,6 +15,14 @@ class ApiService {
 
   final BackendClient _backendClient;
   final SessionStorageService _sessionStorage;
+  static const int _uploadMaxAttempts = 3;
+  static const List<Duration> _uploadRetryDelays = <Duration>[
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+  ];
+  static const Duration _uploadSendTimeout = Duration(minutes: 2);
+  static const Duration _uploadReceiveTimeout = Duration(minutes: 2);
 
   Future<Response<T>> _requestWithFallback<T>({
     required String method,
@@ -95,6 +103,39 @@ class ApiService {
     return null;
   }
 
+  bool _isRetriableUploadStatusCode(int? statusCode) {
+    if (statusCode == null) return false;
+    if (statusCode == 408 || statusCode == 429) return true;
+    return statusCode >= 500 && statusCode <= 599;
+  }
+
+  bool _isRetriableUploadException(Object error) {
+    if (error is! DioException) return false;
+    if (_isRetriableUploadStatusCode(error.response?.statusCode)) {
+      return true;
+    }
+
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.connectionError:
+      case DioExceptionType.unknown:
+        return true;
+      case DioExceptionType.badCertificate:
+      case DioExceptionType.badResponse:
+      case DioExceptionType.cancel:
+        return false;
+    }
+  }
+
+  Duration _uploadRetryDelayForAttempt(int attempt) {
+    final index = attempt - 1;
+    if (index <= 0) return _uploadRetryDelays.first;
+    if (index >= _uploadRetryDelays.length) return _uploadRetryDelays.last;
+    return _uploadRetryDelays[index];
+  }
+
   Future<Options> _getAuthOptions() async {
     final token = await _sessionStorage.readToken();
     if (token != null && token.isNotEmpty) {
@@ -116,72 +157,92 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> uploadFile(File file) async {
-    try {
-      final options = await _getAuthOptions();
-      final fileName = p.basename(file.path);
-      final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(file.path, filename: fileName),
-      });
+    final options = await _getAuthOptions();
+    final fileName = p.basename(file.path);
 
-      final response = await _requestWithFallback(
-        method: 'POST',
-        path: '/api/songs/upload',
-        data: formData,
-        options: options,
-      );
+    for (var attempt = 1; attempt <= _uploadMaxAttempts; attempt++) {
+      final isLastAttempt = attempt >= _uploadMaxAttempts;
+      try {
+        final formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(file.path, filename: fileName),
+        });
+        final uploadOptions = options.copyWith(
+          sendTimeout: _uploadSendTimeout,
+          receiveTimeout: _uploadReceiveTimeout,
+        );
+        final response = await _requestWithFallback(
+          method: 'POST',
+          path: '/api/songs/upload',
+          data: formData,
+          options: uploadOptions,
+        );
 
-      final statusCode = response.statusCode ?? -1;
-      final data = _mapOrEmpty(response.data);
-      if (statusCode != 200) {
-        return {
-          'success': false,
-          'status_code': statusCode,
-          'message': _extractApiMessage(
-            response.data,
-            fallback: 'Upload failed (HTTP $statusCode)',
-          ),
-        };
-      }
+        final statusCode = response.statusCode ?? -1;
+        final data = _mapOrEmpty(response.data);
+        if (statusCode != 200) {
+          if (!isLastAttempt && _isRetriableUploadStatusCode(statusCode)) {
+            await Future<void>.delayed(_uploadRetryDelayForAttempt(attempt));
+            continue;
+          }
+          return {
+            'success': false,
+            'status_code': statusCode,
+            'message': _extractApiMessage(
+              response.data,
+              fallback: 'Upload failed (HTTP $statusCode)',
+            ),
+          };
+        }
 
-      final songId = _extractSongIdFromUploadResponse(data);
-      if (songId == null) {
-        return {
-          'success': false,
-          'status_code': statusCode,
-          'message':
-              'Upload failed: backend response does not include valid song_id',
-          'data': data,
-        };
-      }
+        final songId = _extractSongIdFromUploadResponse(data);
+        if (songId == null) {
+          return {
+            'success': false,
+            'status_code': statusCode,
+            'message':
+                'Upload failed: backend response does not include valid song_id',
+            'data': data,
+          };
+        }
 
-      final existsInLibrary = await _verifySongExistsInLibrary(
-        songId: songId,
-        options: options,
-      );
-      if (!existsInLibrary) {
-        return {
-          'success': false,
-          'song_id': songId,
-          'message':
-              'Upload failed: song_id=$songId is not visible in cloud library after upload',
-          'data': data,
-        };
-      }
+        final existsInLibrary = await _verifySongExistsInLibrary(
+          songId: songId,
+          options: options,
+        );
+        if (!existsInLibrary) {
+          return {
+            'success': false,
+            'song_id': songId,
+            'message':
+                'Upload failed: song_id=$songId is not visible in cloud library after upload',
+            'data': data,
+          };
+        }
 
-      return {'success': true, 'song_id': songId, 'data': data};
-    } catch (error) {
-      final statusCode = error is DioException
-          ? error.response?.statusCode
-          : null;
-      return {
-        'success': false,
-        'status_code': statusCode,
-        'message': _backendClient.describeError(
+        return {'success': true, 'song_id': songId, 'data': data};
+      } catch (error) {
+        final statusCode = error is DioException
+            ? error.response?.statusCode
+            : null;
+        final message = _backendClient.describeError(
           error,
           fallbackMessage: 'Upload failed',
-        ),
-      };
+        );
+
+        if (!isLastAttempt && _isRetriableUploadException(error)) {
+          await Future<void>.delayed(_uploadRetryDelayForAttempt(attempt));
+          continue;
+        }
+
+        return {
+          'success': false,
+          'status_code': statusCode,
+          'message': message,
+        };
+      }
     }
+
+    return {'success': false, 'message': 'Upload failed'};
   }
 
   Future<Map<String, dynamic>> getUserLibrary({
