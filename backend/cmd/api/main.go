@@ -36,10 +36,12 @@ func main() {
 	router.GET("/api/monitor/connections", handlers.MonitorConnections)
 	router.GET("/api/monitor/users", handlers.MonitorUsers)
 	router.GET("/api/monitor/users/list", handlers.MonitorUsersList)
+	router.GET("/api/monitor/files", handlers.MonitorFilesList)
 	router.GET("/api/monitor/runtime", handlers.MonitorRuntime)
 	router.GET("/api/monitor/snapshot", handlers.MonitorSnapshot)
 	router.GET("/api/monitor/all", handlers.MonitorAll)
 	router.DELETE("/api/monitor/users/delete", handlers.MonitorDeleteUserByEmail)
+	router.DELETE("/api/monitor/users/purge-all", handlers.MonitorDeleteAllUsers)
 
 	authRoutes := router.Group("/auth")
 	{

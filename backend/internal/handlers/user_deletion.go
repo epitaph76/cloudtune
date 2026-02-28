@@ -24,6 +24,12 @@ type deleteUserSummary struct {
 	DeletedLibraryRows int64 `json:"deleted_library_rows"`
 }
 
+type monitorDeleteFailure struct {
+	UserID int    `json:"user_id"`
+	Email  string `json:"email"`
+	Error  string `json:"error"`
+}
+
 func collectSongCandidates(tx *sql.Tx, userID int) (map[int]string, error) {
 	rows, err := tx.Query(
 		`SELECT DISTINCT s.id, s.filepath
@@ -243,5 +249,104 @@ func MonitorDeleteUserByEmail(c *gin.Context) {
 		"email":   email,
 		"user_id": strconv.Itoa(userID),
 		"summary": summary,
+	})
+}
+
+func MonitorDeleteAllUsers(c *gin.Context) {
+	if !checkMonitoringToken(c) {
+		return
+	}
+
+	rows, err := database.DB.Query(`SELECT id, email FROM users ORDER BY id ASC`)
+	if err != nil {
+		log.Printf("Error loading users for purge-all: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load users list"})
+		return
+	}
+	defer rows.Close()
+
+	type userEntry struct {
+		id    int
+		email string
+	}
+
+	users := make([]userEntry, 0)
+	for rows.Next() {
+		var entry userEntry
+		if scanErr := rows.Scan(&entry.id, &entry.email); scanErr != nil {
+			log.Printf("Error scanning users for purge-all: %v", scanErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan users list"})
+			return
+		}
+		users = append(users, entry)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		log.Printf("Error iterating users for purge-all: %v", rowsErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read users list"})
+		return
+	}
+
+	var deletedUsers int
+	var failedUsers int
+	var totalCandidateSongs int
+	var totalDeletedSongs int
+	var totalDeletedFiles int
+	var totalFileDeleteErrors int
+	var totalDeletedPlaylists int64
+	var totalDeletedLibraryRows int64
+	failures := make([]monitorDeleteFailure, 0)
+
+	for _, user := range users {
+		summary, deleteErr := deleteUserAndRelatedData(database.DB, user.id)
+		if deleteErr != nil {
+			failedUsers++
+			failures = append(failures, monitorDeleteFailure{
+				UserID: user.id,
+				Email:  user.email,
+				Error:  deleteErr.Error(),
+			})
+			log.Printf("Error purge-all user_id=%d email=%s: %v", user.id, user.email, deleteErr)
+			continue
+		}
+
+		deletedUsers++
+		totalCandidateSongs += summary.CandidateSongs
+		totalDeletedSongs += summary.DeletedSongs
+		totalDeletedFiles += summary.DeletedFiles
+		totalFileDeleteErrors += summary.FileDeleteErrors
+		totalDeletedPlaylists += summary.DeletedPlaylists
+		totalDeletedLibraryRows += summary.DeletedLibraryRows
+	}
+
+	var remainingUsers int
+	if err := database.DB.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&remainingUsers); err != nil {
+		log.Printf("Error counting remaining users after purge-all: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count remaining users"})
+		return
+	}
+
+	var remainingSongs int
+	if err := database.DB.QueryRow(`SELECT COUNT(*) FROM songs`).Scan(&remainingSongs); err != nil {
+		log.Printf("Error counting remaining songs after purge-all: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count remaining songs"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":         "Users purge completed",
+		"processed_users": len(users),
+		"deleted_users":   deletedUsers,
+		"failed_users":    failedUsers,
+		"totals": gin.H{
+			"candidate_songs":      totalCandidateSongs,
+			"deleted_songs":        totalDeletedSongs,
+			"deleted_files":        totalDeletedFiles,
+			"file_delete_errors":   totalFileDeleteErrors,
+			"deleted_playlists":    totalDeletedPlaylists,
+			"deleted_library_rows": totalDeletedLibraryRows,
+		},
+		"remaining_users": remainingUsers,
+		"remaining_songs": remainingSongs,
+		"failures":        failures,
 	})
 }

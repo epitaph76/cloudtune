@@ -139,6 +139,7 @@ class BackendClient {
     Object? data,
     Options? options,
     Map<String, dynamic>? queryParameters,
+    CancelToken? cancelToken,
   }) async {
     if (_baseUrls.isEmpty) {
       throw StateError('No backend base URLs configured');
@@ -162,6 +163,7 @@ class BackendClient {
           data: data,
           queryParameters: queryParameters,
           options: (options ?? Options()).copyWith(method: method),
+          cancelToken: cancelToken,
         );
         _logResponse(method: method, url: url, response: response);
         return response;

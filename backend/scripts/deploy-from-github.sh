@@ -31,6 +31,12 @@ POST_DEPLOY_TEST_RESUME_LANDING_URL="${POST_DEPLOY_TEST_RESUME_LANDING_URL:-http
 POST_DEPLOY_TEST_TIMEOUT_SECONDS="${POST_DEPLOY_TEST_TIMEOUT_SECONDS:-20}"
 ROLLBACK_ON_TEST_FAILURE="${ROLLBACK_ON_TEST_FAILURE:-true}"
 ALLOW_DEPLOY_AS_ROOT="${ALLOW_DEPLOY_AS_ROOT:-false}"
+DOCKER_PRUNE_AFTER_DEPLOY="${DOCKER_PRUNE_AFTER_DEPLOY:-true}"
+DOCKER_PRUNE_UNTIL_HOURS="${DOCKER_PRUNE_UNTIL_HOURS:-240}"
+DOCKER_PRUNE_VOLUMES="${DOCKER_PRUNE_VOLUMES:-false}"
+JOURNAL_VACUUM_AFTER_DEPLOY="${JOURNAL_VACUUM_AFTER_DEPLOY:-false}"
+JOURNAL_MAX_SIZE="${JOURNAL_MAX_SIZE:-500M}"
+TRUNCATE_BTMP_AFTER_DEPLOY="${TRUNCATE_BTMP_AFTER_DEPLOY:-false}"
 
 is_true() {
   local value="${1:-}"
@@ -138,6 +144,28 @@ run_post_deploy_tests() {
   echo "Post-deploy smoke checks passed."
 }
 
+cleanup_host_storage() {
+  echo "Running post-deploy cleanup..."
+
+  if is_true "${DOCKER_PRUNE_AFTER_DEPLOY}"; then
+    docker image prune -af --filter "until=${DOCKER_PRUNE_UNTIL_HOURS}h" || true
+    docker builder prune -af --filter "until=${DOCKER_PRUNE_UNTIL_HOURS}h" || true
+    docker network prune -f || true
+
+    if is_true "${DOCKER_PRUNE_VOLUMES}"; then
+      docker volume prune -f || true
+    fi
+  fi
+
+  if is_true "${JOURNAL_VACUUM_AFTER_DEPLOY}" && command -v journalctl >/dev/null 2>&1; then
+    journalctl --vacuum-size="${JOURNAL_MAX_SIZE}" || true
+  fi
+
+  if is_true "${TRUNCATE_BTMP_AFTER_DEPLOY}"; then
+    truncate -s 0 /var/log/btmp || true
+  fi
+}
+
 if [[ -z "${REPO_URL}" ]]; then
   echo "REPO_URL is required"
   exit 1
@@ -181,14 +209,17 @@ if ! run_post_deploy_tests; then
     git -C "${APP_DIR}" reset --hard "${PREVIOUS_COMMIT}"
     deploy_backend
     deploy_landing_assets
+    cleanup_host_storage
     schedule_monitoring_restart
     echo "Rollback completed. Failure reason is above in test output."
   else
+    cleanup_host_storage
     schedule_monitoring_restart
     echo "Rollback skipped."
   fi
   exit 1
 fi
 
+cleanup_host_storage
 schedule_monitoring_restart
 echo "Deploy completed: backend + landing + tests + monitoring restart."

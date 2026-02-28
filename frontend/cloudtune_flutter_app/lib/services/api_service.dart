@@ -28,6 +28,7 @@ class ApiService {
     Object? data,
     Options? options,
     Map<String, dynamic>? queryParameters,
+    CancelToken? cancelToken,
   }) {
     return _backendClient.request<T>(
       method: method,
@@ -35,6 +36,7 @@ class ApiService {
       data: data,
       options: options,
       queryParameters: queryParameters,
+      cancelToken: cancelToken,
     );
   }
 
@@ -154,11 +156,21 @@ class ApiService {
     return response.statusCode == 200;
   }
 
-  Future<Map<String, dynamic>> uploadFile(File file) async {
+  Future<Map<String, dynamic>> uploadFile(
+    File file, {
+    CancelToken? cancelToken,
+  }) async {
     final options = await _getAuthOptions();
     final fileName = p.basename(file.path);
 
     for (var attempt = 1; attempt <= _uploadMaxAttempts; attempt++) {
+      if (cancelToken?.isCancelled == true) {
+        return {
+          'success': false,
+          'canceled': true,
+          'message': 'Upload canceled',
+        };
+      }
       final isLastAttempt = attempt >= _uploadMaxAttempts;
       try {
         final formData = FormData.fromMap({
@@ -172,6 +184,7 @@ class ApiService {
           path: '/api/songs/upload',
           data: formData,
           options: uploadOptions,
+          cancelToken: cancelToken,
         );
 
         final statusCode = response.statusCode ?? -1;
@@ -218,6 +231,13 @@ class ApiService {
 
         return {'success': true, 'song_id': songId, 'data': data};
       } catch (error) {
+        if (error is DioException && error.type == DioExceptionType.cancel) {
+          return {
+            'success': false,
+            'canceled': true,
+            'message': 'Upload canceled',
+          };
+        }
         final statusCode = error is DioException
             ? error.response?.statusCode
             : null;

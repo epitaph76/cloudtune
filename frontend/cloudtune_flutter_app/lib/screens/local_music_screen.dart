@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -20,6 +21,27 @@ class _LocalMusicScreenState extends State<LocalMusicScreen> {
   final ApiService _apiService = ApiService();
   bool _isPickingFiles = false;
   final Set<String> _uploadingPaths = <String>{};
+  final Map<String, CancelToken> _uploadCancelTokens = <String, CancelToken>{};
+
+  @override
+  void dispose() {
+    for (final token in _uploadCancelTokens.values) {
+      if (!token.isCancelled) {
+        token.cancel('upload canceled by dispose');
+      }
+    }
+    _uploadCancelTokens.clear();
+    super.dispose();
+  }
+
+  void _cancelUpload(BuildContext context, String path) {
+    final token = _uploadCancelTokens[path];
+    if (token == null || token.isCancelled) return;
+    token.cancel('upload canceled by user');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Upload canceled: ${p.basename(path)}')),
+    );
+  }
 
   Future<void> _pickFiles(BuildContext context) async {
     if (_isPickingFiles) return;
@@ -65,9 +87,14 @@ class _LocalMusicScreenState extends State<LocalMusicScreen> {
     setState(() {
       _uploadingPaths.add(file.path);
     });
+    final cancelToken = CancelToken();
+    _uploadCancelTokens[file.path] = cancelToken;
 
     try {
-      final result = await _apiService.uploadFile(file);
+      final result = await _apiService.uploadFile(
+        file,
+        cancelToken: cancelToken,
+      );
       if (!context.mounted) return;
 
       if (result['success'] == true) {
@@ -77,16 +104,21 @@ class _LocalMusicScreenState extends State<LocalMusicScreen> {
           SnackBar(content: Text('Uploaded: ${p.basename(file.path)}')),
         );
       } else {
+        if (result['canceled'] == true) {
+          return;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Upload failed: ${result['message']}')),
         );
       }
     } catch (error) {
+      if (cancelToken.isCancelled) return;
       if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Upload error: $error')));
     } finally {
+      _uploadCancelTokens.remove(file.path);
       if (mounted) {
         setState(() {
           _uploadingPaths.remove(file.path);
@@ -248,25 +280,23 @@ class _LocalMusicScreenState extends State<LocalMusicScreen> {
                                     ),
                                     const SizedBox(width: 8),
                                     IconButton.filledTonal(
-                                      onPressed: uploading
-                                          ? null
-                                          : () => _uploadTrack(
+                                      onPressed: () => uploading
+                                          ? _cancelUpload(context, track.path)
+                                          : _uploadTrack(
                                               context,
                                               track,
                                               cloudMusicProvider,
                                             ),
                                       icon: uploading
-                                          ? const SizedBox(
-                                              width: 16,
-                                              height: 16,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
+                                          ? const Icon(
+                                              Icons.stop_circle_rounded,
                                             )
                                           : const Icon(
                                               Icons.cloud_upload_rounded,
                                             ),
-                                      tooltip: 'Upload to cloud',
+                                      tooltip: uploading
+                                          ? 'Stop upload'
+                                          : 'Upload to cloud',
                                     ),
                                   ],
                                 ),

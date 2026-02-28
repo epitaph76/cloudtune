@@ -124,6 +124,7 @@ MENU_BUTTON_STORAGE = "💾 Хранилище"
 MENU_BUTTON_CONNECTIONS = "🔌 Подключения"
 MENU_BUTTON_RUNTIME = "⚙️ Рантайм"
 MENU_BUTTON_USERS = "👥 Пользователи"
+MENU_BUTTON_FILES = "🗂️ Файлы"
 MENU_BUTTON_SNAPSHOT = "🧪 Снимок"
 MENU_BUTTON_ALL = "🧾 Полный отчет"
 MENU_BUTTON_DEPLOY = "🚀 Деплой"
@@ -133,8 +134,9 @@ MENU_KEYBOARD = ReplyKeyboardMarkup(
     [
         [MENU_BUTTON_STATUS, MENU_BUTTON_STORAGE],
         [MENU_BUTTON_CONNECTIONS, MENU_BUTTON_RUNTIME],
-        [MENU_BUTTON_USERS, MENU_BUTTON_SNAPSHOT],
-        [MENU_BUTTON_ALL, MENU_BUTTON_DEPLOY],
+        [MENU_BUTTON_USERS, MENU_BUTTON_FILES],
+        [MENU_BUTTON_SNAPSHOT, MENU_BUTTON_ALL],
+        [MENU_BUTTON_DEPLOY],
         [MENU_BUTTON_HELP],
     ],
     resize_keyboard=True,
@@ -151,9 +153,11 @@ BUTTON_TO_QUERY = {
 }
 
 USERS_CALLBACK_PREFIX = "users_page:"
+FILES_CALLBACK_PREFIX = "files_page:"
 USER_CALLBACK_PREFIX = "user:"
 USER_TRACKS_PAGE_SIZE = 5
 USER_PLAYLISTS_PAGE_SIZE = 5
+SERVER_FILES_PAGE_SIZE = 10
 DB_CONTAINER_NAME = os.getenv("DB_CONTAINER_NAME", "cloudtune-db").strip() or "cloudtune-db"
 DB_NAME = os.getenv("DB_NAME", "cloudtune").strip() or "cloudtune"
 DB_USER = os.getenv("DB_USER", "cloudtune").strip() or "cloudtune"
@@ -224,6 +228,29 @@ async def delete_user_profile_by_email(email: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise RuntimeError("Некорректный формат ответа backend")
     return payload
+
+
+async def purge_all_users_via_api() -> dict[str, Any]:
+    url = f"{BACKEND_BASE_URL}/api/monitor/users/purge-all"
+    headers = {"X-Monitoring-Key": BACKEND_MONITORING_API_KEY}
+
+    async with httpx.AsyncClient(timeout=max(REQUEST_TIMEOUT, 120)) as client:
+        response = await client.delete(url, headers=headers)
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Backend вернул {response.status_code}: {response.text}")
+
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("Некорректный формат ответа backend")
+    return payload
+
+
+async def fetch_server_files_page(page: int, limit: int = SERVER_FILES_PAGE_SIZE) -> dict[str, Any]:
+    return await fetch_monitoring_json(
+        "/api/monitor/files",
+        params={"page": max(page, 1), "limit": max(limit, 1)},
+    )
 
 
 async def fetch_snapshot() -> dict[str, Any]:
@@ -490,8 +517,10 @@ def format_help_message() -> str:
         "• /connections\n"
         "• /runtime\n"
         "• /users\n"
+        "• /files\n"
         "• /user &lt;email&gt;\n"
         "• /delete_user &lt;email&gt;\n"
+        "• /purge_all_users CONFIRM\n"
         "• /snapshot\n"
         "• /all\n"
         "• /deploy [branch]\n"
@@ -603,6 +632,67 @@ def format_users_page(payload: dict[str, Any]) -> tuple[str, Optional[InlineKeyb
 
     text = "\n".join(lines).rstrip()
     keyboard = build_users_keyboard(page, total_pages)
+    return text, keyboard
+
+
+def build_server_files_keyboard(page: int, total_pages: int) -> Optional[InlineKeyboardMarkup]:
+    safe_total_pages = max(total_pages, 1)
+    buttons: list[InlineKeyboardButton] = []
+    if page > 1:
+        buttons.append(
+            InlineKeyboardButton("⬅️", callback_data=f"{FILES_CALLBACK_PREFIX}{page - 1}")
+        )
+    buttons.append(
+        InlineKeyboardButton("🔄", callback_data=f"{FILES_CALLBACK_PREFIX}{max(page, 1)}")
+    )
+    if page < safe_total_pages:
+        buttons.append(
+            InlineKeyboardButton("➡️", callback_data=f"{FILES_CALLBACK_PREFIX}{page + 1}")
+        )
+    return InlineKeyboardMarkup([buttons]) if buttons else None
+
+
+def _short_file_label(file_name: str, limit: int = 10) -> str:
+    if len(file_name) <= limit:
+        return file_name
+    return file_name[:limit] + "…"
+
+
+def format_server_files_page(payload: dict[str, Any]) -> tuple[str, Optional[InlineKeyboardMarkup]]:
+    total_files = int(payload.get("total_files", 0))
+    page = int(payload.get("page", 1))
+    total_pages = int(payload.get("total_pages", 0))
+    root_path = str(payload.get("root_path", "-"))
+    files = payload.get("files", [])
+
+    safe_total_pages = max(total_pages, 1)
+    lines = [
+        "🗂️ <b>Файлы сервера</b>",
+        f"Корень: <code>{html.escape(root_path)}</code>",
+        f"Всего файлов: <b>{total_files}</b>",
+        f"Страница: <b>{page}/{safe_total_pages}</b>",
+        "",
+    ]
+
+    if not files:
+        lines.append("Файлы не найдены.")
+    else:
+        start_idx = (max(page, 1) - 1) * SERVER_FILES_PAGE_SIZE
+        for idx, item in enumerate(files, start=1):
+            number = start_idx + idx
+            name = str(item.get("name", "-"))
+            short_name = _short_file_label(name, 10)
+            relative_path = shorten(str(item.get("relative_path", "-")), 90)
+            size_bytes = int(item.get("size_bytes", 0) or 0)
+            modified_at = str(item.get("modified_at", "-")).replace("T", " ").replace("Z", " UTC")
+            lines.append(f"{number}. <b>{html.escape(short_name)}</b>")
+            lines.append(f"   Размер: <code>{format_bytes(size_bytes)}</code>")
+            lines.append(f"   Путь: <code>{html.escape(relative_path)}</code>")
+            lines.append(f"   Изменён: <code>{html.escape(modified_at)}</code>")
+            lines.append("")
+
+    text = "\n".join(lines).rstrip()
+    keyboard = build_server_files_keyboard(page, safe_total_pages)
     return text, keyboard
 
 
@@ -968,6 +1058,39 @@ async def send_users_page(update: Update, context: ContextTypes.DEFAULT_TYPE, pa
         )
 
 
+async def send_server_files_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    page: int,
+) -> None:
+    chat = update.effective_chat
+    if chat is None or update.message is None:
+        return
+
+    if not is_chat_allowed(chat.id):
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
+        return
+
+    register_runtime_chat(context.application, chat.id)
+
+    try:
+        payload = await fetch_server_files_page(page=page, limit=SERVER_FILES_PAGE_SIZE)
+        text, keyboard = format_server_files_page(payload)
+        await update.message.reply_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
+    except Exception as exc:
+        logger.exception("Ошибка загрузки файлов сервера")
+        await send_pretty_message(
+            update,
+            "🚨 <b>Ошибка загрузки файлов сервера</b>\n"
+            f"<code>{html.escape(str(exc))}</code>",
+        )
+
+
 async def handle_users_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None or query.data is None:
@@ -1009,6 +1132,50 @@ async def handle_users_page_callback(update: Update, context: ContextTypes.DEFAU
         if query.message is not None:
             await query.message.reply_text(
                 "🚨 <b>Ошибка загрузки страницы пользователей</b>\n"
+                f"<code>{html.escape(str(exc))}</code>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=MENU_KEYBOARD,
+            )
+
+
+async def handle_files_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None or query.data is None:
+        return
+
+    chat = query.message.chat if query.message else None
+    if chat is None:
+        await query.answer()
+        return
+
+    if not is_chat_allowed(chat.id):
+        await query.answer("Доступ запрещен", show_alert=True)
+        return
+
+    register_runtime_chat(context.application, chat.id)
+
+    page_raw = query.data.replace(FILES_CALLBACK_PREFIX, "", 1)
+    try:
+        page = max(int(page_raw), 1)
+    except ValueError:
+        page = 1
+
+    try:
+        payload = await fetch_server_files_page(page=page, limit=SERVER_FILES_PAGE_SIZE)
+        text, keyboard = format_server_files_page(payload)
+        await query.edit_message_text(
+            text=text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
+        await query.answer()
+    except Exception as exc:
+        logger.exception("Ошибка переключения страницы файлов сервера")
+        await query.answer("Ошибка загрузки страницы", show_alert=True)
+        if query.message is not None:
+            await query.message.reply_text(
+                "🚨 <b>Ошибка загрузки файлов сервера</b>\n"
                 f"<code>{html.escape(str(exc))}</code>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=MENU_KEYBOARD,
@@ -1251,6 +1418,10 @@ async def cmd_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_users_page(update, context, 1)
 
 
+async def cmd_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await send_server_files_page(update, context, 1)
+
+
 async def cmd_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None:
         return
@@ -1320,6 +1491,74 @@ async def cmd_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await send_pretty_message(
             update,
             "🚨 <b>Ошибка удаления пользователя</b>\n"
+            f"<code>{html.escape(str(exc))}</code>",
+        )
+
+
+async def cmd_purge_all_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    if update.message is None or chat is None:
+        return
+
+    if not is_chat_allowed(chat.id):
+        await send_pretty_message(update, "⛔ <b>Доступ запрещен для этого чата</b>")
+        return
+
+    if not is_deploy_chat_allowed(chat.id):
+        await send_pretty_message(update, "⛔ <b>Массовое удаление запрещено для этого чата</b>")
+        return
+
+    register_runtime_chat(context.application, chat.id)
+
+    confirmation = context.args[0].strip().upper() if context.args else ""
+    if confirmation != "CONFIRM":
+        await send_pretty_message(
+            update,
+            "⚠️ <b>Команда опасна</b>\n"
+            "Это удалит всех пользователей и их песни через API.\n\n"
+            "Запуск: <code>/purge_all_users CONFIRM</code>",
+        )
+        return
+
+    await send_pretty_message(
+        update,
+        "🧹 <b>Запускаю массовое удаление через API</b>\n"
+        "Удаляю всех пользователей, их песни и файлы.",
+    )
+
+    try:
+        payload = await purge_all_users_via_api()
+        totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+        failures = payload.get("failures") if isinstance(payload.get("failures"), list) else []
+        failed_preview = ""
+        if failures:
+            preview_lines = []
+            for item in failures[:3]:
+                if not isinstance(item, dict):
+                    continue
+                email = html.escape(str(item.get("email", "-")))
+                reason = html.escape(str(item.get("error", "-")))
+                preview_lines.append(f"• <code>{email}</code>: {reason}")
+            if preview_lines:
+                failed_preview = "\n\nПервые ошибки:\n" + "\n".join(preview_lines)
+
+        await send_pretty_message(
+            update,
+            "✅ <b>Массовое удаление завершено</b>\n"
+            f"Обработано: <code>{html.escape(str(payload.get('processed_users', 0)))}</code>\n"
+            f"Удалено пользователей: <code>{html.escape(str(payload.get('deleted_users', 0)))}</code>\n"
+            f"Ошибок: <code>{html.escape(str(payload.get('failed_users', 0)))}</code>\n"
+            f"Удалено песен: <code>{html.escape(str(totals.get('deleted_songs', 0)))}</code>\n"
+            f"Удалено файлов: <code>{html.escape(str(totals.get('deleted_files', 0)))}</code>\n"
+            f"Осталось пользователей: <code>{html.escape(str(payload.get('remaining_users', 0)))}</code>\n"
+            f"Осталось песен: <code>{html.escape(str(payload.get('remaining_songs', 0)))}</code>"
+            f"{failed_preview}",
+        )
+    except Exception as exc:
+        logger.exception("Ошибка массового удаления пользователей")
+        await send_pretty_message(
+            update,
+            "🚨 <b>Ошибка массового удаления</b>\n"
             f"<code>{html.escape(str(exc))}</code>",
         )
 
@@ -1442,6 +1681,10 @@ async def handle_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if text == MENU_BUTTON_USERS:
         await send_users_page(update, context, 1)
+        return
+
+    if text == MENU_BUTTON_FILES:
+        await send_server_files_page(update, context, 1)
         return
 
     if text == MENU_BUTTON_SNAPSHOT:
@@ -1619,12 +1862,15 @@ def main() -> None:
     app.add_handler(CommandHandler("connections", cmd_connections))
     app.add_handler(CommandHandler("runtime", cmd_runtime))
     app.add_handler(CommandHandler("users", cmd_users))
+    app.add_handler(CommandHandler("files", cmd_files))
     app.add_handler(CommandHandler("user", cmd_user))
     app.add_handler(CommandHandler("delete_user", cmd_delete_user))
+    app.add_handler(CommandHandler("purge_all_users", cmd_purge_all_users))
     app.add_handler(CommandHandler("snapshot", cmd_snapshot))
     app.add_handler(CommandHandler("all", cmd_all))
     app.add_handler(CommandHandler("deploy", cmd_deploy))
     app.add_handler(CallbackQueryHandler(handle_users_page_callback, pattern=r"^users_page:\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_files_page_callback, pattern=r"^files_page:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_user_callback, pattern=r"^user:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_buttons))
 

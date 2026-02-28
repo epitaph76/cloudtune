@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
@@ -64,6 +65,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   );
   final Set<int> _downloadingTrackIds = <int>{};
   final Set<String> _uploadingPaths = <String>{};
+  final Map<String, CancelToken> _uploadCancelTokens = <String, CancelToken>{};
   final Set<String> _syncingLocalPlaylistIds = <String>{};
   final Set<int> _downloadingCloudPlaylistIds = <int>{};
   final Set<int> _deletingCloudPlaylistIds = <int>{};
@@ -132,6 +134,12 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
   @override
   void dispose() {
+    for (final token in _uploadCancelTokens.values) {
+      if (!token.isCancelled) {
+        token.cancel('upload canceled by dispose');
+      }
+    }
+    _uploadCancelTokens.clear();
     _cloudSearchDebounce?.cancel();
     _emailController.dispose();
     _usernameController.dispose();
@@ -1095,6 +1103,23 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     return 'Upload failed';
   }
 
+  bool _isUploadCanceled(Map<String, dynamic> result) {
+    if (result['canceled'] == true) return true;
+    final message = _uploadFailureReason(result['message']).toLowerCase();
+    return message.contains('cancel');
+  }
+
+  void _cancelTrackUploadByPath(String path, {bool showMessage = true}) {
+    final token = _uploadCancelTokens[path];
+    if (token == null || token.isCancelled) return;
+    token.cancel('Upload canceled by user');
+    if (showMessage && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload canceled: ${p.basename(path)}')),
+      );
+    }
+  }
+
   String _unsupportedUploadMessage(File file) {
     final extension = p.extension(file.path).toLowerCase();
     final extensionLabel = extension.isEmpty ? 'unknown' : extension;
@@ -1349,6 +1374,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       return (success: false, failureReason: 'Upload already in progress');
     }
     setState(() => _uploadingPaths.add(file.path));
+    final cancelToken = CancelToken();
+    _uploadCancelTokens[file.path] = cancelToken;
 
     var uploaded = false;
     String? failureReason;
@@ -1366,7 +1393,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         return (success: true, failureReason: null);
       }
 
-      final result = await _apiService.uploadFile(file);
+      final result = await _apiService.uploadFile(
+        file,
+        cancelToken: cancelToken,
+      );
       if (result['success'] == true) {
         uploaded = true;
         if (refreshCloudData) {
@@ -1380,6 +1410,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
             SnackBar(content: Text('Uploaded: ${p.basename(file.path)}')),
           );
         }
+      } else if (_isUploadCanceled(result)) {
+        failureReason = 'Upload canceled';
       } else {
         failureReason = _uploadFailureReason(result['message']);
         if (!silent && mounted) {
@@ -1389,6 +1421,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         }
       }
     } catch (error) {
+      if (cancelToken.isCancelled) {
+        failureReason = 'Upload canceled';
+        return (success: false, failureReason: failureReason);
+      }
       failureReason = _uploadFailureReason(error.toString());
       if (!silent && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1396,6 +1432,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         );
       }
     } finally {
+      _uploadCancelTokens.remove(file.path);
       if (mounted) {
         setState(() => _uploadingPaths.remove(file.path));
       }
@@ -3443,16 +3480,23 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                             menuItems: [
                                               _TrackMenuAction(
                                                 label: uploading
-                                                    ? 'Uploading...'
+                                                    ? 'Stop upload'
                                                     : canUploadTrack
                                                     ? t('upload')
                                                     : 'Unsupported format',
-                                                icon:
-                                                    Icons.cloud_upload_rounded,
+                                                icon: uploading
+                                                    ? Icons.stop_circle_rounded
+                                                    : Icons
+                                                          .cloud_upload_rounded,
                                                 enabled:
-                                                    !uploading &&
-                                                    canUploadTrack,
+                                                    uploading || canUploadTrack,
                                                 onTap: () async {
+                                                  if (uploading) {
+                                                    _cancelTrackUploadByPath(
+                                                      file.path,
+                                                    );
+                                                    return;
+                                                  }
                                                   if (!canUploadTrack) {
                                                     if (!mounted) return;
                                                     ScaffoldMessenger.of(

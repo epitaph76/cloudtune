@@ -3,9 +3,12 @@ package handlers
 import (
 	"cloudtune/internal/database"
 	"cloudtune/internal/monitoring"
+	"io/fs"
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -158,6 +161,98 @@ func MonitorUsersList(c *gin.Context) {
 		"total_users": totalUsers,
 		"total_pages": totalPages,
 		"users":       users,
+	})
+}
+
+type monitorFileItem struct {
+	Name         string    `json:"name"`
+	RelativePath string    `json:"relative_path"`
+	SizeBytes    int64     `json:"size_bytes"`
+	ModifiedAt   time.Time `json:"modified_at"`
+}
+
+func MonitorFilesList(c *gin.Context) {
+	if !checkMonitoringToken(c) {
+		return
+	}
+
+	page := parsePositiveInt(c.Query("page"), 1)
+	limit := parsePositiveInt(c.Query("limit"), 10)
+	if limit > 50 {
+		limit = 50
+	}
+
+	rootPath := filepath.Clean(resolveUploadsBasePath())
+	absRootPath, err := filepath.Abs(rootPath)
+	if err == nil {
+		rootPath = absRootPath
+	}
+
+	files := make([]monitorFileItem, 0)
+	_ = filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil || d.IsDir() {
+			return nil
+		}
+
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			return nil
+		}
+
+		relativePath, relErr := filepath.Rel(rootPath, path)
+		if relErr != nil {
+			relativePath = d.Name()
+		}
+
+		files = append(files, monitorFileItem{
+			Name:         d.Name(),
+			RelativePath: filepath.ToSlash(relativePath),
+			SizeBytes:    info.Size(),
+			ModifiedAt:   info.ModTime().UTC(),
+		})
+		return nil
+	})
+
+	sort.Slice(files, func(left, right int) bool {
+		if files[left].SizeBytes == files[right].SizeBytes {
+			if files[left].ModifiedAt.Equal(files[right].ModifiedAt) {
+				return files[left].RelativePath < files[right].RelativePath
+			}
+			return files[left].ModifiedAt.After(files[right].ModifiedAt)
+		}
+		return files[left].SizeBytes > files[right].SizeBytes
+	})
+
+	totalFiles := len(files)
+	totalPages := 0
+	if totalFiles > 0 {
+		totalPages = int(math.Ceil(float64(totalFiles) / float64(limit)))
+	}
+
+	if totalPages > 0 && page > totalPages {
+		page = totalPages
+	}
+	offset := 0
+	if totalPages > 0 {
+		offset = (page - 1) * limit
+	}
+
+	pagedFiles := make([]monitorFileItem, 0)
+	if totalFiles > 0 && offset < totalFiles {
+		end := offset + limit
+		if end > totalFiles {
+			end = totalFiles
+		}
+		pagedFiles = files[offset:end]
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"page":        page,
+		"limit":       limit,
+		"total_files": totalFiles,
+		"total_pages": totalPages,
+		"root_path":   rootPath,
+		"files":       pagedFiles,
 	})
 }
 
