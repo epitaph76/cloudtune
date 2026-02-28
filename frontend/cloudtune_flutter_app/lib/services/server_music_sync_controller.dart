@@ -45,6 +45,7 @@ class ServerMusicSyncController {
 
     final uploadedSongIDsByPath = <String, int>{};
     final failedUploadsByPath = <String, String>{};
+    var processedTracks = completedTracks;
     var nextIndex = 0;
     final workerCount = math.max(1, math.min(_parallelism, entries.length));
 
@@ -83,9 +84,10 @@ class ServerMusicSyncController {
             );
           }
         }
+        processedTracks += 1;
 
         if (onProgress != null) {
-          await onProgress(completedTracks, totalTracks);
+          await onProgress(processedTracks, totalTracks);
         }
       }
     }

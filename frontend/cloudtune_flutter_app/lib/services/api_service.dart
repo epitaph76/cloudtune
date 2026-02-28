@@ -15,14 +15,12 @@ class ApiService {
 
   final BackendClient _backendClient;
   final SessionStorageService _sessionStorage;
-  static const int _uploadMaxAttempts = 3;
+  static const int _uploadMaxAttempts = 2;
   static const List<Duration> _uploadRetryDelays = <Duration>[
     Duration(seconds: 1),
     Duration(seconds: 2),
-    Duration(seconds: 4),
   ];
-  static const Duration _uploadSendTimeout = Duration(minutes: 2);
-  static const Duration _uploadReceiveTimeout = Duration(minutes: 2);
+  static const Duration _uploadReceiveTimeout = Duration(minutes: 5);
 
   Future<Response<T>> _requestWithFallback<T>({
     required String method,
@@ -117,11 +115,11 @@ class ApiService {
 
     switch (error.type) {
       case DioExceptionType.connectionTimeout:
-      case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
       case DioExceptionType.connectionError:
       case DioExceptionType.unknown:
         return true;
+      case DioExceptionType.sendTimeout:
       case DioExceptionType.badCertificate:
       case DioExceptionType.badResponse:
       case DioExceptionType.cancel:
@@ -167,7 +165,6 @@ class ApiService {
           'file': await MultipartFile.fromFile(file.path, filename: fileName),
         });
         final uploadOptions = options.copyWith(
-          sendTimeout: _uploadSendTimeout,
           receiveTimeout: _uploadReceiveTimeout,
         );
         final response = await _requestWithFallback(

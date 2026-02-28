@@ -14,6 +14,13 @@ class CloudMusicProvider with ChangeNotifier {
 
   final ApiService _apiService;
 
+  int? _parseInt(Object? raw) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw.trim());
+    return null;
+  }
+
   List<Track> _tracks = <Track>[];
   List<Playlist> _playlists = <Playlist>[];
   final Map<int, List<Track>> _playlistTracks = <int, List<Track>>{};
@@ -28,6 +35,7 @@ class CloudMusicProvider with ChangeNotifier {
   bool _hasMoreTracks = true;
   bool _hasMorePlaylists = true;
   int _tracksOffset = 0;
+  int _tracksTotal = 0;
   int _playlistsOffset = 0;
   String _tracksSearchQuery = '';
   String _playlistsSearchQuery = '';
@@ -41,6 +49,7 @@ class CloudMusicProvider with ChangeNotifier {
   bool get isPlaylistsLoading => _isPlaylistsLoading;
   bool get hasMoreTracks => _hasMoreTracks;
   bool get hasMorePlaylists => _hasMorePlaylists;
+  int get tracksTotal => _tracksTotal;
   String get tracksSearchQuery => _tracksSearchQuery;
   String get playlistsSearchQuery => _playlistsSearchQuery;
   int get usedBytes => _usedBytes;
@@ -86,6 +95,7 @@ class CloudMusicProvider with ChangeNotifier {
     if (reset) {
       _tracks = <Track>[];
       _tracksOffset = 0;
+      _tracksTotal = 0;
       _hasMoreTracks = true;
     }
 
@@ -119,6 +129,7 @@ class CloudMusicProvider with ChangeNotifier {
         }
       }
 
+      _tracksTotal = _parseInt(result['total']) ?? _tracks.length;
       _tracksOffset = (_tracksOffset + items.length).clamp(0, 1 << 30);
       _hasMoreTracks = result['has_more'] == true;
     } catch (e) {

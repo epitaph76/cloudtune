@@ -56,7 +56,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     with AutomaticKeepAliveClientMixin {
   static const double _storageHeaderControlWidth = 156;
   static const double _storageHeaderControlHeight = 46;
-  static const int _cloudUploadParallelism = 2;
+  static const int _cloudUploadParallelism = 3;
 
   final ApiService _apiService = ApiService();
   final ServerMusicSyncController _syncController = ServerMusicSyncController(
@@ -2112,6 +2112,56 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         }
       }
 
+      if (failedUploadsByPath.isNotEmpty && missingFiles.isNotEmpty) {
+        await Future<void>.delayed(const Duration(seconds: 12));
+        await cloudMusicProvider.fetchUserLibrary(reset: true, search: '');
+        while (cloudMusicProvider.hasMoreTracks) {
+          await cloudMusicProvider.loadMoreUserLibrary();
+        }
+        cloudSongIdByName.clear();
+        cloudSongIdByNameAndSize.clear();
+        seedCloudLookupMaps(cloudMusicProvider.tracks);
+
+        var resolvedOnDelayedRecheck = 0;
+        for (final file in missingFiles) {
+          if (uploadedSongIDsByPath.containsKey(file.path)) continue;
+          if (!failedUploadsByPath.containsKey(file.path)) continue;
+
+          final lookup = localLookup(file);
+          final resolvedSongID = _resolveCloudSongIdForLocalTrack(
+            trackName: lookup.trackName,
+            fileSize: lookup.fileSize,
+            cloudSongIdByNameAndSize: cloudSongIdByNameAndSize,
+            cloudSongIdByName: cloudSongIdByName,
+          );
+          if (resolvedSongID == null) continue;
+
+          uploadedSongIDsByPath[file.path] = resolvedSongID;
+          desiredSongIDsInOrder.add(resolvedSongID);
+          failedUploadsByPath.remove(file.path);
+          resolvedOnDelayedRecheck += 1;
+        }
+
+        if (resolvedOnDelayedRecheck > 0) {
+          completedTracks += resolvedOnDelayedRecheck;
+          if (mounted) {
+            setState(() {
+              _playlistProgressTracker.setProgress(
+                syncKey,
+                uploaded: completedTracks,
+                total: totalTracks,
+              );
+            });
+          }
+          await UploadNotificationService.showPlaylistUploadProgress(
+            syncKey: syncKey,
+            playlistName: playlistName,
+            uploadedTracks: completedTracks,
+            totalTracks: totalTracks,
+          );
+        }
+      }
+
       if (desiredSongIDsInOrder.isEmpty) {
         if (!mounted) return;
         if (!silent) {
@@ -2914,6 +2964,15 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                   .toList()
             : const <Track>[];
         final visibleCloudTracks = _sortCloudTracks(cloudTrackSource);
+        final selectedCloudPlaylist = selectedCloudPlaylistId == null
+            ? null
+            : cloudPlaylists.cast<Playlist?>().firstWhere(
+                (item) => item?.id == selectedCloudPlaylistId,
+                orElse: () => null,
+              );
+        final selectedCloudTracksTotal = selectedCloudPlaylistId == null
+            ? cloudMusicProvider.tracksTotal
+            : (selectedCloudPlaylist?.songCount ?? visibleCloudTracks.length);
         final isCloudPlaylistLoading =
             _storageType == _StorageType.cloud &&
             selectedCloudPlaylistId != null &&
@@ -3511,7 +3570,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                               children: [
                                 Expanded(
                                   child: Text(
-                                    '${cloudPlaylists.length + 1} ${t('playlists')} | ${visibleCloudTracks.length} ${t('tracks')}',
+                                    '${cloudPlaylists.length + 1} ${t('playlists')} | $selectedCloudTracksTotal ${t('tracks')}',
                                     style: textTheme.bodyMedium?.copyWith(
                                       color: colorScheme.onSurface.withValues(
                                         alpha: 0.65,
@@ -3573,7 +3632,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                   if (index == 0) {
                                     return _PlaylistCard(
                                       playlistName: t('all_songs'),
-                                      trackCount: cloudTracks.length,
+                                      trackCount:
+                                          cloudMusicProvider.tracksTotal,
                                       selected:
                                           _selectedCloudPlaylistId == null,
                                       onTap: () => _selectCloudPlaylist(null),
