@@ -247,6 +247,37 @@
       white-space: pre-wrap;
     }
 
+    .company-grid {
+      display: grid;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .company-card {
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(124, 184, 153, 0.28);
+      background: rgba(24, 38, 32, 0.72);
+      padding: 10px 11px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .company-card h4 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 13px;
+      letter-spacing: 0.01em;
+      color: #dff3e8;
+    }
+
+    .company-card p {
+      margin: 0;
+      color: #d2e8dc;
+      line-height: 1.52;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+
     .error-box {
       padding: 16px;
       border-radius: var(--radius-md);
@@ -385,6 +416,104 @@
       return cases;
     }
 
+    function getCompanyName(line) {
+      const trimmed = line.trim();
+      if (/^Hetzner\b/i.test(trimmed)) {
+        return "Hetzner";
+      }
+      if (/^(в\s+)?AWS\b/i.test(trimmed)) {
+        return "AWS";
+      }
+      if (/^По опыту vdska:?$/i.test(trimmed) || /^vdska\b/i.test(trimmed)) {
+        return "VDSka";
+      }
+      return null;
+    }
+
+    function shouldSplitCompanyBlocks(caseTitle, section) {
+      if (!/^Кейс\s+1$/i.test(caseTitle)) {
+        return false;
+      }
+      const lines = section.lines || [];
+      const hasIntro = lines.some((line) =>
+        /Посмотрел как это реализовано у других компаний/i.test(line.trim())
+      );
+      const companies = lines.filter((line) => getCompanyName(line)).length;
+      return hasIntro && companies >= 2;
+    }
+
+    function renderCompanyBlocks(block, lines) {
+      const introLines = [];
+      const trailingLines = [];
+      const companies = [];
+      let currentCompany = null;
+      let seenCompany = false;
+
+      for (const rawLine of lines) {
+        const line = rawLine;
+        const companyName = getCompanyName(line);
+        if (companyName) {
+          seenCompany = true;
+          if (currentCompany) {
+            companies.push(currentCompany);
+          }
+          currentCompany = { name: companyName, lines: [line] };
+          continue;
+        }
+
+        if (!seenCompany) {
+          introLines.push(line);
+          continue;
+        }
+
+        if (currentCompany) {
+          currentCompany.lines.push(line);
+        } else {
+          trailingLines.push(line);
+        }
+      }
+
+      if (currentCompany) {
+        companies.push(currentCompany);
+      }
+
+      for (const line of introLines) {
+        const p = document.createElement("p");
+        p.textContent = line;
+        block.appendChild(p);
+      }
+
+      if (companies.length > 0) {
+        const companyGrid = document.createElement("div");
+        companyGrid.className = "company-grid";
+
+        for (const company of companies) {
+          const companyCard = document.createElement("article");
+          companyCard.className = "company-card";
+
+          const heading = document.createElement("h4");
+          heading.textContent = company.name;
+          companyCard.appendChild(heading);
+
+          for (const line of company.lines) {
+            const p = document.createElement("p");
+            p.textContent = line;
+            companyCard.appendChild(p);
+          }
+
+          companyGrid.appendChild(companyCard);
+        }
+
+        block.appendChild(companyGrid);
+      }
+
+      for (const line of trailingLines) {
+        const p = document.createElement("p");
+        p.textContent = line;
+        block.appendChild(p);
+      }
+    }
+
     function renderCases(cases) {
       const nav = document.getElementById("case-nav");
       const root = document.getElementById("cases-root");
@@ -438,10 +567,14 @@
           h3.textContent = section.title;
           block.appendChild(h3);
 
-          for (const line of section.lines) {
-            const p = document.createElement("p");
-            p.textContent = line;
-            block.appendChild(p);
+          if (shouldSplitCompanyBlocks(item.title, section)) {
+            renderCompanyBlocks(block, section.lines);
+          } else {
+            for (const line of section.lines) {
+              const p = document.createElement("p");
+              p.textContent = line;
+              block.appendChild(p);
+            }
           }
 
           sections.appendChild(block);
