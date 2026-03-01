@@ -287,6 +287,42 @@
       font-size: 14px;
     }
 
+    .to-top {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      width: 48px;
+      height: 48px;
+      border: 1px solid rgba(124, 184, 153, 0.5);
+      border-radius: 999px;
+      background: linear-gradient(135deg, rgba(124, 184, 153, 0.95), rgba(92, 163, 130, 0.95));
+      color: #0d1a14;
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1;
+      cursor: pointer;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transform: translateY(10px);
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+      z-index: 20;
+    }
+
+    .to-top:hover {
+      box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+      transform: translateY(6px);
+    }
+
+    .to-top.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
     footer {
       text-align: center;
       color: #9fb9aa;
@@ -332,6 +368,13 @@
       .btn {
         width: 100%;
       }
+
+      .to-top {
+        right: 12px;
+        bottom: 12px;
+        width: 44px;
+        height: 44px;
+      }
     }
   </style>
 </head>
@@ -357,9 +400,11 @@
 
     <footer>Илья Белов • Кейсы для резюме • обновлено 01.03.2026</footer>
   </main>
+  <button class="to-top" id="to-top" type="button" aria-label="Наверх" title="Наверх">↑</button>
 
   <script>
     const CASES_FILE = "./case-answers.txt";
+    const TO_TOP_VISIBLE_OFFSET = 380;
 
     function escapeId(value) {
       return value.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, "-").replace(/^-+|-+$/g, "");
@@ -599,6 +644,30 @@
       window.scrollTo({ top, behavior });
     }
 
+    function updateToTopVisibility() {
+      const button = document.getElementById("to-top");
+      if (!button) {
+        return;
+      }
+      if (window.scrollY > TO_TOP_VISIBLE_OFFSET) {
+        button.classList.add("is-visible");
+      } else {
+        button.classList.remove("is-visible");
+      }
+    }
+
+    function setupToTopButton() {
+      const button = document.getElementById("to-top");
+      if (!button) {
+        return;
+      }
+      button.addEventListener("click", () => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+      window.addEventListener("scroll", updateToTopVisibility, { passive: true });
+      updateToTopVisibility();
+    }
+
     async function init() {
       const root = document.getElementById("cases-root");
       try {
@@ -615,6 +684,7 @@
       }
     }
 
+    setupToTopButton();
     init();
   </script>
 </body>
