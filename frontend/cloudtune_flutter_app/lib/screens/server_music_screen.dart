@@ -95,6 +95,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   _CloudTrackSort _cloudTrackSort = _CloudTrackSort.uploadDate;
   String _cloudTracksSearchQuery = '';
   Timer? _cloudSearchDebounce;
+  bool _didInitialCloudRefresh = false;
   final Set<String> _selectedLocalTrackPaths = <String>{};
   String? _lastLocalTracksAutoScrollKey;
   static const double _storageSwipeVelocityThreshold = 280;
@@ -133,7 +134,6 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
           syncNav: false,
         );
       }
-      _refreshCloudData();
     });
   }
 
@@ -163,6 +163,12 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
   @override
   bool get wantKeepAlive => true;
+
+  Future<void> _refreshCloudDataOnFirstOpen() async {
+    if (_didInitialCloudRefresh) return;
+    _didInitialCloudRefresh = true;
+    await _refreshCloudData();
+  }
 
   Future<void> _refreshCloudData() async {
     if (!mounted) return;
@@ -1530,6 +1536,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
     if (ok) {
       _passwordController.clear();
+      _didInitialCloudRefresh = true;
       await _refreshCloudData();
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -1553,6 +1560,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
     if (ok) {
       _passwordController.clear();
+      _didInitialCloudRefresh = true;
       await _refreshCloudData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2663,7 +2671,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     }
 
     void throwIfSyncCanceled() {
-      if (strictSync && _isCloudPlaylistSyncCancellationRequested(playlist.id)) {
+      if (strictSync &&
+          _isCloudPlaylistSyncCancellationRequested(playlist.id)) {
         throw StateError('Cloud playlist sync canceled');
       }
     }
@@ -2708,7 +2717,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
             }
           } else {
             final normalized = _normalizePlaylistName(playlistDisplayName);
-            final existing = localMusicProvider.playlists.cast<LocalPlaylist?>()
+            final existing = localMusicProvider.playlists
+                .cast<LocalPlaylist?>()
                 .firstWhere(
                   (item) =>
                       item != null &&
@@ -2724,7 +2734,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
           }
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Playlist "$playlistDisplayName" synced (0 tracks)')),
+            SnackBar(
+              content: Text(
+                'Playlist "$playlistDisplayName" synced (0 tracks)',
+              ),
+            ),
           );
           return;
         }
@@ -2804,6 +2818,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         localPlaylistId = await localMusicProvider.upsertPlaylistByName(
           name: playlistDisplayName,
           trackPaths: downloadedPaths,
+          replaceExisting: strictSync,
         );
       }
 
@@ -2974,7 +2989,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
     final isCloudAuthed = context.read<AuthProvider>().currentUser != null;
     if (nextType == _StorageType.cloud && isCloudAuthed) {
-      await _refreshCloudData();
+      await _refreshCloudDataOnFirstOpen();
     }
   }
 
@@ -4091,7 +4106,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                         item.id,
                                       );
                                   final syncingPlaylist =
-                                      _syncingCloudPlaylistIds.contains(item.id);
+                                      _syncingCloudPlaylistIds.contains(
+                                        item.id,
+                                      );
                                   final deletingPlaylist =
                                       _deletingCloudPlaylistIds.contains(
                                         item.id,
@@ -4101,10 +4118,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                       item,
                                     ),
                                     trackCount: item.songCount ?? 0,
-                                    trackCounterText: _cloudPlaylistTrackCounterLabel(
-                                      playlistId: item.id,
-                                      trackCount: item.songCount ?? 0,
-                                    ),
+                                    trackCounterText:
+                                        _cloudPlaylistTrackCounterLabel(
+                                          playlistId: item.id,
+                                          trackCount: item.songCount ?? 0,
+                                        ),
                                     isTransferring:
                                         downloadingPlaylist || syncingPlaylist,
                                     selected:

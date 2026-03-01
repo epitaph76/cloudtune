@@ -171,6 +171,7 @@ class LocalMusicProvider with ChangeNotifier {
   Future<String?> upsertPlaylistByName({
     required String name,
     required Set<String> trackPaths,
+    bool replaceExisting = true,
   }) async {
     final trimmedName = name.trim();
     final cleanedPaths = _validTrackPaths(trackPaths);
@@ -189,9 +190,13 @@ class LocalMusicProvider with ChangeNotifier {
       return createPlaylist(name: trimmedName, trackPaths: cleanedPaths);
     }
 
-    existing.trackPaths
-      ..clear()
-      ..addAll(cleanedPaths);
+    if (replaceExisting) {
+      existing.trackPaths
+        ..clear()
+        ..addAll(cleanedPaths);
+    } else {
+      existing.trackPaths.addAll(cleanedPaths);
+    }
     await _savePlaylists();
     notifyListeners();
     return existing.id;
