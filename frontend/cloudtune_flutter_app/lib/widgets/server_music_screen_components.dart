@@ -91,6 +91,7 @@ class _PlaylistCard extends StatefulWidget {
   const _PlaylistCard({
     required this.playlistName,
     required this.trackCount,
+    this.trackCounterText,
     this.selected = false,
     this.isTransferring = false,
     this.onTap,
@@ -99,6 +100,7 @@ class _PlaylistCard extends StatefulWidget {
 
   final String playlistName;
   final int trackCount;
+  final String? trackCounterText;
   final bool selected;
   final bool isTransferring;
   final VoidCallback? onTap;
@@ -180,7 +182,8 @@ class _PlaylistCardState extends State<_PlaylistCard> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${widget.trackCount} ${AppLocalizations.text(context, 'tracks')}',
+                    widget.trackCounterText ??
+                        '${widget.trackCount} ${AppLocalizations.text(context, 'tracks')}',
                     style: textTheme.labelMedium?.copyWith(
                       color: colorScheme.onSurface.withValues(alpha: 0.65),
                     ),

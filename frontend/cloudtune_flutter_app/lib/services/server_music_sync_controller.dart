@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:dio/dio.dart';
+
 import 'api_service.dart';
 
 class UploadBatchResult {
@@ -32,6 +34,9 @@ class ServerMusicSyncController {
     required String Function(Object? rawReason) uploadFailureReason,
     required int? Function(Map<String, dynamic> uploadResult)
     extractSongIdFromUploadResult,
+    required bool Function() isCancellationRequested,
+    required CancelToken Function(File file) createCancelToken,
+    required void Function(File file) clearCancelToken,
     Future<void> Function(int completed, int total)? onProgress,
   }) async {
     final entries = missingFiles.toList(growable: false);
@@ -51,17 +56,28 @@ class ServerMusicSyncController {
 
     Future<void> worker() async {
       while (true) {
+        if (isCancellationRequested()) {
+          return;
+        }
         if (nextIndex >= entries.length) {
           return;
         }
         final file = entries[nextIndex];
         nextIndex += 1;
 
+        if (isCancellationRequested()) {
+          return;
+        }
+
         if (!isUploadableAudioFile(file)) {
           failedUploadsByPath[file.path] = unsupportedUploadMessage(file);
         } else {
+          final cancelToken = createCancelToken(file);
           try {
-            final uploadResult = await _apiService.uploadFile(file);
+            final uploadResult = await _apiService.uploadFile(
+              file,
+              cancelToken: cancelToken,
+            );
             if (uploadResult['success'] == true) {
               final uploadedSongId = extractSongIdFromUploadResult(
                 uploadResult,
@@ -82,6 +98,8 @@ class ServerMusicSyncController {
             failedUploadsByPath[file.path] = uploadFailureReason(
               error.toString(),
             );
+          } finally {
+            clearCancelToken(file);
           }
         }
         processedTracks += 1;

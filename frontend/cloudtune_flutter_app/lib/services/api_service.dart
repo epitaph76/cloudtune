@@ -549,9 +549,14 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> downloadFile(int fileId, String savePath) async {
+  Future<Map<String, dynamic>> downloadFile(
+    int fileId,
+    String savePath, {
+    CancelToken? cancelToken,
+  }) async {
     final file = File(savePath);
     RandomAccessFile? randomAccessFile;
+    var canceled = false;
 
     try {
       final options = await _getAuthOptions();
@@ -566,33 +571,54 @@ class ApiService {
         method: 'GET',
         path: '/api/songs/download/$fileId',
         options: options.copyWith(responseType: ResponseType.stream),
+        cancelToken: cancelToken,
       );
 
       if (response.statusCode != 200 || response.data == null) {
         return {
           'success': false,
-          'message': 'Ошибка при скачивании файла: ${response.statusCode}',
+          'message': 'Download failed: ${response.statusCode}',
         };
       }
 
       await for (final chunk in response.data!.stream) {
+        if (cancelToken?.isCancelled == true) {
+          canceled = true;
+          return {
+            'success': false,
+            'canceled': true,
+            'message': 'Download canceled',
+          };
+        }
         await randomAccessFile.writeFrom(chunk);
       }
 
       return {'success': true, 'filePath': file.path};
     } catch (error) {
+      if (error is DioException && error.type == DioExceptionType.cancel) {
+        canceled = true;
+        return {
+          'success': false,
+          'canceled': true,
+          'message': 'Download canceled',
+        };
+      }
       return {
         'success': false,
         'message': _backendClient.describeError(
           error,
-          fallbackMessage: 'Ошибка при скачивании файла',
+          fallbackMessage: 'Download failed',
         ),
       };
     } finally {
       await randomAccessFile?.close();
+      if (canceled && await file.exists()) {
+        try {
+          await file.delete();
+        } catch (_) {}
+      }
     }
   }
-
   Future<Map<String, dynamic>> getStorageUsage() async {
     try {
       final options = await _getAuthOptions();

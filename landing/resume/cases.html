@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Илья Белов - Ответы на кейсы</title>
+  <meta
+    name="description"
+    content="Ответы на кейсы Ильи Белова для резюме: решения продуктовых и биллинговых задач."
+  />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;700&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --bg-0: #0f1a15;
+      --bg-1: #14211b;
+      --bg-2: #1b2b23;
+      --text: #e8f1ec;
+      --muted: #a8c4b5;
+      --card: rgba(26, 38, 32, 0.86);
+      --line: rgba(124, 184, 153, 0.3);
+      --primary: #7cb899;
+      --primary-2: #5ca382;
+      --radius-xl: 26px;
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --shadow: 0 24px 56px rgba(0, 0, 0, 0.35);
+      --mono: "Unbounded", "Manrope", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(880px 540px at 10% -8%, rgba(124, 184, 153, 0.16), transparent 58%),
+        radial-gradient(720px 520px at 96% 0%, rgba(106, 170, 224, 0.13), transparent 56%),
+        linear-gradient(160deg, var(--bg-0), var(--bg-1) 52%, var(--bg-2));
+      padding: 26px 16px 34px;
+    }
+
+    .page {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+
+    .card {
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--line);
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .hero {
+      padding: clamp(22px, 3.6vw, 34px);
+      display: grid;
+      gap: 14px;
+    }
+
+    .badge {
+      margin: 0;
+      width: fit-content;
+      border-radius: 999px;
+      border: 1px solid rgba(124, 184, 153, 0.55);
+      background: rgba(124, 184, 153, 0.16);
+      color: #d4ebdf;
+      padding: 7px 12px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: clamp(30px, 5vw, 50px);
+      line-height: 1.08;
+      letter-spacing: -0.01em;
+      max-width: 14ch;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.62;
+      font-size: 17px;
+      max-width: 82ch;
+    }
+
+    .hint {
+      font-size: 14px;
+      color: #c4ddcf;
+      border-left: 3px solid rgba(124, 184, 153, 0.5);
+      padding-left: 10px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .btn {
+      text-decoration: none;
+      border-radius: 14px;
+      border: 1px solid transparent;
+      padding: 11px 16px;
+      font-weight: 700;
+      font-size: 15px;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+    }
+
+    .btn-primary {
+      color: #0d1a14;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      box-shadow: 0 10px 28px rgba(92, 163, 130, 0.35);
+    }
+
+    .btn-secondary {
+      color: #d4ebdf;
+      border-color: rgba(124, 184, 153, 0.4);
+      background: rgba(20, 34, 27, 0.56);
+    }
+
+    .case-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip-link {
+      color: #d8ece2;
+      text-decoration: none;
+      border-radius: 999px;
+      border: 1px solid rgba(124, 184, 153, 0.34);
+      background: rgba(23, 39, 31, 0.62);
+      padding: 8px 12px;
+      font-size: 12px;
+      font-family: var(--mono);
+      transition: background 0.18s ease, transform 0.18s ease;
+    }
+
+    .chip-link:hover {
+      background: rgba(35, 56, 46, 0.76);
+      transform: translateY(-1px);
+    }
+
+    .case-grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .case {
+      padding: 20px;
+      border-radius: var(--radius-xl);
+      border: 1px solid rgba(124, 184, 153, 0.28);
+      background: rgba(23, 35, 30, 0.78);
+      display: grid;
+      gap: 14px;
+    }
+
+    .case-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .case h2 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 24px;
+      letter-spacing: -0.01em;
+    }
+
+    .count {
+      font-size: 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(124, 184, 153, 0.34);
+      background: rgba(30, 47, 39, 0.66);
+      padding: 6px 10px;
+      color: #cfe7db;
+      font-family: var(--mono);
+    }
+
+    .sections {
+      display: grid;
+      gap: 10px;
+    }
+
+    .block {
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(124, 184, 153, 0.24);
+      background: rgba(28, 45, 37, 0.64);
+      padding: 12px 13px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .level-2 {
+      border-left: 3px solid rgba(124, 184, 153, 0.48);
+    }
+
+    .level-3,
+    .level-4 {
+      border-left: 3px solid rgba(106, 170, 224, 0.52);
+    }
+
+    .block h3 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 15px;
+      line-height: 1.42;
+      color: #e7f4ee;
+    }
+
+    .block p {
+      margin: 0;
+      color: #d2e8dc;
+      line-height: 1.56;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+
+    .error-box {
+      padding: 16px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(210, 95, 95, 0.55);
+      background: rgba(66, 26, 26, 0.46);
+      color: #f4d4d4;
+      font-size: 14px;
+    }
+
+    footer {
+      text-align: center;
+      color: #9fb9aa;
+      font-size: 13px;
+      padding-top: 4px;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(14px);
+      animation: reveal 0.62s cubic-bezier(0.22, 0.65, 0.25, 1) forwards;
+    }
+
+    .delay-1 { animation-delay: 0.08s; }
+
+    @keyframes reveal {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 900px) {
+      .hero p {
+        font-size: 16px;
+      }
+    }
+
+    @media (max-width: 620px) {
+      body {
+        padding: 14px 10px 24px;
+      }
+
+      .hero,
+      .case {
+        padding: 17px;
+      }
+
+      .actions {
+        width: 100%;
+      }
+
+      .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="card hero reveal">
+      <p class="badge">Resume • Кейсы</p>
+      <h1>Ответы на кейсы</h1>
+      <p>
+        Здесь собраны ответы на кейсы для резюме. Текст взят из исходного документа и отображается в
+        отдельных блоках, чтобы в длинных ответах было проще ориентироваться.
+      </p>
+      <div class="actions">
+        <a class="btn btn-primary" href="./index.html">К резюме</a>
+        <a class="btn btn-secondary" href="https://github.com/epitaph76" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a class="btn btn-secondary" href="https://api-mp3-player.ru" target="_blank" rel="noopener noreferrer">Основной сайт проекта</a>
+      </div>
+      <p class="hint">Исходный текст ответов не редактировался.</p>
+      <div class="case-nav" id="case-nav"></div>
+    </header>
+
+    <section class="case-grid reveal delay-1" id="cases-root">
+      <article class="error-box">Загрузка кейсов...</article>
+    </section>
+
+    <footer>Илья Белов • Кейсы для резюме • обновлено 01.03.2026</footer>
+  </main>
+
+  <script>
+    const CASES_FILE = "./case-answers.txt";
+
+    function escapeId(value) {
+      return value.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, "-").replace(/^-+|-+$/g, "");
+    }
+
+    function getSectionLevel(trimmedLine) {
+      if (/^Итог$/i.test(trimmedLine)) {
+        return 1;
+      }
+      if (/^P\d\b/i.test(trimmedLine)) {
+        return 2;
+      }
+      const match = trimmedLine.match(/^(\d+(?:\.\d+)*)\.\s+/);
+      if (!match) {
+        return 0;
+      }
+      return Math.min(match[1].split(".").length, 4);
+    }
+
+    function parseCases(rawText) {
+      const lines = rawText.split(/\r?\n/).filter((line) => line.trim() !== "");
+      const cases = [];
+      let currentCase = null;
+      let currentSection = null;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (/^Кейс\s+\d+$/i.test(trimmed)) {
+          currentCase = { title: trimmed, sections: [] };
+          cases.push(currentCase);
+          currentSection = null;
+          continue;
+        }
+
+        if (!currentCase) {
+          continue;
+        }
+
+        const level = getSectionLevel(trimmed);
+        if (level > 0) {
+          currentSection = { title: trimmed, level, lines: [] };
+          currentCase.sections.push(currentSection);
+          continue;
+        }
+
+        if (!currentSection) {
+          currentSection = { title: "Ответ", level: 1, lines: [] };
+          currentCase.sections.push(currentSection);
+        }
+
+        currentSection.lines.push(line);
+      }
+
+      return cases;
+    }
+
+    function renderCases(cases) {
+      const nav = document.getElementById("case-nav");
+      const root = document.getElementById("cases-root");
+      nav.innerHTML = "";
+      root.innerHTML = "";
+
+      for (const item of cases) {
+        const caseId = escapeId(item.title);
+        const chip = document.createElement("a");
+        chip.className = "chip-link";
+        chip.href = "#" + caseId;
+        chip.textContent = item.title;
+        nav.appendChild(chip);
+
+        const article = document.createElement("article");
+        article.className = "card case";
+        article.id = caseId;
+
+        const head = document.createElement("div");
+        head.className = "case-head";
+
+        const h2 = document.createElement("h2");
+        h2.textContent = item.title;
+        head.appendChild(h2);
+
+        const count = document.createElement("span");
+        count.className = "count";
+        count.textContent = `Блоков: ${item.sections.length}`;
+        head.appendChild(count);
+
+        article.appendChild(head);
+
+        const sections = document.createElement("div");
+        sections.className = "sections";
+
+        for (const section of item.sections) {
+          const block = document.createElement("section");
+          block.className = `block level-${section.level}`;
+
+          const h3 = document.createElement("h3");
+          h3.textContent = section.title;
+          block.appendChild(h3);
+
+          for (const line of section.lines) {
+            const p = document.createElement("p");
+            p.textContent = line;
+            block.appendChild(p);
+          }
+
+          sections.appendChild(block);
+        }
+
+        article.appendChild(sections);
+        root.appendChild(article);
+      }
+    }
+
+    async function init() {
+      const root = document.getElementById("cases-root");
+      try {
+        const response = await fetch(CASES_FILE, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
+        const text = await response.text();
+        const cases = parseCases(text);
+        renderCases(cases);
+      } catch (error) {
+        root.innerHTML = `<article class="error-box">Не удалось загрузить ответы на кейсы (${error.message}).</article>`;
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

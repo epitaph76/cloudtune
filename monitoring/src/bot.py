@@ -1850,6 +1850,7 @@ def main() -> None:
     app = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
+        .concurrent_updates(True)
         .post_init(on_startup)
         .post_shutdown(on_shutdown)
         .build()

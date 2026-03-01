@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 
 import '../models/playlist.dart';
 import '../models/track.dart';
@@ -303,9 +304,17 @@ class CloudMusicProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> downloadTrack(int trackId, String savePath) async {
+  Future<bool> downloadTrack(
+    int trackId,
+    String savePath, {
+    CancelToken? cancelToken,
+  }) async {
     try {
-      final result = await _apiService.downloadFile(trackId, savePath);
+      final result = await _apiService.downloadFile(
+        trackId,
+        savePath,
+        cancelToken: cancelToken,
+      );
 
       if (result['success']) {
         return true;

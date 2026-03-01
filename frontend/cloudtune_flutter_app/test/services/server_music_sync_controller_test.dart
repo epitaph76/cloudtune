@@ -49,6 +49,9 @@ void main() {
         if (songId is int) return songId;
         return null;
       },
+      isCancellationRequested: () => false,
+      createCancelToken: (_) => CancelToken(),
+      clearCancelToken: (_) {},
       onProgress: (completed, total) async {
         progressEvents.add('$completed/$total');
       },

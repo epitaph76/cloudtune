@@ -67,7 +67,12 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   final Set<String> _uploadingPaths = <String>{};
   final Map<String, CancelToken> _uploadCancelTokens = <String, CancelToken>{};
   final Set<String> _syncingLocalPlaylistIds = <String>{};
+  final Set<String> _cancelRequestedPlaylistSyncIds = <String>{};
   final Set<int> _downloadingCloudPlaylistIds = <int>{};
+  final Set<int> _syncingCloudPlaylistIds = <int>{};
+  final Set<int> _cancelRequestedCloudPlaylistSyncIds = <int>{};
+  final Map<int, CancelToken> _cloudPlaylistSyncDownloadTokens =
+      <int, CancelToken>{};
   final Set<int> _deletingCloudPlaylistIds = <int>{};
   final Map<String, String> _localFileSizeCache = <String, String>{};
   final Set<String> _localFileSizeLoadingPaths = <String>{};
@@ -140,6 +145,12 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       }
     }
     _uploadCancelTokens.clear();
+    for (final token in _cloudPlaylistSyncDownloadTokens.values) {
+      if (!token.isCancelled) {
+        token.cancel('cloud playlist sync canceled by dispose');
+      }
+    }
+    _cloudPlaylistSyncDownloadTokens.clear();
     _cloudSearchDebounce?.cancel();
     _emailController.dispose();
     _usernameController.dispose();
@@ -1109,6 +1120,63 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     return message.contains('cancel');
   }
 
+  String _playlistUploadTokenKey(String syncKey, String path) {
+    return '__playlist_upload__$syncKey::$path';
+  }
+
+  bool _isPlaylistSyncCancellationRequested(String syncKey) {
+    return _cancelRequestedPlaylistSyncIds.contains(syncKey);
+  }
+
+  void _cancelPlaylistUploadBySyncKey(
+    String syncKey, {
+    required String playlistName,
+    bool showMessage = true,
+  }) {
+    if (!_syncingLocalPlaylistIds.contains(syncKey)) return;
+
+    _cancelRequestedPlaylistSyncIds.add(syncKey);
+    final prefix = '__playlist_upload__$syncKey::';
+    final activeKeys = _uploadCancelTokens.keys
+        .where((key) => key.startsWith(prefix))
+        .toList(growable: false);
+    for (final key in activeKeys) {
+      final token = _uploadCancelTokens[key];
+      if (token != null && !token.isCancelled) {
+        token.cancel('Playlist upload canceled by user');
+      }
+    }
+
+    if (showMessage && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Stopping upload: $playlistName')));
+    }
+  }
+
+  bool _isCloudPlaylistSyncCancellationRequested(int playlistId) {
+    return _cancelRequestedCloudPlaylistSyncIds.contains(playlistId);
+  }
+
+  void _cancelCloudPlaylistSyncById(
+    int playlistId, {
+    required String playlistName,
+    bool showMessage = true,
+  }) {
+    if (!_syncingCloudPlaylistIds.contains(playlistId)) return;
+    _cancelRequestedCloudPlaylistSyncIds.add(playlistId);
+    final token = _cloudPlaylistSyncDownloadTokens[playlistId];
+    if (token != null && !token.isCancelled) {
+      token.cancel('Cloud playlist sync canceled by user');
+    }
+
+    if (showMessage && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Stopping sync: $playlistName')));
+    }
+  }
+
   void _cancelTrackUploadByPath(String path, {bool showMessage = true}) {
     final token = _uploadCancelTokens[path];
     if (token == null || token.isCancelled) return;
@@ -1183,7 +1251,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       );
       final sizedMatch = cloudSongIdByNameAndSize[sizedKey];
       if (sizedMatch != null) return sizedMatch;
-      return null;
+      // If cloud metadata has a size mismatch, fall back to name-based match
+      // to avoid re-uploading tracks that already exist in library.
+      return cloudSongIdByName[trackName];
     }
     return cloudSongIdByName[trackName];
   }
@@ -1239,6 +1309,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     );
   }
 
+  String _cloudPlaylistTrackCounterLabel({
+    required int playlistId,
+    required int trackCount,
+  }) {
+    return _playlistProgressTracker.counterLabel(
+      syncKey: 'cloud_$playlistId',
+      trackCount: trackCount,
+      tracksLabel: AppLocalizations.text(context, 'tracks'),
+    );
+  }
+
   Future<void> _syncCloudFavoritesLikesToLocal({
     required CloudMusicProvider cloudMusicProvider,
     required LocalMusicProvider localMusicProvider,
@@ -1263,34 +1344,28 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       favoritePlaylist.id,
     );
 
-    final cloudLibraryNames = cloudMusicProvider.tracks
-        .map((item) => _trackLookupName(item.originalFilename ?? item.filename))
-        .toSet();
     final likedNames = favoriteSongs
         .map((item) => _trackLookupName(item.originalFilename ?? item.filename))
         .toSet();
 
-    final candidatePaths = <String>{};
     final likedPaths = <String>{};
     for (final file in localMusicProvider.selectedFiles) {
       final localName = _trackLookupName(file.path);
-      if (!cloudLibraryNames.contains(localName)) continue;
-      candidatePaths.add(file.path);
       if (likedNames.contains(localName)) {
         likedPaths.add(file.path);
       }
     }
 
-    await localMusicProvider.syncLikedTracksForCandidates(
-      likedTrackPaths: likedPaths,
-      candidateTrackPaths: candidatePaths,
-    );
+    // Cloud favorites should enrich local likes, but must not wipe local likes
+    // that only exist on device.
+    await localMusicProvider.ensureTracksLiked(likedPaths);
   }
 
   Future<File?> _ensureCloudTrackDownloaded(
     Track track,
-    CloudMusicProvider cloudMusicProvider,
-  ) async {
+    CloudMusicProvider cloudMusicProvider, {
+    CancelToken? cancelToken,
+  }) async {
     final fileName = track.originalFilename ?? track.filename;
     final targetDir = await _getPersistentDownloadDir();
     final sanitizedName = _sanitizeFileName(fileName);
@@ -1304,6 +1379,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
           final refreshed = await cloudMusicProvider.downloadTrack(
             track.id,
             existingPath,
+            cancelToken: cancelToken,
           );
           if (!refreshed) return null;
         }
@@ -1315,7 +1391,11 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       dir: targetDir,
       fileName: fileName,
     );
-    final success = await cloudMusicProvider.downloadTrack(track.id, savePath);
+    final success = await cloudMusicProvider.downloadTrack(
+      track.id,
+      savePath,
+      cancelToken: cancelToken,
+    );
     if (!success) return null;
     final downloadedFile = File(savePath);
     if (!await downloadedFile.exists()) return null;
@@ -1892,6 +1972,21 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       playlistName: playlist.name,
       playlistTracks: playlistTracks,
       isFavorite: false,
+      replaceExisting: false,
+    );
+  }
+
+  Future<void> _syncLocalPlaylistToCloud({
+    required LocalPlaylist playlist,
+    required LocalMusicProvider localMusicProvider,
+  }) async {
+    final playlistTracks = localMusicProvider.getTracksForPlaylist(playlist.id);
+    await _uploadTracksAsCloudPlaylist(
+      syncKey: playlist.id,
+      playlistName: playlist.name,
+      playlistTracks: playlistTracks,
+      isFavorite: false,
+      replaceExisting: true,
     );
   }
 
@@ -1907,6 +2002,24 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       playlistName: playlistName,
       playlistTracks: playlistTracks,
       isFavorite: playlistId == LocalMusicProvider.likedPlaylistId,
+      replaceExisting: false,
+      silent: silent,
+    );
+  }
+
+  Future<void> _syncSystemPlaylistToCloud({
+    required String playlistId,
+    required String playlistName,
+    required LocalMusicProvider localMusicProvider,
+    bool silent = false,
+  }) async {
+    final playlistTracks = localMusicProvider.getTracksForPlaylist(playlistId);
+    await _uploadTracksAsCloudPlaylist(
+      syncKey: 'system_$playlistId',
+      playlistName: playlistName,
+      playlistTracks: playlistTracks,
+      isFavorite: playlistId == LocalMusicProvider.likedPlaylistId,
+      replaceExisting: true,
       silent: silent,
     );
   }
@@ -1941,6 +2054,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       unsupportedUploadMessage: _unsupportedUploadMessage,
       uploadFailureReason: _uploadFailureReason,
       extractSongIdFromUploadResult: _extractSongIdFromUploadResult,
+      isCancellationRequested: () =>
+          _isPlaylistSyncCancellationRequested(syncKey),
+      createCancelToken: (file) {
+        final token = CancelToken();
+        _uploadCancelTokens[_playlistUploadTokenKey(syncKey, file.path)] =
+            token;
+        return token;
+      },
+      clearCancelToken: (file) {
+        _uploadCancelTokens.remove(_playlistUploadTokenKey(syncKey, file.path));
+      },
       onProgress: (completed, total) async {
         if (mounted) {
           setState(() {
@@ -1972,6 +2096,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     required String playlistName,
     required List<File> playlistTracks,
     required bool isFavorite,
+    required bool replaceExisting,
     bool silent = false,
   }) async {
     if (_syncingLocalPlaylistIds.contains(syncKey)) return;
@@ -1989,18 +2114,28 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       _syncingLocalPlaylistIds.add(syncKey);
       _playlistProgressTracker.clear(syncKey);
     });
+    _cancelRequestedPlaylistSyncIds.remove(syncKey);
 
     final totalTracks = playlistTracks.length;
     var completedTracks = 0;
+    void throwIfSyncCanceled() {
+      if (_isPlaylistSyncCancellationRequested(syncKey)) {
+        throw StateError('Playlist upload canceled');
+      }
+    }
 
     try {
       final cloudMusicProvider = context.read<CloudMusicProvider>();
+      throwIfSyncCanceled();
       await cloudMusicProvider.fetchUserLibrary(reset: true, search: '');
       while (cloudMusicProvider.hasMoreTracks) {
+        throwIfSyncCanceled();
         await cloudMusicProvider.loadMoreUserLibrary();
       }
+      throwIfSyncCanceled();
       await cloudMusicProvider.fetchUserPlaylists(reset: true);
       while (cloudMusicProvider.hasMorePlaylists) {
+        throwIfSyncCanceled();
         await cloudMusicProvider.loadMoreUserPlaylists();
       }
 
@@ -2079,6 +2214,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         completedTracks: completedTracks,
         totalTracks: totalTracks,
       );
+      throwIfSyncCanceled();
       completedTracks = uploadedBatch.completedTracks;
       final uploadedSongIDsByPath = Map<String, int>.from(
         uploadedBatch.uploadedSongIDsByPath,
@@ -2095,8 +2231,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       }
 
       if (missingFiles.isNotEmpty) {
+        throwIfSyncCanceled();
         await cloudMusicProvider.fetchUserLibrary(reset: true, search: '');
         while (cloudMusicProvider.hasMoreTracks) {
+          throwIfSyncCanceled();
           await cloudMusicProvider.loadMoreUserLibrary();
         }
         cloudSongIdByName.clear();
@@ -2150,9 +2288,12 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       }
 
       if (failedUploadsByPath.isNotEmpty && missingFiles.isNotEmpty) {
+        throwIfSyncCanceled();
         await Future<void>.delayed(const Duration(seconds: 12));
+        throwIfSyncCanceled();
         await cloudMusicProvider.fetchUserLibrary(reset: true, search: '');
         while (cloudMusicProvider.hasMoreTracks) {
+          throwIfSyncCanceled();
           await cloudMusicProvider.loadMoreUserLibrary();
         }
         cloudSongIdByName.clear();
@@ -2238,10 +2379,13 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
       final createResult = await _apiService.createPlaylist(
         name: playlistName,
-        description: 'Synced from local',
+        description: replaceExisting
+            ? 'Synced from local'
+            : 'Uploaded from local',
         isFavorite: isFavorite,
-        replaceExisting: true,
+        replaceExisting: replaceExisting,
       );
+      throwIfSyncCanceled();
       if (createResult['success'] != true) {
         if (!mounted) return;
         if (!silent) {
@@ -2295,6 +2439,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         playlistId: cloudPlaylistID,
         songIds: uniqueSongIDsInOrder,
       );
+      throwIfSyncCanceled();
       if (bulkResult['success'] != true) {
         lastReconcileReason =
             'bulk add failed: ${_uploadFailureReason(bulkResult['message'])}';
@@ -2319,6 +2464,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       }
 
       for (var attempt = 0; attempt < 3; attempt++) {
+        throwIfSyncCanceled();
         final verifySnapshot = await _fetchAllCloudPlaylistTracks(
           cloudPlaylistID,
         );
@@ -2344,6 +2490,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
         var addedInAttempt = 0;
         for (final songID in missingSongIDs) {
+          throwIfSyncCanceled();
           final addResult = await _apiService.addSongToPlaylist(
             playlistId: cloudPlaylistID,
             songId: songID,
@@ -2367,6 +2514,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       final finalVerifySnapshot = await _fetchAllCloudPlaylistTracks(
         cloudPlaylistID,
       );
+      throwIfSyncCanceled();
       final missingSongIDsAfterReconcile = <int>[];
       if (finalVerifySnapshot.success) {
         final currentSongIDs = finalVerifySnapshot.tracks
@@ -2444,6 +2592,23 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
           ),
         );
       }
+    } on StateError catch (error) {
+      await UploadNotificationService.showPlaylistUploadFinished(
+        syncKey: syncKey,
+        playlistName: playlistName,
+        uploadedTracks: completedTracks,
+        totalTracks: totalTracks,
+      );
+      if (!mounted || silent) return;
+      if (error.message == 'Playlist upload canceled') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Playlist upload canceled ($completedTracks/$totalTracks)',
+            ),
+          ),
+        );
+      }
     } catch (error) {
       await UploadNotificationService.showPlaylistUploadFinished(
         syncKey: syncKey,
@@ -2456,6 +2621,14 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         SnackBar(content: Text('Playlist sync partial: ${error.toString()}')),
       );
     } finally {
+      _cancelRequestedPlaylistSyncIds.remove(syncKey);
+      final prefix = '__playlist_upload__$syncKey::';
+      final cleanupKeys = _uploadCancelTokens.keys
+          .where((key) => key.startsWith(prefix))
+          .toList(growable: false);
+      for (final key in cleanupKeys) {
+        _uploadCancelTokens.remove(key);
+      }
       if (mounted) {
         setState(() {
           _syncingLocalPlaylistIds.remove(syncKey);
@@ -2469,13 +2642,36 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     required Playlist playlist,
     required LocalMusicProvider localMusicProvider,
     required CloudMusicProvider cloudMusicProvider,
+    bool strictSync = false,
   }) async {
-    if (_downloadingCloudPlaylistIds.contains(playlist.id)) return;
-    setState(() => _downloadingCloudPlaylistIds.add(playlist.id));
+    if (_downloadingCloudPlaylistIds.contains(playlist.id) ||
+        _syncingCloudPlaylistIds.contains(playlist.id)) {
+      return;
+    }
+    if (strictSync) {
+      _cancelRequestedCloudPlaylistSyncIds.remove(playlist.id);
+    }
+    if (mounted) {
+      setState(() {
+        if (strictSync) {
+          _syncingCloudPlaylistIds.add(playlist.id);
+          _playlistProgressTracker.clear('cloud_${playlist.id}');
+        } else {
+          _downloadingCloudPlaylistIds.add(playlist.id);
+        }
+      });
+    }
+
+    void throwIfSyncCanceled() {
+      if (strictSync && _isCloudPlaylistSyncCancellationRequested(playlist.id)) {
+        throw StateError('Cloud playlist sync canceled');
+      }
+    }
 
     try {
       final playlistDisplayName = _cloudPlaylistDisplayName(playlist);
       final playlistSnapshot = await _fetchAllCloudPlaylistTracks(playlist.id);
+      throwIfSyncCanceled();
       if (!playlistSnapshot.success) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2489,7 +2685,49 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       }
 
       final songs = playlistSnapshot.tracks;
+      if (strictSync && mounted) {
+        setState(() {
+          _playlistProgressTracker.setProgress(
+            'cloud_${playlist.id}',
+            uploaded: 0,
+            total: songs.length,
+          );
+        });
+      }
       if (songs.isEmpty) {
+        if (strictSync) {
+          if (_isCloudFavoritesPlaylist(playlist)) {
+            await localMusicProvider.syncLikedTracksForCandidates(
+              likedTrackPaths: const <String>{},
+              candidateTrackPaths: localMusicProvider.selectedFiles
+                  .map((item) => item.path)
+                  .toSet(),
+            );
+            if (mounted) {
+              _setSelectedLocalPlaylist(LocalMusicProvider.likedPlaylistId);
+            }
+          } else {
+            final normalized = _normalizePlaylistName(playlistDisplayName);
+            final existing = localMusicProvider.playlists.cast<LocalPlaylist?>()
+                .firstWhere(
+                  (item) =>
+                      item != null &&
+                      _normalizePlaylistName(item.name) == normalized,
+                  orElse: () => null,
+                );
+            if (existing != null) {
+              await localMusicProvider.deletePlaylist(existing.id);
+            }
+            if (mounted) {
+              _setSelectedLocalPlaylist(LocalMusicProvider.allPlaylistId);
+            }
+          }
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Playlist "$playlistDisplayName" synced (0 tracks)')),
+          );
+          return;
+        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2500,14 +2738,40 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       }
 
       final downloadedFiles = <File>[];
+      var processedTracks = 0;
       for (final song in songs) {
+        throwIfSyncCanceled();
+        CancelToken? token;
+        if (strictSync) {
+          token = CancelToken();
+          _cloudPlaylistSyncDownloadTokens[playlist.id] = token;
+        }
         final downloaded = await _ensureCloudTrackDownloaded(
           song,
           cloudMusicProvider,
+          cancelToken: token,
         );
+        if (strictSync &&
+            identical(_cloudPlaylistSyncDownloadTokens[playlist.id], token)) {
+          _cloudPlaylistSyncDownloadTokens.remove(playlist.id);
+        }
+        if (downloaded == null && strictSync) {
+          throwIfSyncCanceled();
+        }
+        processedTracks += 1;
+        if (strictSync && mounted) {
+          setState(() {
+            _playlistProgressTracker.setProgress(
+              'cloud_${playlist.id}',
+              uploaded: processedTracks,
+              total: songs.length,
+            );
+          });
+        }
         if (downloaded == null) continue;
         downloadedFiles.add(downloaded);
       }
+      throwIfSyncCanceled();
 
       if (downloadedFiles.isEmpty) {
         if (!mounted) return;
@@ -2525,7 +2789,16 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
       String? localPlaylistId;
       if (_isCloudFavoritesPlaylist(playlist)) {
-        await localMusicProvider.ensureTracksLiked(downloadedPaths);
+        if (strictSync) {
+          await localMusicProvider.syncLikedTracksForCandidates(
+            likedTrackPaths: downloadedPaths,
+            candidateTrackPaths: localMusicProvider.selectedFiles
+                .map((item) => item.path)
+                .toSet(),
+          );
+        } else {
+          await localMusicProvider.ensureTracksLiked(downloadedPaths);
+        }
         localPlaylistId = LocalMusicProvider.likedPlaylistId;
       } else {
         localPlaylistId = await localMusicProvider.upsertPlaylistByName(
@@ -2547,15 +2820,46 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Downloaded "$playlistDisplayName" (${downloadedFiles.length} tracks)',
+            strictSync
+                ? 'Playlist "$playlistDisplayName" synced (${downloadedFiles.length} tracks)'
+                : 'Downloaded "$playlistDisplayName" (${downloadedFiles.length} tracks)',
           ),
         ),
       );
+    } on StateError catch (error) {
+      if (!mounted || !strictSync) return;
+      if (error.message == 'Cloud playlist sync canceled') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cloud playlist sync canceled')),
+        );
+      }
     } finally {
       if (mounted) {
-        setState(() => _downloadingCloudPlaylistIds.remove(playlist.id));
+        setState(() {
+          _downloadingCloudPlaylistIds.remove(playlist.id);
+          _syncingCloudPlaylistIds.remove(playlist.id);
+          _playlistProgressTracker.clear('cloud_${playlist.id}');
+        });
+      }
+      _cancelRequestedCloudPlaylistSyncIds.remove(playlist.id);
+      final token = _cloudPlaylistSyncDownloadTokens.remove(playlist.id);
+      if (token != null && !token.isCancelled) {
+        token.cancel('cloud playlist sync cleanup');
       }
     }
+  }
+
+  Future<void> _syncCloudPlaylistToLocal({
+    required Playlist playlist,
+    required LocalMusicProvider localMusicProvider,
+    required CloudMusicProvider cloudMusicProvider,
+  }) async {
+    await _downloadCloudPlaylistToLocal(
+      playlist: playlist,
+      localMusicProvider: localMusicProvider,
+      cloudMusicProvider: cloudMusicProvider,
+      strictSync: true,
+    );
   }
 
   Future<void> _deleteCloudTrack(Track track) async {
@@ -3172,21 +3476,51 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                     ),
                                     menuActions: [
                                       _PlaylistMenuAction(
+                                        label: t('upload_to_cloud'),
+                                        icon: Icons.cloud_upload_rounded,
+                                        onTap: () {
+                                          _uploadSystemPlaylistToCloud(
+                                            playlistId: LocalMusicProvider
+                                                .allPlaylistId,
+                                            playlistName: t('all_songs'),
+                                            localMusicProvider:
+                                                localMusicProvider,
+                                          );
+                                        },
+                                      ),
+                                      _PlaylistMenuAction(
                                         label:
                                             _syncingLocalPlaylistIds.contains(
                                               'system_${LocalMusicProvider.allPlaylistId}',
                                             )
-                                            ? 'Syncing...'
-                                            : t('upload_to_cloud'),
-                                        icon: Icons.cloud_upload_rounded,
-                                        onTap: () =>
-                                            _uploadSystemPlaylistToCloud(
-                                              playlistId: LocalMusicProvider
-                                                  .allPlaylistId,
+                                            ? 'Stop sync'
+                                            : t('sync'),
+                                        icon:
+                                            _syncingLocalPlaylistIds.contains(
+                                              'system_${LocalMusicProvider.allPlaylistId}',
+                                            )
+                                            ? Icons.stop_circle_rounded
+                                            : Icons.sync_rounded,
+                                        onTap: () {
+                                          final syncKey =
+                                              'system_${LocalMusicProvider.allPlaylistId}';
+                                          if (_syncingLocalPlaylistIds.contains(
+                                            syncKey,
+                                          )) {
+                                            _cancelPlaylistUploadBySyncKey(
+                                              syncKey,
                                               playlistName: t('all_songs'),
-                                              localMusicProvider:
-                                                  localMusicProvider,
-                                            ),
+                                            );
+                                            return;
+                                          }
+                                          _syncSystemPlaylistToCloud(
+                                            playlistId: LocalMusicProvider
+                                                .allPlaylistId,
+                                            playlistName: t('all_songs'),
+                                            localMusicProvider:
+                                                localMusicProvider,
+                                          );
+                                        },
                                       ),
                                     ],
                                   );
@@ -3215,21 +3549,51 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                     ),
                                     menuActions: [
                                       _PlaylistMenuAction(
+                                        label: t('upload_to_cloud'),
+                                        icon: Icons.cloud_upload_rounded,
+                                        onTap: () {
+                                          _uploadSystemPlaylistToCloud(
+                                            playlistId: LocalMusicProvider
+                                                .likedPlaylistId,
+                                            playlistName: t('liked_songs'),
+                                            localMusicProvider:
+                                                localMusicProvider,
+                                          );
+                                        },
+                                      ),
+                                      _PlaylistMenuAction(
                                         label:
                                             _syncingLocalPlaylistIds.contains(
                                               'system_${LocalMusicProvider.likedPlaylistId}',
                                             )
-                                            ? 'Syncing...'
-                                            : t('upload_to_cloud'),
-                                        icon: Icons.cloud_upload_rounded,
-                                        onTap: () =>
-                                            _uploadSystemPlaylistToCloud(
-                                              playlistId: LocalMusicProvider
-                                                  .likedPlaylistId,
+                                            ? 'Stop sync'
+                                            : t('sync'),
+                                        icon:
+                                            _syncingLocalPlaylistIds.contains(
+                                              'system_${LocalMusicProvider.likedPlaylistId}',
+                                            )
+                                            ? Icons.stop_circle_rounded
+                                            : Icons.sync_rounded,
+                                        onTap: () {
+                                          final syncKey =
+                                              'system_${LocalMusicProvider.likedPlaylistId}';
+                                          if (_syncingLocalPlaylistIds.contains(
+                                            syncKey,
+                                          )) {
+                                            _cancelPlaylistUploadBySyncKey(
+                                              syncKey,
                                               playlistName: t('liked_songs'),
-                                              localMusicProvider:
-                                                  localMusicProvider,
-                                            ),
+                                            );
+                                            return;
+                                          }
+                                          _syncSystemPlaylistToCloud(
+                                            playlistId: LocalMusicProvider
+                                                .likedPlaylistId,
+                                            playlistName: t('liked_songs'),
+                                            localMusicProvider:
+                                                localMusicProvider,
+                                          );
+                                        },
                                       ),
                                     ],
                                   );
@@ -3259,17 +3623,45 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                       _setSelectedLocalPlaylist(playlist.id),
                                   menuActions: [
                                     _PlaylistMenuAction(
+                                      label: t('upload_to_cloud'),
+                                      icon: Icons.cloud_upload_rounded,
+                                      onTap: () {
+                                        _uploadLocalPlaylistToCloud(
+                                          playlist: playlist,
+                                          localMusicProvider:
+                                              localMusicProvider,
+                                        );
+                                      },
+                                    ),
+                                    _PlaylistMenuAction(
                                       label:
                                           _syncingLocalPlaylistIds.contains(
                                             playlist.id,
                                           )
-                                          ? 'Syncing...'
-                                          : t('upload_to_cloud'),
-                                      icon: Icons.cloud_upload_rounded,
-                                      onTap: () => _uploadLocalPlaylistToCloud(
-                                        playlist: playlist,
-                                        localMusicProvider: localMusicProvider,
-                                      ),
+                                          ? 'Stop sync'
+                                          : t('sync'),
+                                      icon:
+                                          _syncingLocalPlaylistIds.contains(
+                                            playlist.id,
+                                          )
+                                          ? Icons.stop_circle_rounded
+                                          : Icons.sync_rounded,
+                                      onTap: () {
+                                        if (_syncingLocalPlaylistIds.contains(
+                                          playlist.id,
+                                        )) {
+                                          _cancelPlaylistUploadBySyncKey(
+                                            playlist.id,
+                                            playlistName: playlist.name,
+                                          );
+                                          return;
+                                        }
+                                        _syncLocalPlaylistToCloud(
+                                          playlist: playlist,
+                                          localMusicProvider:
+                                              localMusicProvider,
+                                        );
+                                      },
                                     ),
                                     _PlaylistMenuAction(
                                       label: t('delete'),
@@ -3698,6 +4090,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                       _downloadingCloudPlaylistIds.contains(
                                         item.id,
                                       );
+                                  final syncingPlaylist =
+                                      _syncingCloudPlaylistIds.contains(item.id);
                                   final deletingPlaylist =
                                       _deletingCloudPlaylistIds.contains(
                                         item.id,
@@ -3707,7 +4101,12 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                       item,
                                     ),
                                     trackCount: item.songCount ?? 0,
-                                    isTransferring: downloadingPlaylist,
+                                    trackCounterText: _cloudPlaylistTrackCounterLabel(
+                                      playlistId: item.id,
+                                      trackCount: item.songCount ?? 0,
+                                    ),
+                                    isTransferring:
+                                        downloadingPlaylist || syncingPlaylist,
                                     selected:
                                         _selectedCloudPlaylistId == item.id,
                                     onTap: () => _selectCloudPlaylist(item.id),
@@ -3725,6 +4124,32 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                               cloudMusicProvider:
                                                   cloudMusicProvider,
                                             ),
+                                      ),
+                                      _PlaylistMenuAction(
+                                        label: syncingPlaylist
+                                            ? 'Stop sync'
+                                            : t('sync'),
+                                        icon: syncingPlaylist
+                                            ? Icons.stop_circle_rounded
+                                            : Icons.sync_rounded,
+                                        onTap: () {
+                                          final playlistName =
+                                              _cloudPlaylistDisplayName(item);
+                                          if (syncingPlaylist) {
+                                            _cancelCloudPlaylistSyncById(
+                                              item.id,
+                                              playlistName: playlistName,
+                                            );
+                                            return;
+                                          }
+                                          _syncCloudPlaylistToLocal(
+                                            playlist: item,
+                                            localMusicProvider:
+                                                localMusicProvider,
+                                            cloudMusicProvider:
+                                                cloudMusicProvider,
+                                          );
+                                        },
                                       ),
                                       _PlaylistMenuAction(
                                         label: deletingPlaylist
