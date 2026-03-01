@@ -36,6 +36,10 @@
       box-sizing: border-box;
     }
 
+    html {
+      scroll-behavior: smooth;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
@@ -306,15 +310,13 @@
       <p class="badge">Resume • Кейсы</p>
       <h1>Ответы на кейсы</h1>
       <p>
-        Здесь собраны ответы на кейсы для резюме. Текст взят из исходного документа и отображается в
-        отдельных блоках, чтобы в длинных ответах было проще ориентироваться.
+        Здесь собраны ответы на кейсы для резюме.
       </p>
       <div class="actions">
         <a class="btn btn-primary" href="./index.html">К резюме</a>
         <a class="btn btn-secondary" href="https://github.com/epitaph76" target="_blank" rel="noopener noreferrer">GitHub</a>
         <a class="btn btn-secondary" href="https://api-mp3-player.ru" target="_blank" rel="noopener noreferrer">Основной сайт проекта</a>
       </div>
-      <p class="hint">Исходный текст ответов не редактировался.</p>
       <div class="case-nav" id="case-nav"></div>
     </header>
 
@@ -395,6 +397,16 @@
         chip.className = "chip-link";
         chip.href = "#" + caseId;
         chip.textContent = item.title;
+        chip.addEventListener("click", (event) => {
+          event.preventDefault();
+          const target = document.getElementById(caseId);
+          if (!target) {
+            return;
+          }
+          const top = target.getBoundingClientRect().top + window.scrollY - 10;
+          window.scrollTo({ top, behavior: "smooth" });
+          history.replaceState(null, "", "#" + caseId);
+        });
         nav.appendChild(chip);
 
         const article = document.createElement("article");
@@ -440,6 +452,20 @@
       }
     }
 
+    function scrollToHashCase(behavior = "auto") {
+      const rawHash = window.location.hash.replace(/^#/, "");
+      if (!rawHash) {
+        return;
+      }
+      const caseId = decodeURIComponent(rawHash);
+      const target = document.getElementById(caseId);
+      if (!target) {
+        return;
+      }
+      const top = target.getBoundingClientRect().top + window.scrollY - 10;
+      window.scrollTo({ top, behavior });
+    }
+
     async function init() {
       const root = document.getElementById("cases-root");
       try {
@@ -450,6 +476,7 @@
         const text = await response.text();
         const cases = parseCases(text);
         renderCases(cases);
+        requestAnimationFrame(() => scrollToHashCase("smooth"));
       } catch (error) {
         root.innerHTML = `<article class="error-box">Не удалось загрузить ответы на кейсы (${error.message}).</article>`;
       }
