@@ -31,12 +31,15 @@ POST_DEPLOY_TEST_RESUME_LANDING_URL="${POST_DEPLOY_TEST_RESUME_LANDING_URL:-http
 POST_DEPLOY_TEST_TIMEOUT_SECONDS="${POST_DEPLOY_TEST_TIMEOUT_SECONDS:-20}"
 ROLLBACK_ON_TEST_FAILURE="${ROLLBACK_ON_TEST_FAILURE:-true}"
 ALLOW_DEPLOY_AS_ROOT="${ALLOW_DEPLOY_AS_ROOT:-false}"
+DEPLOY_AUTOSTASH_LOCAL_CHANGES="${DEPLOY_AUTOSTASH_LOCAL_CHANGES:-true}"
 DOCKER_PRUNE_AFTER_DEPLOY="${DOCKER_PRUNE_AFTER_DEPLOY:-true}"
 DOCKER_PRUNE_UNTIL_HOURS="${DOCKER_PRUNE_UNTIL_HOURS:-240}"
 DOCKER_PRUNE_VOLUMES="${DOCKER_PRUNE_VOLUMES:-false}"
 JOURNAL_VACUUM_AFTER_DEPLOY="${JOURNAL_VACUUM_AFTER_DEPLOY:-false}"
 JOURNAL_MAX_SIZE="${JOURNAL_MAX_SIZE:-500M}"
 TRUNCATE_BTMP_AFTER_DEPLOY="${TRUNCATE_BTMP_AFTER_DEPLOY:-false}"
+LOCAL_CHANGES_STASHED=false
+LOCAL_STASH_TAG=""
 
 is_true() {
   local value="${1:-}"
@@ -52,6 +55,24 @@ enforce_root_policy() {
     echo "Use a dedicated deploy user with least privileges."
     exit 1
   fi
+}
+
+prepare_git_worktree() {
+  if [[ -z "$(git -C "${APP_DIR}" status --porcelain)" ]]; then
+    return 0
+  fi
+
+  if ! is_true "${DEPLOY_AUTOSTASH_LOCAL_CHANGES}"; then
+    echo "Working tree contains local changes and DEPLOY_AUTOSTASH_LOCAL_CHANGES=false."
+    echo "Commit or stash changes manually before deploy."
+    git -C "${APP_DIR}" status --short || true
+    exit 1
+  fi
+
+  LOCAL_STASH_TAG="deploy-autostash-$(date -u +%Y%m%dT%H%M%SZ)"
+  echo "Detected local git changes in ${APP_DIR}. Creating stash: ${LOCAL_STASH_TAG}"
+  git -C "${APP_DIR}" stash push --include-untracked --message "${LOCAL_STASH_TAG}" >/dev/null
+  LOCAL_CHANGES_STASHED=true
 }
 
 sync_dir() {
@@ -191,6 +212,7 @@ if [[ ! -d "${APP_DIR}/.git" ]]; then
   git clone --branch "${BRANCH}" "${REPO_URL}" "${APP_DIR}"
 else
   PREVIOUS_COMMIT="$(git -C "${APP_DIR}" rev-parse HEAD)"
+  prepare_git_worktree
   git -C "${APP_DIR}" fetch --all
   git -C "${APP_DIR}" checkout "${BRANCH}"
   git -C "${APP_DIR}" pull --ff-only origin "${BRANCH}"
@@ -198,6 +220,9 @@ fi
 
 CURRENT_COMMIT="$(git -C "${APP_DIR}" rev-parse HEAD)"
 echo "Deploy target commit: ${CURRENT_COMMIT}"
+if ${LOCAL_CHANGES_STASHED}; then
+  echo "Local changes were stashed before deploy: ${LOCAL_STASH_TAG}"
+fi
 
 deploy_backend
 deploy_landing_assets

@@ -188,3 +188,10 @@ For safer ops, deploy script blocks root execution by default.
 
 - `ALLOW_DEPLOY_AS_ROOT=false` (default): deployment as root is rejected.
 - Set `ALLOW_DEPLOY_AS_ROOT=true` only for controlled emergency scenarios.
+
+## Dirty Worktree Handling
+
+Deploy can auto-protect local server edits before updating from GitHub.
+
+- `DEPLOY_AUTOSTASH_LOCAL_CHANGES=true` (default): if the repo has local changes, deploy runs `git stash --include-untracked` and then continues with `pull --ff-only`.
+- `DEPLOY_AUTOSTASH_LOCAL_CHANGES=false`: deploy fails fast and prints changed files, requiring manual cleanup.
