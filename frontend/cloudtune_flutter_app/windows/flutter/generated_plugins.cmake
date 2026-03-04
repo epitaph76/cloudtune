@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  app_links
   flutter_secure_storage_windows
   just_audio_windows
   media_kit_libs_windows_audio

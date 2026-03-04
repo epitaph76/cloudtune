@@ -40,10 +40,10 @@ class Constants {
     defaultValue: '5c6d3ac39d514c03828c6a41c005a2f5',
   );
   // Optional override:
-  // --dart-define=YANDEX_OAUTH_REDIRECT_URI=https://oauth.yandex.ru/verification_code
+  // --dart-define=YANDEX_OAUTH_REDIRECT_URI=cloudtune://oauth/yandex
   static const String yandexOauthRedirectUri = String.fromEnvironment(
     'YANDEX_OAUTH_REDIRECT_URI',
-    defaultValue: 'https://oauth.yandex.ru/verification_code',
+    defaultValue: 'cloudtune://oauth/yandex',
   );
 
   // Storage Keys

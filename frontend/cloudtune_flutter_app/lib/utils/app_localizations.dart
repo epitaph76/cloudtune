@@ -88,6 +88,9 @@ class AppLocalizations {
       'yandex_oauth_client_missing':
           'Не настроен YANDEX_OAUTH_CLIENT_ID. Добавьте --dart-define=YANDEX_OAUTH_CLIENT_ID=...',
       'open_yandex_oauth_page': 'Открыть OAuth страницу',
+      'yandex_oauth_redirect_uri': 'Redirect URI:',
+      'yandex_oauth_auto_return_hint':
+          'После входа браузер должен автоматически вернуть вас в приложение.',
       'yandex_oauth_open_failed': 'Не удалось открыть OAuth страницу Яндекса',
       'paste_yandex_token_or_url':
           'Вставьте OAuth токен или URL после авторизации в Яндексе',
@@ -107,6 +110,9 @@ class AppLocalizations {
       'yandex_download_failed': 'Ошибка скачивания из Яндекс.Диска:',
       'yandex_unauthorized_reconnect':
           'Токен Яндекс.Диска недействителен. Подключите заново.',
+      'yandex_connected': 'Яндекс.Диск подключён',
+      'delete_cloud_key': 'Удалить ключ облака',
+      'cloud_key_deleted': 'Ключ облака удалён',
       'pick_one_or_multiple_audio':
           'Выберите один или несколько аудиофайлов (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
       'import_from_folder_with_filters':
@@ -211,6 +217,9 @@ class AppLocalizations {
       'yandex_oauth_client_missing':
           'YANDEX_OAUTH_CLIENT_ID is not configured. Add --dart-define=YANDEX_OAUTH_CLIENT_ID=...',
       'open_yandex_oauth_page': 'Open OAuth page',
+      'yandex_oauth_redirect_uri': 'Redirect URI:',
+      'yandex_oauth_auto_return_hint':
+          'After sign in, the browser should return to the app automatically.',
       'yandex_oauth_open_failed': 'Unable to open Yandex OAuth page',
       'paste_yandex_token_or_url':
           'Paste OAuth token or redirect URL after Yandex authorization',
@@ -230,6 +239,9 @@ class AppLocalizations {
       'yandex_download_failed': 'Failed to download from Yandex.Disk:',
       'yandex_unauthorized_reconnect':
           'Yandex.Disk token is invalid. Reconnect again.',
+      'yandex_connected': 'Yandex.Disk connected',
+      'delete_cloud_key': 'Delete cloud key',
+      'cloud_key_deleted': 'Cloud key removed',
       'pick_one_or_multiple_audio':
           'Pick one or multiple audio files (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
       'import_from_folder_with_filters':
@@ -335,6 +347,9 @@ class AppLocalizations {
       'yandex_oauth_client_missing':
           'YANDEX_OAUTH_CLIENT_ID no está configurado. Agrega --dart-define=YANDEX_OAUTH_CLIENT_ID=...',
       'open_yandex_oauth_page': 'Abrir página OAuth',
+      'yandex_oauth_redirect_uri': 'Redirect URI:',
+      'yandex_oauth_auto_return_hint':
+          'Después de iniciar sesión, el navegador debe volver automáticamente a la app.',
       'yandex_oauth_open_failed': 'No se pudo abrir la página OAuth de Yandex',
       'paste_yandex_token_or_url':
           'Pega el token OAuth o la URL de redirección tras autorizar en Yandex',
@@ -357,6 +372,9 @@ class AppLocalizations {
       'yandex_download_failed': 'Error al descargar desde Yandex.Disk:',
       'yandex_unauthorized_reconnect':
           'El token de Yandex.Disk no es válido. Reconecta de nuevo.',
+      'yandex_connected': 'Yandex.Disk conectado',
+      'delete_cloud_key': 'Eliminar clave de nube',
+      'cloud_key_deleted': 'Clave de nube eliminada',
       'pick_one_or_multiple_audio':
           'Elige uno o varios archivos de audio (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
       'import_from_folder_with_filters':

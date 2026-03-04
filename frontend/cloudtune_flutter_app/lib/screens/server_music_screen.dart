@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as p;
@@ -79,6 +80,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   static const int _cloudUploadParallelism = 3;
 
   final ApiService _apiService = ApiService();
+  final AppLinks _appLinks = AppLinks();
   final YandexDiskService _yandexDiskService = YandexDiskService();
   final ServerMusicSyncController _syncController = ServerMusicSyncController(
     parallelism: _cloudUploadParallelism,
@@ -120,6 +122,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   String? _lastLocalTracksAutoScrollKey;
   CancelToken? _yandexScanCancelToken;
   CancelToken? _yandexDownloadCancelToken;
+  StreamSubscription<Uri>? _yandexOAuthLinkSubscription;
+  TextEditingController? _activeYandexOAuthTokenController;
+  Future<void> Function()? _activeYandexOAuthSubmit;
   static const double _storageSwipeVelocityThreshold = 280;
 
   static const List<String> _supportedAudioExtensions = <String>[
@@ -145,6 +150,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   @override
   void initState() {
     super.initState();
+    _initYandexOAuthLinkHandling();
     _cloudTracksScrollController.addListener(_handleCloudTracksLazyLoad);
     _cloudPlaylistsScrollController.addListener(_handleCloudPlaylistsLazyLoad);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -183,6 +189,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       yandexDownloadToken.cancel('yandex download canceled by dispose');
     }
     _yandexDownloadCancelToken = null;
+    _yandexOAuthLinkSubscription?.cancel();
+    _yandexOAuthLinkSubscription = null;
+    _activeYandexOAuthTokenController = null;
+    _activeYandexOAuthSubmit = null;
     _cloudSearchDebounce?.cancel();
     _emailController.dispose();
     _usernameController.dispose();
@@ -195,6 +205,73 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
 
   @override
   bool get wantKeepAlive => true;
+
+  void _initYandexOAuthLinkHandling() {
+    _yandexOAuthLinkSubscription = _appLinks.uriLinkStream.listen(
+      (uri) {
+        _handleYandexOAuthDeepLink(uri);
+      },
+      onError: (_) {
+        // Ignore malformed deep links.
+      },
+    );
+
+    _appLinks
+        .getInitialLink()
+        .then((uri) async {
+          if (uri == null) return;
+          await _handleYandexOAuthDeepLink(uri);
+        })
+        .catchError((_) {
+          // Ignore.
+        });
+  }
+
+  Future<void> _handleYandexOAuthDeepLink(Uri uri) async {
+    if (!_isYandexOAuthRedirect(uri)) return;
+    final accessToken = _yandexDiskService.extractAccessToken(uri.toString());
+    if (accessToken == null || accessToken.isEmpty) return;
+
+    await _yandexDiskService.saveAccessToken(accessToken);
+
+    final activeController = _activeYandexOAuthTokenController;
+    if (activeController != null) {
+      activeController.text = accessToken;
+      final submit = _activeYandexOAuthSubmit;
+      if (submit != null) {
+        await submit();
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(AppLocalizations.text(context, 'yandex_connected')),
+      ),
+    );
+  }
+
+  bool _isYandexOAuthRedirect(Uri uri) {
+    final configured = Uri.tryParse(Constants.yandexOauthRedirectUri.trim());
+    if (configured == null) return false;
+
+    if (configured.scheme.isNotEmpty &&
+        uri.scheme.toLowerCase() != configured.scheme.toLowerCase()) {
+      return false;
+    }
+    if (configured.host.isNotEmpty &&
+        uri.host.toLowerCase() != configured.host.toLowerCase()) {
+      return false;
+    }
+
+    final configuredPath = configured.path.trim();
+    if (configuredPath.isEmpty || configuredPath == '/') return true;
+
+    final uriPath = uri.path.trim();
+    if (uriPath == configuredPath) return true;
+    return uriPath.startsWith(configuredPath);
+  }
 
   Future<void> _refreshCloudDataOnFirstOpen() async {
     if (_didInitialCloudRefresh) return;
@@ -276,6 +353,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     String t(String key) => AppLocalizations.text(context, key);
     final showFolderImportOption = Platform.isAndroid;
     final showAutoScanOption = Platform.isAndroid;
+    final hasYandexToken =
+        (await _yandexDiskService.readAccessToken())?.isNotEmpty == true;
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -305,6 +385,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                     await _importFromYandexDisk();
                   },
                 ),
+                if (hasYandexToken)
+                  ListTile(
+                    dense: true,
+                    visualDensity: const VisualDensity(vertical: -2),
+                    leading: const Icon(Icons.key_off_rounded),
+                    title: Text(t('delete_cloud_key')),
+                    onTap: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _removeYandexDiskAccessToken();
+                    },
+                  ),
                 if (showFolderImportOption)
                   ListTile(
                     leading: const Icon(Icons.folder_rounded),
@@ -714,6 +805,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     String t(String key) => AppLocalizations.text(context, key);
     final controller = TextEditingController();
     String? validationMessage;
+    _activeYandexOAuthTokenController = controller;
 
     return showDialog<String>(
       context: context,
@@ -738,6 +830,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
               Navigator.of(dialogContext).pop(parsedToken);
             }
 
+            _activeYandexOAuthSubmit = submit;
+
             return AlertDialog(
               title: Text(t('connect_yandex_disk')),
               content: SingleChildScrollView(
@@ -761,7 +855,41 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                           color: Theme.of(context).colorScheme.error,
                         ),
                       ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${t('yandex_oauth_redirect_uri')} ${Constants.yandexOauthRedirectUri}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      t('yandex_oauth_auto_return_hint'),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                     const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          await _removeYandexDiskAccessToken();
+                          if (!context.mounted) return;
+                          setDialogState(() {
+                            validationMessage = null;
+                            controller.clear();
+                          });
+                        },
+                        icon: const Icon(Icons.key_off_rounded, size: 18),
+                        label: Text(t('delete_cloud_key')),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(34),
+                          visualDensity: const VisualDensity(vertical: -2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     TextField(
                       controller: controller,
                       minLines: 2,
@@ -790,7 +918,22 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
           },
         );
       },
-    ).whenComplete(controller.dispose);
+    ).whenComplete(() {
+      if (identical(_activeYandexOAuthTokenController, controller)) {
+        _activeYandexOAuthTokenController = null;
+      }
+      _activeYandexOAuthSubmit = null;
+      controller.dispose();
+    });
+  }
+
+  Future<void> _removeYandexDiskAccessToken() async {
+    String t(String key) => AppLocalizations.text(context, key);
+    await _yandexDiskService.clearAccessToken();
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(t('cloud_key_deleted'))));
   }
 
   Future<void> _openYandexOAuthPage() async {
