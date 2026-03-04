@@ -91,6 +91,8 @@ class AppLocalizations {
       'yandex_oauth_redirect_uri': 'Redirect URI:',
       'yandex_oauth_auto_return_hint':
           'После входа браузер должен автоматически вернуть вас в приложение.',
+      'yandex_oauth_manual_return_hint':
+          'После входа скопируйте ключ со страницы и вставьте его в поле ниже.',
       'yandex_oauth_open_failed': 'Не удалось открыть OAuth страницу Яндекса',
       'paste_yandex_token_or_url':
           'Вставьте OAuth токен или URL после авторизации в Яндексе',
@@ -220,6 +222,8 @@ class AppLocalizations {
       'yandex_oauth_redirect_uri': 'Redirect URI:',
       'yandex_oauth_auto_return_hint':
           'After sign in, the browser should return to the app automatically.',
+      'yandex_oauth_manual_return_hint':
+          'After sign in, copy the key from the page and paste it into the field below.',
       'yandex_oauth_open_failed': 'Unable to open Yandex OAuth page',
       'paste_yandex_token_or_url':
           'Paste OAuth token or redirect URL after Yandex authorization',
@@ -350,6 +354,8 @@ class AppLocalizations {
       'yandex_oauth_redirect_uri': 'Redirect URI:',
       'yandex_oauth_auto_return_hint':
           'Después de iniciar sesión, el navegador debe volver automáticamente a la app.',
+      'yandex_oauth_manual_return_hint':
+          'Después de iniciar sesión, copia la clave de la página y pégala en el campo de abajo.',
       'yandex_oauth_open_failed': 'No se pudo abrir la página OAuth de Yandex',
       'paste_yandex_token_or_url':
           'Pega el token OAuth o la URL de redirección tras autorizar en Yandex',

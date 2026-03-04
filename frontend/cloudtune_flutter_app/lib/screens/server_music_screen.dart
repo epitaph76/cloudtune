@@ -353,9 +353,6 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     String t(String key) => AppLocalizations.text(context, key);
     final showFolderImportOption = Platform.isAndroid;
     final showAutoScanOption = Platform.isAndroid;
-    final hasYandexToken =
-        (await _yandexDiskService.readAccessToken())?.isNotEmpty == true;
-    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -385,17 +382,6 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                     await _importFromYandexDisk();
                   },
                 ),
-                if (hasYandexToken)
-                  ListTile(
-                    dense: true,
-                    visualDensity: const VisualDensity(vertical: -2),
-                    leading: const Icon(Icons.key_off_rounded),
-                    title: Text(t('delete_cloud_key')),
-                    onTap: () async {
-                      Navigator.of(sheetContext).pop();
-                      await _removeYandexDiskAccessToken();
-                    },
-                  ),
                 if (showFolderImportOption)
                   ListTile(
                     leading: const Icon(Icons.folder_rounded),
@@ -813,6 +799,13 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final hasClientId = Constants.yandexOauthClientId.trim().isNotEmpty;
+            final redirectUri = Uri.tryParse(
+              Constants.yandexOauthRedirectUri.trim(),
+            );
+            final usesDeepLinkRedirect =
+                redirectUri != null &&
+                redirectUri.scheme.toLowerCase() == 'cloudtune';
+            const authControlHeight = 56.0;
 
             Future<void> submit() async {
               final parsedToken = _yandexDiskService.extractAccessToken(
@@ -862,12 +855,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      t('yandex_oauth_auto_return_hint'),
+                      t(
+                        usesDeepLinkRedirect
+                            ? 'yandex_oauth_auto_return_hint'
+                            : 'yandex_oauth_manual_return_hint',
+                      ),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
+                      height: authControlHeight,
                       child: OutlinedButton.icon(
                         onPressed: () async {
                           await _removeYandexDiskAccessToken();
@@ -880,25 +878,23 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                         icon: const Icon(Icons.key_off_rounded, size: 18),
                         label: Text(t('delete_cloud_key')),
                         style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(34),
-                          visualDensity: const VisualDensity(vertical: -2),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
+                          minimumSize: const Size.fromHeight(authControlHeight),
+                          visualDensity: VisualDensity.standard,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
                         ),
                       ),
                     ),
                     const SizedBox(height: 10),
-                    TextField(
-                      controller: controller,
-                      minLines: 2,
-                      maxLines: 4,
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        labelText: t('yandex_token_or_url'),
-                        hintText: t('paste_yandex_token_or_url'),
-                        errorText: validationMessage,
+                    SizedBox(
+                      height: authControlHeight,
+                      child: TextField(
+                        controller: controller,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          labelText: t('yandex_token_or_url'),
+                          hintText: t('paste_yandex_token_or_url'),
+                          errorText: validationMessage,
+                        ),
                       ),
                     ),
                   ],
