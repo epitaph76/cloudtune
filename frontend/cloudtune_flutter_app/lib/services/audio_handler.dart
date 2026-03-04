@@ -6,7 +6,9 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
+  // Avoid duplicate interruption handlers: just_audio already handles them.
   final AudioPlayer _player = AudioPlayer();
+  final Map<String, Duration> _durationsByTrackPath = <String, Duration>{};
   bool _hasPreparedShuffleForCurrentQueue = false;
   bool _isDelayedAdvanceInProgress = false;
   Future<void> _opChain = Future<void>.value();
@@ -78,15 +80,31 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
 
     _player.durationStream.listen((duration) {
-      final currentItem = mediaItem.value;
-      if (currentItem != null && duration != null) {
-        mediaItem.add(currentItem.copyWith(duration: duration));
+      if (duration == null) return;
+      final index = _player.currentIndex;
+      if (index != null && index >= 0 && index < queue.value.length) {
+        _durationsByTrackPath[queue.value[index].id] = duration;
       }
+
+      final currentItem = mediaItem.value;
+      if (currentItem == null) return;
+      _durationsByTrackPath[currentItem.id] = duration;
+      if (currentItem.duration == duration) return;
+      mediaItem.add(currentItem.copyWith(duration: duration));
     });
 
     _player.currentIndexStream.listen((index) {
       if (index != null && index >= 0 && index < queue.value.length) {
-        mediaItem.add(queue.value[index]);
+        final nextItem = queue.value[index];
+        final knownDuration = _durationsByTrackPath[nextItem.id] ?? _player.duration;
+        if (knownDuration != null) {
+          _durationsByTrackPath[nextItem.id] = knownDuration;
+        }
+        mediaItem.add(
+          knownDuration == null
+              ? nextItem
+              : nextItem.copyWith(duration: knownDuration),
+        );
         refreshLikeState();
       }
     });
@@ -95,23 +113,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> _configureAudioSession() async {
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
-
-    session.interruptionEventStream.listen((event) {
-      if (event.begin) {
-        if (_player.playing) {
-          unawaited(pause());
-        }
-        return;
-      }
-
-      // Не возобновляем автоматически, пользователь сам снимает с паузы из уведомления.
-    });
-
-    session.becomingNoisyEventStream.listen((_) {
-      if (_player.playing) {
-        unawaited(pause());
-      }
-    });
   }
 
   @override
@@ -230,6 +231,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       if (items.isEmpty) return;
 
       final safeInitialIndex = initialIndex.clamp(0, items.length - 1);
+      final queueIds = items.map((item) => item.id).toSet();
+      _durationsByTrackPath.removeWhere((id, _) => !queueIds.contains(id));
       _hasPreparedShuffleForCurrentQueue = false;
       if (_player.shuffleModeEnabled) {
         await _player.setShuffleModeEnabled(false);
@@ -247,7 +250,17 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         initialPosition: Duration.zero,
       );
 
-      mediaItem.add(items[safeInitialIndex]);
+      final selectedItem = items[safeInitialIndex];
+      final initialDuration =
+          _durationsByTrackPath[selectedItem.id] ?? _player.duration;
+      if (initialDuration != null) {
+        _durationsByTrackPath[selectedItem.id] = initialDuration;
+      }
+      mediaItem.add(
+        initialDuration == null
+            ? selectedItem
+            : selectedItem.copyWith(duration: initialDuration),
+      );
       refreshLikeState();
       playbackState.add(_mapPlaybackState(_player));
     });
@@ -263,16 +276,24 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     _isDelayedAdvanceInProgress = true;
     try {
       await Future<void>.delayed(const Duration(milliseconds: 500));
-      if (_player.processingState != ProcessingState.completed) return;
-      if (_player.hasNext) {
-        await _player.seekToNext();
-      } else {
-        final fallbackIndex = _player.shuffleModeEnabled
-            ? (_player.effectiveIndices?.first ?? 0)
-            : 0;
-        await _player.seek(null, index: fallbackIndex);
-      }
-      unawaited(_player.play());
+      await _runSerialized(() async {
+        if (_player.processingState != ProcessingState.completed) return;
+        if (_player.loopMode == LoopMode.one) return;
+        final currentTotal = queue.value.length;
+        if (currentTotal <= 1) return;
+
+        await _player.setSpeed(1.0);
+        if (_player.hasNext) {
+          await _player.seekToNext();
+        } else {
+          final fallbackIndex = _player.shuffleModeEnabled
+              ? (_player.effectiveIndices?.first ?? 0)
+              : 0;
+          await _player.seek(null, index: fallbackIndex);
+        }
+        unawaited(_player.play());
+        playbackState.add(_mapPlaybackState(_player));
+      });
     } finally {
       _isDelayedAdvanceInProgress = false;
     }
@@ -349,9 +370,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> onTaskRemoved() async {
-    // При сворачивании/убийстве UI оставляем сервис живым, но ставим воспроизведение на паузу.
-    if (_player.playing) {
-      await pause();
-    }
+    // Keep playback/service alive when app task is removed or backgrounded.
   }
 }

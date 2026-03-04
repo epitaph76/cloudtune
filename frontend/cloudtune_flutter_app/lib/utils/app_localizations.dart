@@ -49,10 +49,14 @@ class AppLocalizations {
       'upload': 'Загрузить',
       'create_playlist': 'Создать плейлист',
       'search_track': 'Поиск трека',
-      'sort_tracks': '\u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430 \u0442\u0440\u0435\u043a\u043e\u0432',
-      'sort_by_upload_date': '\u041f\u043e \u0434\u0430\u0442\u0435 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0438',
-      'sort_by_name': '\u041f\u043e \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044e',
-      'sort_by_file_size': '\u041f\u043e \u0440\u0430\u0437\u043c\u0435\u0440\u0443 \u0444\u0430\u0439\u043b\u0430',
+      'sort_tracks':
+          '\u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430 \u0442\u0440\u0435\u043a\u043e\u0432',
+      'sort_by_upload_date':
+          '\u041f\u043e \u0434\u0430\u0442\u0435 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0438',
+      'sort_by_name':
+          '\u041f\u043e \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044e',
+      'sort_by_file_size':
+          '\u041f\u043e \u0440\u0430\u0437\u043c\u0435\u0440\u0443 \u0444\u0430\u0439\u043b\u0430',
       'sort_date': '\u0414\u0430\u0442\u0430',
       'sort_name': '\u0418\u043c\u044f',
       'sort_size': '\u0420\u0430\u0437\u043c\u0435\u0440',
@@ -79,6 +83,30 @@ class AppLocalizations {
       'upload_tracks': 'Загрузить треки',
       'pick_folder': 'Выбрать папку',
       'auto_scan_device': 'Автопоиск на устройстве',
+      'import_from_yandex_disk': 'Импорт из Яндекс.Диска',
+      'connect_yandex_disk': 'Подключить Яндекс.Диск',
+      'yandex_oauth_client_missing':
+          'Не настроен YANDEX_OAUTH_CLIENT_ID. Добавьте --dart-define=YANDEX_OAUTH_CLIENT_ID=...',
+      'open_yandex_oauth_page': 'Открыть OAuth страницу',
+      'yandex_oauth_open_failed': 'Не удалось открыть OAuth страницу Яндекса',
+      'paste_yandex_token_or_url':
+          'Вставьте OAuth токен или URL после авторизации в Яндексе',
+      'yandex_token_or_url': 'OAuth токен или URL',
+      'save_and_continue': 'Сохранить и продолжить',
+      'yandex_scan_in_progress': 'Сканирование Яндекс.Диска...',
+      'yandex_found_audio_files': 'Найдено аудиофайлов в Яндекс.Диске:',
+      'no_audio_files_in_yandex': 'В Яндекс.Диске аудиофайлы не найдены',
+      'no_new_audio_files_in_yandex':
+          'Новых аудиофайлов из Яндекс.Диска не найдено',
+      'add_to_local_library': 'Добавить в локальную библиотеку',
+      'upload_selected_to_cloud': 'Загрузить выбранные в CloudTune',
+      'apply_for_selected': 'Применить к выбранным',
+      'yandex_download_in_progress': 'Скачивание файлов из Яндекс.Диска...',
+      'yandex_import_completed': 'Импорт из Яндекс.Диска завершён:',
+      'yandex_scan_failed': 'Не удалось просканировать Яндекс.Диск:',
+      'yandex_download_failed': 'Ошибка скачивания из Яндекс.Диска:',
+      'yandex_unauthorized_reconnect':
+          'Токен Яндекс.Диска недействителен. Подключите заново.',
       'pick_one_or_multiple_audio':
           'Выберите один или несколько аудиофайлов (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
       'import_from_folder_with_filters':
@@ -178,6 +206,30 @@ class AppLocalizations {
       'upload_tracks': 'Upload tracks',
       'pick_folder': 'Pick folder',
       'auto_scan_device': 'Auto scan device',
+      'import_from_yandex_disk': 'Import from Yandex.Disk',
+      'connect_yandex_disk': 'Connect Yandex.Disk',
+      'yandex_oauth_client_missing':
+          'YANDEX_OAUTH_CLIENT_ID is not configured. Add --dart-define=YANDEX_OAUTH_CLIENT_ID=...',
+      'open_yandex_oauth_page': 'Open OAuth page',
+      'yandex_oauth_open_failed': 'Unable to open Yandex OAuth page',
+      'paste_yandex_token_or_url':
+          'Paste OAuth token or redirect URL after Yandex authorization',
+      'yandex_token_or_url': 'OAuth token or URL',
+      'save_and_continue': 'Save and continue',
+      'yandex_scan_in_progress': 'Scanning Yandex.Disk...',
+      'yandex_found_audio_files': 'Audio files found in Yandex.Disk:',
+      'no_audio_files_in_yandex': 'No audio files found in Yandex.Disk',
+      'no_new_audio_files_in_yandex':
+          'No new audio files from Yandex.Disk were found',
+      'add_to_local_library': 'Add to local library',
+      'upload_selected_to_cloud': 'Upload selected to CloudTune',
+      'apply_for_selected': 'Apply for selected',
+      'yandex_download_in_progress': 'Downloading files from Yandex.Disk...',
+      'yandex_import_completed': 'Yandex.Disk import completed:',
+      'yandex_scan_failed': 'Failed to scan Yandex.Disk:',
+      'yandex_download_failed': 'Failed to download from Yandex.Disk:',
+      'yandex_unauthorized_reconnect':
+          'Yandex.Disk token is invalid. Reconnect again.',
       'pick_one_or_multiple_audio':
           'Pick one or multiple audio files (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
       'import_from_folder_with_filters':
@@ -278,6 +330,33 @@ class AppLocalizations {
       'upload_tracks': 'Subir pistas',
       'pick_folder': 'Elegir carpeta',
       'auto_scan_device': 'Búsqueda automática',
+      'import_from_yandex_disk': 'Importar desde Yandex.Disk',
+      'connect_yandex_disk': 'Conectar Yandex.Disk',
+      'yandex_oauth_client_missing':
+          'YANDEX_OAUTH_CLIENT_ID no está configurado. Agrega --dart-define=YANDEX_OAUTH_CLIENT_ID=...',
+      'open_yandex_oauth_page': 'Abrir página OAuth',
+      'yandex_oauth_open_failed': 'No se pudo abrir la página OAuth de Yandex',
+      'paste_yandex_token_or_url':
+          'Pega el token OAuth o la URL de redirección tras autorizar en Yandex',
+      'yandex_token_or_url': 'Token OAuth o URL',
+      'save_and_continue': 'Guardar y continuar',
+      'yandex_scan_in_progress': 'Escaneando Yandex.Disk...',
+      'yandex_found_audio_files':
+          'Archivos de audio encontrados en Yandex.Disk:',
+      'no_audio_files_in_yandex':
+          'No se encontraron archivos de audio en Yandex.Disk',
+      'no_new_audio_files_in_yandex':
+          'No se encontraron audios nuevos desde Yandex.Disk',
+      'add_to_local_library': 'Agregar a biblioteca local',
+      'upload_selected_to_cloud': 'Subir seleccionados a CloudTune',
+      'apply_for_selected': 'Aplicar a seleccionados',
+      'yandex_download_in_progress':
+          'Descargando archivos desde Yandex.Disk...',
+      'yandex_import_completed': 'Importación desde Yandex.Disk completada:',
+      'yandex_scan_failed': 'No se pudo escanear Yandex.Disk:',
+      'yandex_download_failed': 'Error al descargar desde Yandex.Disk:',
+      'yandex_unauthorized_reconnect':
+          'El token de Yandex.Disk no es válido. Reconecta de nuevo.',
       'pick_one_or_multiple_audio':
           'Elige uno o varios archivos de audio (MP3, WAV, FLAC, M4A/MP4, AAC, OGG, OPUS)',
       'import_from_folder_with_filters':

@@ -32,9 +32,19 @@ class Constants {
     ...fallbackBaseUrls,
   ];
 
+  // Yandex Disk OAuth
+  // Override in run/build with:
+  // --dart-define=YANDEX_OAUTH_CLIENT_ID=your_client_id
+  static const String yandexOauthClientId = String.fromEnvironment(
+    'YANDEX_OAUTH_CLIENT_ID',
+    defaultValue: '',
+  );
+
   // Storage Keys
   static const String tokenKey = 'cloudtune_token';
   static const String userCacheKey = 'cloudtune_user_cache';
+  static const String yandexDiskOAuthTokenKey =
+      'cloudtune_yandex_disk_oauth_token';
 
   // Validation Messages
   static const String emailRequired = 'Пожалуйста, введите email';

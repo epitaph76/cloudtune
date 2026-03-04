@@ -158,6 +158,12 @@ USER_CALLBACK_PREFIX = "user:"
 USER_TRACKS_PAGE_SIZE = 5
 USER_PLAYLISTS_PAGE_SIZE = 5
 SERVER_FILES_PAGE_SIZE = 10
+USER_SESSION_TTL_SECONDS = parse_int(os.getenv("USER_SESSION_TTL_SECONDS", "3600"), 3600)
+USER_SESSION_CLEANUP_INTERVAL_SECONDS = parse_int(
+    os.getenv("USER_SESSION_CLEANUP_INTERVAL_SECONDS", "300"),
+    300,
+)
+USER_SESSION_MAX_ENTRIES = parse_int(os.getenv("USER_SESSION_MAX_ENTRIES", "2000"), 2000)
 DB_CONTAINER_NAME = os.getenv("DB_CONTAINER_NAME", "cloudtune-db").strip() or "cloudtune-db"
 DB_NAME = os.getenv("DB_NAME", "cloudtune").strip() or "cloudtune"
 DB_USER = os.getenv("DB_USER", "cloudtune").strip() or "cloudtune"
@@ -371,19 +377,113 @@ async def get_user_playlists(user_id: int, page: int, limit: int) -> tuple[list[
     return rows, total_playlists
 
 
-def get_user_sessions(application: Application) -> dict[str, str]:
-    return application.bot_data.setdefault("user_sessions", {})
+def now_utc_ts() -> float:
+    return datetime.now(timezone.utc).timestamp()
+
+
+def normalize_user_session(raw_session: Any, now_ts: float) -> Optional[dict[str, Any]]:
+    if isinstance(raw_session, str):
+        email = raw_session.strip().lower()
+        if not email:
+            return None
+        return {
+            "email": email,
+            "expires_at": now_ts + max(USER_SESSION_TTL_SECONDS, 60),
+        }
+
+    if not isinstance(raw_session, dict):
+        return None
+
+    email = raw_session.get("email")
+    expires_at = raw_session.get("expires_at")
+    if not isinstance(email, str) or not email.strip():
+        return None
+    if not isinstance(expires_at, (int, float)):
+        return None
+
+    return {
+        "email": email.strip().lower(),
+        "expires_at": float(expires_at),
+    }
+
+
+def cleanup_user_sessions(application: Application, force: bool = False) -> None:
+    sessions = application.bot_data.setdefault("user_sessions", {})
+    if not isinstance(sessions, dict):
+        sessions = {}
+        application.bot_data["user_sessions"] = sessions
+
+    now_ts = now_utc_ts()
+    cleanup_interval = max(USER_SESSION_CLEANUP_INTERVAL_SECONDS, 1)
+    last_cleanup_raw = application.bot_data.get("user_sessions_last_cleanup_ts", 0.0)
+    try:
+        last_cleanup = float(last_cleanup_raw)
+    except (TypeError, ValueError):
+        last_cleanup = 0.0
+
+    if not force and now_ts - last_cleanup < cleanup_interval:
+        return
+
+    for token, raw_session in list(sessions.items()):
+        session = normalize_user_session(raw_session, now_ts)
+        if session is None or session["expires_at"] <= now_ts:
+            sessions.pop(token, None)
+            continue
+        if session is not raw_session:
+            sessions[token] = session
+
+    max_entries = max(USER_SESSION_MAX_ENTRIES, 0)
+    if max_entries > 0 and len(sessions) > max_entries:
+        sorted_tokens = sorted(
+            sessions.items(),
+            key=lambda item: float(item[1].get("expires_at", 0.0)) if isinstance(item[1], dict) else 0.0,
+        )
+        extra = len(sessions) - max_entries
+        for token, _ in sorted_tokens[:extra]:
+            sessions.pop(token, None)
+
+    application.bot_data["user_sessions_last_cleanup_ts"] = now_ts
+
+
+def get_user_sessions(application: Application) -> dict[str, Any]:
+    cleanup_user_sessions(application)
+    sessions = application.bot_data.setdefault("user_sessions", {})
+    if isinstance(sessions, dict):
+        return sessions
+    application.bot_data["user_sessions"] = {}
+    return application.bot_data["user_sessions"]
 
 
 def create_user_session(application: Application, email: str) -> str:
-    token = uuid.uuid4().hex[:10]
     sessions = get_user_sessions(application)
-    sessions[token] = email.strip().lower()
+    while True:
+        token = uuid.uuid4().hex[:10]
+        if token not in sessions:
+            break
+    sessions[token] = {
+        "email": email.strip().lower(),
+        "expires_at": now_utc_ts() + max(USER_SESSION_TTL_SECONDS, 60),
+    }
+    if USER_SESSION_MAX_ENTRIES > 0 and len(sessions) > USER_SESSION_MAX_ENTRIES:
+        cleanup_user_sessions(application, force=True)
     return token
 
 
 def resolve_user_email_by_token(application: Application, token: str) -> Optional[str]:
-    return get_user_sessions(application).get(token)
+    sessions = get_user_sessions(application)
+    raw_session = sessions.get(token)
+    if raw_session is None:
+        return None
+
+    now_ts = now_utc_ts()
+    session = normalize_user_session(raw_session, now_ts)
+    if session is None or session["expires_at"] <= now_ts:
+        sessions.pop(token, None)
+        return None
+
+    session["expires_at"] = now_ts + max(USER_SESSION_TTL_SECONDS, 60)
+    sessions[token] = session
+    return session["email"]
 
 
 async def check_backend_health() -> Tuple[bool, str]:

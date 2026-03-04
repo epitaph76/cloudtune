@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/track.dart';
 import '../models/playlist.dart';
@@ -23,6 +24,8 @@ import '../services/playlist_progress_tracker.dart';
 import '../services/server_music_sync_controller.dart';
 import '../services/upload_notification_service.dart';
 import '../utils/app_localizations.dart';
+import '../utils/constants.dart';
+import '../services/yandex_disk_service.dart';
 
 part '../widgets/server_music_screen_components.dart';
 
@@ -46,6 +49,22 @@ class _FolderImportFilters {
   final Duration maxDuration;
 }
 
+class _YandexImportSelection {
+  const _YandexImportSelection({required this.entries});
+
+  final List<YandexDiskAudioEntry> entries;
+}
+
+class _YandexDownloadProgress {
+  const _YandexDownloadProgress({
+    required this.completed,
+    required this.failed,
+  });
+
+  final int completed;
+  final int failed;
+}
+
 class ServerMusicScreen extends StatefulWidget {
   const ServerMusicScreen({super.key});
 
@@ -60,6 +79,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   static const int _cloudUploadParallelism = 3;
 
   final ApiService _apiService = ApiService();
+  final YandexDiskService _yandexDiskService = YandexDiskService();
   final ServerMusicSyncController _syncController = ServerMusicSyncController(
     parallelism: _cloudUploadParallelism,
   );
@@ -98,6 +118,8 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
   bool _didInitialCloudRefresh = false;
   final Set<String> _selectedLocalTrackPaths = <String>{};
   String? _lastLocalTracksAutoScrollKey;
+  CancelToken? _yandexScanCancelToken;
+  CancelToken? _yandexDownloadCancelToken;
   static const double _storageSwipeVelocityThreshold = 280;
 
   static const List<String> _supportedAudioExtensions = <String>[
@@ -151,6 +173,16 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       }
     }
     _cloudPlaylistSyncDownloadTokens.clear();
+    final yandexScanToken = _yandexScanCancelToken;
+    if (yandexScanToken != null && !yandexScanToken.isCancelled) {
+      yandexScanToken.cancel('yandex scan canceled by dispose');
+    }
+    _yandexScanCancelToken = null;
+    final yandexDownloadToken = _yandexDownloadCancelToken;
+    if (yandexDownloadToken != null && !yandexDownloadToken.isCancelled) {
+      yandexDownloadToken.cancel('yandex download canceled by dispose');
+    }
+    _yandexDownloadCancelToken = null;
     _cloudSearchDebounce?.cancel();
     _emailController.dispose();
     _usernameController.dispose();
@@ -262,6 +294,15 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                   onTap: () async {
                     Navigator.of(sheetContext).pop();
                     await _pickLocalFiles();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.cloud_sync_rounded),
+                  title: Text(t('import_from_yandex_disk')),
+                  subtitle: Text(t('paste_yandex_token_or_url')),
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    await _importFromYandexDisk();
                   },
                 ),
                 if (showFolderImportOption)
@@ -549,6 +590,660 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${t('added_files')} ${selectedFiles.length}')),
     );
+  }
+
+  Future<void> _importFromYandexDisk() async {
+    String t(String key) => AppLocalizations.text(context, key);
+    final accessToken = await _ensureYandexDiskAccessToken();
+    if (!mounted || accessToken == null) return;
+
+    final scanToken = CancelToken();
+    _yandexScanCancelToken = scanToken;
+    final scanProgress = ValueNotifier<YandexDiskScanProgress>(
+      const YandexDiskScanProgress(
+        processedDirectories: 0,
+        pendingDirectories: 0,
+        foundAudioFiles: 0,
+      ),
+    );
+
+    if (!mounted) return;
+    _showYandexScanProgressDialog(
+      scanProgress: scanProgress,
+      onCancel: () {
+        if (!scanToken.isCancelled) {
+          scanToken.cancel('yandex scan canceled by user');
+        }
+      },
+    );
+
+    List<YandexDiskAudioEntry> scannedEntries = const <YandexDiskAudioEntry>[];
+    Object? scanError;
+    try {
+      scannedEntries = await _yandexDiskService.scanAudioFiles(
+        accessToken: accessToken,
+        cancelToken: scanToken,
+        onProgress: (progress) {
+          if (!mounted || scanToken.isCancelled) return;
+          scanProgress.value = progress;
+        },
+      );
+    } catch (error) {
+      scanError = error;
+    } finally {
+      _yandexScanCancelToken = null;
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      scanProgress.dispose();
+    }
+
+    if (!mounted) return;
+    if (scanToken.isCancelled) return;
+
+    if (scanError != null) {
+      if (_isYandexUnauthorized(scanError)) {
+        await _yandexDiskService.clearAccessToken();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('yandex_unauthorized_reconnect'))),
+        );
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${t('yandex_scan_failed')} ${_yandexErrorMessage(scanError)}',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (scannedEntries.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t('no_audio_files_in_yandex'))));
+      return;
+    }
+
+    final localMusicProvider = context.read<LocalMusicProvider>();
+    final newEntries = _excludeAlreadyImportedYandexEntries(
+      scannedEntries,
+      localMusicProvider,
+    );
+    if (newEntries.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('no_new_audio_files_in_yandex'))),
+      );
+      return;
+    }
+
+    final selection = await _showYandexFilesPicker(newEntries);
+    if (!mounted || selection == null || selection.entries.isEmpty) return;
+
+    final downloadedFiles = await _downloadYandexEntries(
+      accessToken: accessToken,
+      entries: selection.entries,
+    );
+    if (!mounted || downloadedFiles.isEmpty) return;
+
+    await localMusicProvider.addFiles(downloadedFiles);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${t('yandex_import_completed')} ${downloadedFiles.length}',
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _ensureYandexDiskAccessToken() async {
+    final existingToken = await _yandexDiskService.readAccessToken();
+    if (existingToken != null && existingToken.isNotEmpty) {
+      return existingToken;
+    }
+
+    return _showYandexOAuthConnectDialog();
+  }
+
+  Future<String?> _showYandexOAuthConnectDialog() {
+    String t(String key) => AppLocalizations.text(context, key);
+    final controller = TextEditingController();
+    String? validationMessage;
+
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final hasClientId = Constants.yandexOauthClientId.trim().isNotEmpty;
+
+            Future<void> submit() async {
+              final parsedToken = _yandexDiskService.extractAccessToken(
+                controller.text,
+              );
+              if (parsedToken == null || parsedToken.isEmpty) {
+                setDialogState(() {
+                  validationMessage = t('paste_yandex_token_or_url');
+                });
+                return;
+              }
+
+              await _yandexDiskService.saveAccessToken(parsedToken);
+              if (!context.mounted) return;
+              Navigator.of(dialogContext).pop(parsedToken);
+            }
+
+            return AlertDialog(
+              title: Text(t('connect_yandex_disk')),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (hasClientId)
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _openYandexOAuthPage,
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          label: Text(t('open_yandex_oauth_page')),
+                        ),
+                      )
+                    else
+                      Text(
+                        t('yandex_oauth_client_missing'),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: controller,
+                      minLines: 2,
+                      maxLines: 4,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: t('yandex_token_or_url'),
+                        hintText: t('paste_yandex_token_or_url'),
+                        errorText: validationMessage,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: Text(t('cancel')),
+                ),
+                FilledButton(
+                  onPressed: submit,
+                  child: Text(t('save_and_continue')),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(controller.dispose);
+  }
+
+  Future<void> _openYandexOAuthPage() async {
+    String t(String key) => AppLocalizations.text(context, key);
+    final clientId = Constants.yandexOauthClientId.trim();
+    if (clientId.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t('yandex_oauth_client_missing'))));
+      return;
+    }
+
+    final url = _yandexDiskService.buildOAuthAuthorizeUrl(clientId: clientId);
+    final opened = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!mounted || opened) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(t('yandex_oauth_open_failed'))));
+  }
+
+  void _showYandexScanProgressDialog({
+    required ValueNotifier<YandexDiskScanProgress> scanProgress,
+    required VoidCallback onCancel,
+  }) {
+    String t(String key) => AppLocalizations.text(context, key);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return AlertDialog(
+          content: ValueListenableBuilder<YandexDiskScanProgress>(
+            valueListenable: scanProgress,
+            builder: (context, progress, _) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(t('yandex_scan_in_progress')),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${progress.foundAudioFiles} ${t('tracks')} | '
+                          '${progress.processedDirectories} +${progress.pendingDirectories} dirs',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          actions: [TextButton(onPressed: onCancel, child: Text(t('cancel')))],
+        );
+      },
+    );
+  }
+
+  List<YandexDiskAudioEntry> _excludeAlreadyImportedYandexEntries(
+    List<YandexDiskAudioEntry> source,
+    LocalMusicProvider localMusicProvider,
+  ) {
+    final existingByName = <String>{};
+    final existingByNameAndSize = <String>{};
+
+    for (final file in localMusicProvider.selectedFiles) {
+      final lookupName = _trackLookupName(file.path);
+      existingByName.add(lookupName);
+      existingByNameAndSize.add(
+        _trackLookupNameWithSizeKey(
+          trackName: lookupName,
+          fileSize: _safeLocalFileSize(file),
+        ),
+      );
+    }
+
+    final out = <YandexDiskAudioEntry>[];
+    for (final entry in source) {
+      final lookupName = _trackLookupName(entry.name);
+      final hasExactSizeMatch =
+          entry.size != null &&
+          existingByNameAndSize.contains(
+            _trackLookupNameWithSizeKey(
+              trackName: lookupName,
+              fileSize: entry.size,
+            ),
+          );
+      if (hasExactSizeMatch || existingByName.contains(lookupName)) continue;
+      out.add(entry);
+    }
+    return out;
+  }
+
+  Future<_YandexImportSelection?> _showYandexFilesPicker(
+    List<YandexDiskAudioEntry> entries,
+  ) {
+    String t(String key) => AppLocalizations.text(context, key);
+    final selectedPaths = <String>{};
+    String searchQuery = '';
+
+    return showModalBottomSheet<_YandexImportSelection>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final normalizedQuery = searchQuery.trim().toLowerCase();
+            final visibleEntries = normalizedQuery.isEmpty
+                ? entries
+                : entries.where((entry) {
+                    final name = entry.name.toLowerCase();
+                    final path = entry.path.toLowerCase();
+                    return name.contains(normalizedQuery) ||
+                        path.contains(normalizedQuery);
+                  }).toList();
+
+            final canApply = selectedPaths.isNotEmpty;
+
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+                child: SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.76,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${t('yandex_found_audio_files')} ${entries.length}',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              setModalState(() {
+                                selectedPaths
+                                  ..clear()
+                                  ..addAll(
+                                    visibleEntries.map((item) => item.path),
+                                  );
+                              });
+                            },
+                            icon: const Icon(Icons.done_all_rounded),
+                            label: Text(t('select_all')),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              setModalState(selectedPaths.clear);
+                            },
+                            icon: const Icon(Icons.deselect_rounded),
+                            label: Text(t('clear')),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '${selectedPaths.length} ${t('selected_shown')} ${visibleEntries.length}',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        onChanged: (value) {
+                          setModalState(() => searchQuery = value);
+                        },
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: t('search_by_name_or_path'),
+                          prefixIcon: const Icon(Icons.search_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: visibleEntries.length,
+                          itemBuilder: (context, index) {
+                            final entry = visibleEntries[index];
+                            final checked = selectedPaths.contains(entry.path);
+                            final subtitle =
+                                '${_shortYandexPath(entry.path)} | ${_prettyBytes(entry.size)}';
+                            return CheckboxListTile(
+                              value: checked,
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: Text(
+                                entry.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              onChanged: (value) {
+                                setModalState(() {
+                                  if (value == true) {
+                                    selectedPaths.add(entry.path);
+                                  } else {
+                                    selectedPaths.remove(entry.path);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: canApply
+                              ? () {
+                                  final selected = entries
+                                      .where(
+                                        (entry) =>
+                                            selectedPaths.contains(entry.path),
+                                      )
+                                      .toList();
+                                  Navigator.of(sheetContext).pop(
+                                    _YandexImportSelection(entries: selected),
+                                  );
+                                }
+                              : null,
+                          child: Text(t('add_selected_files')),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<List<File>> _downloadYandexEntries({
+    required String accessToken,
+    required List<YandexDiskAudioEntry> entries,
+  }) async {
+    String t(String key) => AppLocalizations.text(context, key);
+    final cancelToken = CancelToken();
+    _yandexDownloadCancelToken = cancelToken;
+    final progress = ValueNotifier<_YandexDownloadProgress>(
+      const _YandexDownloadProgress(completed: 0, failed: 0),
+    );
+
+    _showYandexDownloadProgressDialog(
+      total: entries.length,
+      progress: progress,
+      onCancel: () {
+        if (!cancelToken.isCancelled) {
+          cancelToken.cancel('yandex download canceled by user');
+        }
+      },
+    );
+
+    final downloadedFiles = <File>[];
+    String? firstFailureReason;
+
+    try {
+      final targetDirectory = await _getYandexImportDirectory();
+      for (final entry in entries) {
+        if (cancelToken.isCancelled) break;
+
+        try {
+          final downloaded = await _yandexDiskService.downloadAudioFile(
+            accessToken: accessToken,
+            entry: entry,
+            targetRootDirectory: targetDirectory,
+            cancelToken: cancelToken,
+          );
+          downloadedFiles.add(downloaded);
+          progress.value = _YandexDownloadProgress(
+            completed: downloadedFiles.length,
+            failed: progress.value.failed,
+          );
+        } catch (error) {
+          final isCanceled =
+              error is DioException && error.type == DioExceptionType.cancel;
+          if (isCanceled || cancelToken.isCancelled) {
+            break;
+          }
+
+          firstFailureReason ??= _yandexErrorMessage(error);
+          progress.value = _YandexDownloadProgress(
+            completed: downloadedFiles.length,
+            failed: progress.value.failed + 1,
+          );
+        }
+      }
+    } finally {
+      _yandexDownloadCancelToken = null;
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      progress.dispose();
+    }
+
+    if (!mounted || cancelToken.isCancelled) return downloadedFiles;
+    if (firstFailureReason != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${t('yandex_download_failed')} $firstFailureReason'),
+        ),
+      );
+    }
+
+    return downloadedFiles;
+  }
+
+  void _showYandexDownloadProgressDialog({
+    required int total,
+    required ValueNotifier<_YandexDownloadProgress> progress,
+    required VoidCallback onCancel,
+  }) {
+    String t(String key) => AppLocalizations.text(context, key);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return AlertDialog(
+          content: ValueListenableBuilder<_YandexDownloadProgress>(
+            valueListenable: progress,
+            builder: (context, value, _) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(t('yandex_download_in_progress')),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${value.completed}/$total | errors: ${value.failed}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          actions: [TextButton(onPressed: onCancel, child: Text(t('cancel')))],
+        );
+      },
+    );
+  }
+
+  Future<Directory> _getYandexImportDirectory() async {
+    final base = await _getPersistentDownloadDir();
+    final yandexDir = Directory(p.join(base.path, 'YandexDisk'));
+    if (!await yandexDir.exists()) {
+      await yandexDir.create(recursive: true);
+    }
+    return yandexDir;
+  }
+
+  bool _isYandexUnauthorized(Object error) {
+    if (error is! DioException) return false;
+    final statusCode = error.response?.statusCode;
+    return statusCode == 401 || statusCode == 403;
+  }
+
+  String _yandexErrorMessage(Object? error) {
+    if (error is DioException) {
+      final responseData = error.response?.data;
+      if (responseData is Map) {
+        final map = Map<String, dynamic>.from(responseData);
+        for (final key in <String>[
+          'description',
+          'message',
+          'error_description',
+          'error',
+        ]) {
+          final raw = map[key];
+          if (raw is String && raw.trim().isNotEmpty) {
+            return raw.trim();
+          }
+        }
+      }
+
+      final message = error.message;
+      if (message != null && message.trim().isNotEmpty) {
+        return message.trim();
+      }
+    }
+
+    if (error is StateError) {
+      final message = error.message;
+      if (message.trim().isNotEmpty) {
+        return message.trim();
+      }
+    }
+
+    final fallback = error?.toString();
+    if (fallback == null || fallback.trim().isEmpty) {
+      return 'Unknown error';
+    }
+    return fallback.trim();
+  }
+
+  String _shortYandexPath(String rawPath) {
+    var normalized = rawPath.trim().replaceAll('\\', '/');
+    final colonIndex = normalized.indexOf(':');
+    if (colonIndex != -1) {
+      normalized = normalized.substring(colonIndex + 1);
+    }
+    if (normalized.isEmpty) return '/';
+    if (!normalized.startsWith('/')) return '/$normalized';
+    return normalized;
+  }
+
+  String _prettyBytes(int? bytes) {
+    if (bytes == null || bytes < 0) return 'n/a';
+    const units = <String>['B', 'KB', 'MB', 'GB', 'TB'];
+    var value = bytes.toDouble();
+    var unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex++;
+    }
+    final fixed = value >= 10 || unitIndex == 0
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(1);
+    return '$fixed ${units[unitIndex]}';
   }
 
   Future<List<File>> _collectAudioFilesFromDevice() async {
@@ -1648,10 +2343,14 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         );
         break;
       case _LocalTrackSort.fileModified:
+        final modifiedEpochByPath = <String, int>{
+          for (final file in sorted) file.path: _safeFileModifiedEpoch(file),
+        };
         sorted.sort(
-          (left, right) => _safeFileModifiedEpoch(
-            right,
-          ).compareTo(_safeFileModifiedEpoch(left)),
+          (left, right) =>
+              (modifiedEpochByPath[right.path] ?? 0).compareTo(
+                modifiedEpochByPath[left.path] ?? 0,
+              ),
         );
         break;
     }
@@ -3280,29 +3979,47 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
             _setSelectedLocalPlaylist(navSelectedPlaylistId, syncNav: false);
           });
         }
-        final currentTrackPath = context.select<AudioPlayerProvider, String?>(
-          (provider) => provider.currentTrackPath,
-        );
-        final isCurrentTrackPlaying = context.select<AudioPlayerProvider, bool>(
-          (provider) => provider.playing,
-        );
+        final isDesktopSideBySide =
+            Theme.of(context).platform == TargetPlatform.windows &&
+            MediaQuery.of(context).size.width >= 920;
+        final isStorageUiVisible =
+            isDesktopSideBySide || navProvider.selectedIndex == 1;
+        final shouldObserveAudioState =
+            isStorageUiVisible && _storageType == _StorageType.local;
+        final currentTrackPath = shouldObserveAudioState
+            ? context.select<AudioPlayerProvider, String?>(
+                (provider) => provider.currentTrackPath,
+              )
+            : null;
+        final isCurrentTrackPlaying = shouldObserveAudioState
+            ? context.select<AudioPlayerProvider, bool>(
+                (provider) => provider.playing,
+              )
+            : false;
         final localTracks = localMusicProvider.selectedFiles;
         final localPlaylists = localMusicProvider.playlists;
-        final playlistLocalTracks = _localTracksForSelectedPlaylist(
-          localMusicProvider,
-        );
-        final sortedPlaylistLocalTracks = _sortLocalTracks(
-          playlistTracks: playlistLocalTracks,
-          allLocalTracks: localTracks,
-        );
-        final visibleLocalTracks = sortedPlaylistLocalTracks
-            .where(_matchesLocalTrackSearch)
-            .toList();
-        _primeLocalFileSizeRequests(visibleLocalTracks);
-        _maybeAutoScrollToCurrentLocalTrack(
-          visibleLocalTracks: visibleLocalTracks,
-          currentTrackPath: currentTrackPath,
-        );
+        var playlistLocalTracks = <File>[];
+        var sortedPlaylistLocalTracks = <File>[];
+        var visibleLocalTracks = <File>[];
+        if (_storageType == _StorageType.local) {
+          playlistLocalTracks = _localTracksForSelectedPlaylist(
+            localMusicProvider,
+          );
+          sortedPlaylistLocalTracks = _sortLocalTracks(
+            playlistTracks: playlistLocalTracks,
+            allLocalTracks: localTracks,
+          );
+          visibleLocalTracks = sortedPlaylistLocalTracks
+              .where(_matchesLocalTrackSearch)
+              .toList();
+          _primeLocalFileSizeRequests(visibleLocalTracks);
+          if (shouldObserveAudioState) {
+            _maybeAutoScrollToCurrentLocalTrack(
+              visibleLocalTracks: visibleLocalTracks,
+              currentTrackPath: currentTrackPath,
+            );
+          }
+        }
         final isCloudAuthed = authProvider.currentUser != null;
         final cloudTracks = _storageType == _StorageType.cloud
             ? cloudMusicProvider.tracks
@@ -3340,9 +4057,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                 : cloudMusicProvider.hasMorePlaylistTracks(
                     selectedCloudPlaylistId,
                   ));
-        final isWindowsDesktop =
-            Theme.of(context).platform == TargetPlatform.windows &&
-            MediaQuery.of(context).size.width >= 920;
+        final isWindowsDesktop = isDesktopSideBySide;
 
         return Scaffold(
           body: SafeArea(
@@ -3722,18 +4437,21 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                       ],
                                       const SizedBox(width: 10),
                                       Expanded(
-                                        child: TextField(
-                                          onChanged: (value) {
-                                            setState(
-                                              () => _localTracksSearchQuery =
-                                                  value,
-                                            );
-                                          },
-                                          decoration: InputDecoration(
-                                            isDense: true,
-                                            hintText: t('search_track'),
-                                            prefixIcon: Icon(
-                                              Icons.search_rounded,
+                                        child: SizedBox(
+                                          height: kMinInteractiveDimension,
+                                          child: TextField(
+                                            onChanged: (value) {
+                                              setState(
+                                                () => _localTracksSearchQuery =
+                                                    value,
+                                              );
+                                            },
+                                            decoration: InputDecoration(
+                                              isDense: true,
+                                              hintText: t('search_track'),
+                                              prefixIcon: Icon(
+                                                Icons.search_rounded,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -3781,7 +4499,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                             )
                                             .toList(),
                                         child: Container(
-                                          height: 44,
+                                          height: kMinInteractiveDimension,
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: 12,
                                           ),
@@ -4204,14 +4922,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                         ),
                                         const SizedBox(width: 10),
                                         Expanded(
-                                          child: TextField(
-                                            onChanged:
-                                                _onCloudTrackSearchChanged,
-                                            decoration: InputDecoration(
-                                              isDense: true,
-                                              hintText: t('search_track'),
-                                              prefixIcon: Icon(
-                                                Icons.search_rounded,
+                                          child: SizedBox(
+                                            height: kMinInteractiveDimension,
+                                            child: TextField(
+                                              onChanged:
+                                                  _onCloudTrackSearchChanged,
+                                              decoration: InputDecoration(
+                                                isDense: true,
+                                                hintText: t('search_track'),
+                                                prefixIcon: Icon(
+                                                  Icons.search_rounded,
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -4258,7 +4979,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                                               )
                                               .toList(),
                                           child: Container(
-                                            height: 44,
+                                            height: kMinInteractiveDimension,
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 12,
                                             ),

@@ -3,6 +3,7 @@ package handlers
 import (
 	"cloudtune/internal/database"
 	"cloudtune/internal/monitoring"
+	"fmt"
 	"io/fs"
 	"math"
 	"net/http"
@@ -189,14 +190,17 @@ func MonitorFilesList(c *gin.Context) {
 	}
 
 	files := make([]monitorFileItem, 0)
-	_ = filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil || d.IsDir() {
+	if err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("walk error at %q: %w", path, walkErr)
+		}
+		if d.IsDir() {
 			return nil
 		}
 
 		info, infoErr := d.Info()
 		if infoErr != nil {
-			return nil
+			return fmt.Errorf("stat error for %q: %w", path, infoErr)
 		}
 
 		relativePath, relErr := filepath.Rel(rootPath, path)
@@ -211,7 +215,13 @@ func MonitorFilesList(c *gin.Context) {
 			ModifiedAt:   info.ModTime().UTC(),
 		})
 		return nil
-	})
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to scan files",
+			"details": err.Error(),
+		})
+		return
+	}
 
 	sort.Slice(files, func(left, right int) bool {
 		if files[left].SizeBytes == files[right].SizeBytes {

@@ -26,14 +26,8 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      bool isLoggedIn = await _authService.isLoggedIn();
-      if (isLoggedIn) {
-        // Try to get cached user details
-        User? cachedUser = await _authService.getCachedUser();
-        if (cachedUser != null) {
-          _currentUser = cachedUser;
-        }
-      }
+      final isLoggedIn = await _authService.isLoggedIn();
+      _currentUser = isLoggedIn ? await _authService.getCachedUser() : null;
     } catch (e) {
       // Log error in production
     } finally {
@@ -97,9 +91,15 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<bool> checkAuthStatus() async {
-    bool isLoggedIn = await _authService.isLoggedIn();
-    if (isLoggedIn) {
-      // We could fetch user details here if needed
+    final isLoggedIn = await _authService.isLoggedIn();
+    final nextUser = isLoggedIn ? await _authService.getCachedUser() : null;
+    final userChanged =
+        _currentUser?.id != nextUser?.id ||
+        _currentUser?.email != nextUser?.email ||
+        _currentUser?.username != nextUser?.username;
+    if (userChanged) {
+      _currentUser = nextUser;
+      notifyListeners();
     }
     return isLoggedIn;
   }

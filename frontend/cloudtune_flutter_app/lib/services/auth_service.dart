@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../models/user.dart';
 import 'backend_client.dart';
 import 'session_storage_service.dart';
@@ -16,6 +18,7 @@ class AuthService {
 
   final BackendClient _backendClient;
   final SessionStorageService _sessionStorage;
+  static const String _sessionValidationPath = '/api/storage/usage';
 
   Future<Map<String, dynamic>> register(
     String email,
@@ -105,7 +108,32 @@ class AuthService {
 
   Future<bool> isLoggedIn() async {
     final token = await _sessionStorage.readToken();
-    return token != null && token.isNotEmpty;
+    if (token == null || token.isEmpty) {
+      return false;
+    }
+
+    try {
+      final response = await _backendClient.request<dynamic>(
+        method: 'GET',
+        path: _sessionValidationPath,
+        options: Options(
+          headers: <String, dynamic>{'Authorization': 'Bearer $token'},
+        ),
+      );
+      return response.statusCode == 200;
+    } catch (error) {
+      if (_isUnauthorizedError(error)) {
+        await logout();
+      }
+      return false;
+    }
+  }
+
+  bool _isUnauthorizedError(Object error) {
+    if (error is! DioException) {
+      return false;
+    }
+    return error.response?.statusCode == 401;
   }
 
   Future<void> logout() async {
