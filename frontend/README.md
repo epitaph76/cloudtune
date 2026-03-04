@@ -1,27 +1,27 @@
 # CloudTune Frontend
 
-![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)
-![Dart](https://img.shields.io/badge/Dart-3.11+-0175C2?logo=dart&logoColor=white)
-![Android](https://img.shields.io/badge/Android-minSdk_21-3DDC84?logo=android&logoColor=white)
-![Windows](https://img.shields.io/badge/Windows-desktop_shell-0078D6?logo=windows&logoColor=white)
+Папка `frontend/` содержит Flutter-клиент CloudTune.
 
-Папка `frontend/` содержит клиентскую часть CloudTune.
+## Актуальная версия
 
-## Где находится основной код
+- Приложение: `1.8.6+8` (`frontend/cloudtune_flutter_app/pubspec.yaml`).
 
-- Flutter-приложение: `frontend/cloudtune_flutter_app/`
+## Где код
+
+- Основной проект: `frontend/cloudtune_flutter_app/`
 - Точка входа: `frontend/cloudtune_flutter_app/lib/main.dart`
 
 ## Что умеет клиент
 
-- вход и регистрация через backend;
-- локальная библиотека с хранением в `SharedPreferences`;
-- локальные плейлисты и системный список избранного;
-- облачная библиотека и синхронизация плейлистов;
-- загрузка/скачивание треков;
-- фоновый плеер с `audio_service` + `just_audio`;
-- переключение языка (`ru`, `en`, `es`) и темы;
-- отдельная desktop-раскладка для Windows.
+- регистрация/вход в облако CloudTune;
+- локальная библиотека и локальные плейлисты;
+- облачная библиотека и облачные плейлисты;
+- загрузка треков в облако и скачивание в локальную библиотеку;
+- синхронизация плейлистов между local/cloud;
+- импорт музыки из Яндекс Диска (OAuth + выбор файлов);
+- фоновое воспроизведение (`audio_service` + `just_audio`);
+- темы и локализация (`ru`, `en`, `es`);
+- desktop-shell для Windows.
 
 ## Запуск
 
@@ -33,40 +33,46 @@ flutter run
 
 ## Настройка API
 
-По умолчанию используется `https://api-mp3-player.ru`.
+По умолчанию клиент использует:
 
-Если нужен свой сервер:
+- `API_BASE_URL=https://api-mp3-player.ru`
+
+Для своего backend:
 
 ```bash
 flutter run --dart-define=API_BASE_URL=https://api.your-domain.com
 ```
 
-Для release-сборки APK:
+### Fallback host'ы
 
-```bash
-flutter build apk --release --dart-define=API_BASE_URL=https://api.your-domain.com
-```
-
-Важно для single-backend режима:
-- в release используется только `API_BASE_URL`;
-- fallback-хосты отключены в release принудительно;
-- fallback можно включать только для debug-диагностики:
+- В release fallback URL отключены всегда.
+- В debug можно включить только явно:
 
 ```bash
 flutter run --dart-define=API_BASE_URL=https://api.your-domain.com --dart-define=API_ENABLE_FALLBACK_URLS=true
 ```
 
-Проверить активный backend-host можно на debug-экране `API Tester` в приложении.
+## Сборки
 
-## Схема взаимодействия
+APK:
 
-```mermaid
-flowchart LR
-    A[UI] --> B[Providers]
-    B --> C[Services]
-    C --> D[CloudTune Backend]
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=https://api.your-domain.com
+```
+
+Windows:
+
+```bash
+flutter build windows --release --dart-define=API_BASE_URL=https://api.your-domain.com
+```
+
+## Проверка
+
+```bash
+flutter analyze
+flutter test
 ```
 
 ## Подробная документация
 
-Полное описание архитектуры клиента, экранов и сервисов находится в `frontend/cloudtune_flutter_app/README.md`.
+- `frontend/cloudtune_flutter_app/README.md`

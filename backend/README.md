@@ -1,33 +1,16 @@
 # CloudTune Backend
 
-![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white)
-![Gin](https://img.shields.io/badge/Gin-1.9.1-00A86B?logo=go&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white)
-![JWT](https://img.shields.io/badge/JWT-v5.3.1-000000?logo=jsonwebtokens&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+Go backend для CloudTune: REST API для auth, облачной библиотеки, плейлистов и monitoring API.
 
-Backend-часть CloudTune: REST API для авторизации, облачной библиотеки, плейлистов и мониторинга.
+## Стек
 
-## Что реализовано
+- Go `1.24.0` (см. `go.mod`)
+- Gin `1.9.1`
+- PostgreSQL `15`
+- JWT (`github.com/golang-jwt/jwt/v5`)
+- Docker Compose (dev и prod конфиги)
 
-- JWT-аутентификация (`/auth/register`, `/auth/login`);
-- загрузка треков с проверкой MIME и дедупликацией по `content_hash`;
-- персональная библиотека пользователя через `user_library`;
-- удаление трека с корректной очисткой связей из плейлистов;
-- системный облачный плейлист избранного (`is_favorite`);
-- расчет использования облачного хранилища и квоты;
-- Monitoring API с ключом `X-Monitoring-Key`.
-
-## Архитектура
-
-```mermaid
-flowchart TD
-    A[HTTP клиент] --> B[Gin роутер]
-    B --> C[handlers]
-    C --> D[(PostgreSQL)]
-    C --> E[(uploads)]
-    F[Monitoring Bot] -->|X-Monitoring-Key| C
-```
+> Примечание: Dockerfile собирает приложение в образе `golang:1.25`, при этом версия языка в `go.mod` — `1.24.0`.
 
 ## Структура
 
@@ -37,9 +20,11 @@ backend/
   internal/database/
   internal/handlers/
   internal/middleware/
-  internal/models/
   internal/monitoring/
+  internal/models/
   internal/utils/
+  scripts/deploy-from-github.sh
+  scripts/run_post_deploy_tests.py
   docker-compose.yml
   docker-compose.prod.yml
 ```
@@ -55,143 +40,116 @@ API по умолчанию: `http://localhost:8080`.
 
 ## Production запуск
 
-1. Подготовить переменные:
-
 ```bash
 cd backend
 cp .env.prod.example .env.prod
-```
-
-2. Запустить:
-
-```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
-3. При схеме с Nginx backend обычно слушает `127.0.0.1:8080`.
-
-## Deploy Script (GitHub + rollback)
-
-Скрипт: `backend/scripts/deploy-from-github.sh`.
-
-Что делает:
-- обновляет код из GitHub;
-- деплоит backend через `docker compose`;
-- обновляет основной и resume-лендинг;
-- запускает post-deploy автотесты (`backend/scripts/run_post_deploy_tests.py`);
-- при падении тестов откатывает на предыдущий commit и деплоит его обратно;
-- перезапускает `cloudtune-monitoring-bot` с задержкой.
-
-## Переменные окружения
-
-- `DB_HOST` - хост БД (`localhost` по умолчанию).
-- `DB_PORT` - порт БД (`5432` по умолчанию).
-- `DB_USER` - пользователь PostgreSQL.
-- `DB_PASSWORD` - пароль PostgreSQL.
-- `DB_NAME` - имя БД.
-- `JWT_SECRET` - секрет подписи JWT.
-- `MONITORING_API_KEY` - ключ доступа к Monitoring API.
-- `CLOUD_UPLOADS_PATH` - папка хранения файлов (`./uploads` по умолчанию).
-- `CLOUD_STORAGE_QUOTA_BYTES` - квота облака в байтах (по умолчанию `3221225472`, это 3 ГБ).
-
-## Monitoring API
-
-Все эндпоинты требуют заголовок `X-Monitoring-Key: <MONITORING_API_KEY>`.
-
-- `GET /api/monitor/status`
-- `GET /api/monitor/storage`
-- `GET /api/monitor/connections`
-- `GET /api/monitor/users`
-- `GET /api/monitor/users/list?page=1&limit=8`
-- `DELETE /api/monitor/users/delete?email=user@example.com`
-- `GET /api/monitor/all`
+В `docker-compose.prod.yml` API публикуется на `127.0.0.1:8080` (под обратный прокси, например Nginx).
 
 ## Основные API эндпоинты
 
 Публичные:
-
 - `GET /health`
 - `GET /api/status`
 - `POST /auth/register`
 - `POST /auth/login`
 
 Защищенные (`Authorization: Bearer <token>`):
-
 - `POST /api/songs/upload`
-- `GET /api/songs/library`
+- `GET /api/songs/library` (поддерживает `limit`, `offset`, `search`)
 - `GET /api/songs/:id`
 - `DELETE /api/songs/:id`
 - `GET /api/songs/download/:id`
 - `GET /api/storage/usage`
 - `DELETE /api/profile`
 - `POST /api/playlists`
-- `GET /api/playlists`
+- `GET /api/playlists` (поддерживает `limit`, `offset`, `search`)
 - `DELETE /api/playlists/:playlist_id`
 - `POST /api/playlists/:playlist_id/songs/:song_id`
-- `GET /api/playlists/:playlist_id/songs`
+- `POST /api/playlists/:playlist_id/songs/bulk`
+- `GET /api/playlists/:playlist_id/songs` (поддерживает `limit`, `offset`, `search`)
 
-## Примечания
+## Monitoring API
 
-- Схема БД создается автоматически при старте.
-- Допустимые MIME-типы для загрузки: `audio/mpeg`, `audio/wav`, `audio/mp4`, `audio/flac`.
-- В Dockerfile для сборки используется образ `golang:1.25`, при этом `go.mod` зафиксирован на `go 1.24.0`.
+Для всех monitoring-маршрутов обязателен заголовок:
 
-## Pagination and Search
+`X-Monitoring-Key: <MONITORING_API_KEY>`
 
-The following endpoints now support server-side `limit`, `offset`, and `search` query params:
+Маршруты:
+- `GET /api/monitor/status`
+- `GET /api/monitor/storage`
+- `GET /api/monitor/connections`
+- `GET /api/monitor/users`
+- `GET /api/monitor/users/list?page=1&limit=8`
+- `GET /api/monitor/files?page=1&limit=10`
+- `GET /api/monitor/runtime`
+- `GET /api/monitor/snapshot`
+- `GET /api/monitor/all`
+- `DELETE /api/monitor/users/delete?email=user@example.com`
+- `DELETE /api/monitor/users/purge-all`
 
-- `GET /api/songs/library`
-- `GET /api/playlists`
-- `GET /api/playlists/:playlist_id/songs`
+## Переменные окружения приложения
 
-Each response includes:
+База данных:
+- `DB_HOST` (default: `localhost`)
+- `DB_PORT` (default: `5432`)
+- `DB_USER` (default: `postgres`)
+- `DB_PASSWORD` (default: `password`)
+- `DB_NAME` (default: `cloudtune`)
+- `DB_SSLMODE` (default: `disable`)
+- `DB_MAX_OPEN_CONNS` (default: `25`)
+- `DB_MAX_IDLE_CONNS` (default: `25`)
+- `DB_CONN_MAX_IDLE_MINUTES` (default: `5`)
+- `DB_CONN_MAX_LIFETIME_MINUTES` (default: `30`)
 
-- `count` (items in current page)
-- `total` (total matching rows)
-- `limit`
-- `offset`
-- `has_more`
-- `next_offset`
-- `search`
+Auth и monitoring:
+- `JWT_SECRET` (обязателен, минимум 32 символа)
+- `MONITORING_API_KEY` (ключ для monitoring API)
 
-This prevents oversized responses for large libraries and enables lazy loading on clients.
+Хранилище и upload:
+- `CLOUD_UPLOADS_PATH` (default: `./uploads`)
+- `CLOUD_STORAGE_QUOTA_BYTES` (default: `3221225472`, 3 GB)
+- `CLOUD_MAX_UPLOAD_SIZE_BYTES` (default: `104857600`, 100 MB)
+- `CLOUD_MAX_PARALLEL_UPLOADS` (default: `4`)
+- `X_ACCEL_REDIRECT_ENABLED` (default: `false`)
+- `X_ACCEL_REDIRECT_PREFIX` (default: `/internal_uploads`)
 
-## Quotas and Limits
+## Deploy script
 
-Storage/upload behavior is controlled by env vars:
+Скрипт: `backend/scripts/deploy-from-github.sh`.
 
-- `CLOUD_STORAGE_QUOTA_BYTES` (default `3221225472`, 3 GB per user)
-- `CLOUD_MAX_UPLOAD_SIZE_BYTES` (default `104857600`, 100 MB per file)
-- `CLOUD_MAX_PARALLEL_UPLOADS` (default `4`)
-- `CLOUD_UPLOADS_PATH` (default `./uploads`)
+Что делает:
+- обновляет код из Git;
+- деплоит backend (`docker compose`);
+- деплоит main/resume лендинги;
+- запускает post-deploy smoke тесты;
+- при падении тестов может откатить на предыдущий commit;
+- может перезапустить monitoring bot.
 
-## Observability Notes
+Ключевые переменные скрипта:
+- `REPO_URL` (обязательная)
+- `BRANCH` (default: `master`)
+- `APP_DIR` (default: `/opt/cloudtune`)
+- `DEPLOY_MAIN_LANDING`, `DEPLOY_RESUME_LANDING`
+- `MAIN_LANDING_SRC`, `MAIN_LANDING_DST`
+- `RESUME_LANDING_SRC`, `RESUME_LANDING_DST`
+- `DEPLOY_ARTIFACTS_TO_MAIN`
+- `RUN_POST_DEPLOY_TESTS`, `ROLLBACK_ON_TEST_FAILURE`
+- `POST_DEPLOY_TEST_SCRIPT`, `POST_DEPLOY_TEST_API_BASE_URL`
+- `POST_DEPLOY_TEST_MAIN_LANDING_URL`, `POST_DEPLOY_TEST_RESUME_LANDING_URL`
+- `POST_DEPLOY_TEST_TIMEOUT_SECONDS`, `POST_DEPLOY_TEST_HEALTH_PATH`
+- `POST_DEPLOY_TEST_POLL_ATTEMPTS`, `POST_DEPLOY_TEST_POLL_SLEEP_SECONDS`
+- `ALLOW_DEPLOY_AS_ROOT` (по умолчанию `false`)
+- `DEPLOY_AUTOSTASH_LOCAL_CHANGES` (по умолчанию `true`)
+- `RESTART_MONITORING_BOT`, `MONITORING_SERVICE_NAME`, `MONITORING_RESTART_DELAY_SECONDS`
+- `DOCKER_PRUNE_AFTER_DEPLOY`, `DOCKER_PRUNE_UNTIL_HOURS`, `DOCKER_PRUNE_VOLUMES`
+- `JOURNAL_VACUUM_AFTER_DEPLOY`, `JOURNAL_MAX_SIZE`
+- `TRUNCATE_BTMP_AFTER_DEPLOY`
 
-- Every request now has `X-Request-ID`; the backend logs include `request_id=...` for correlation.
-- Monitoring snapshot now includes upload failure reasons and upload status-class counters (`2xx/4xx/5xx`) with rates.
-- Monitoring bot supports threshold alerts for upload `4xx`/`5xx` spikes.
+## Релиз и откат
 
-## Release Process and Rollback
-
-- Release checklist: `backend/docs/release-checklist.md`
-- Deploy script: `backend/scripts/deploy-from-github.sh`
-- Post-deploy smoke tests: `backend/scripts/run_post_deploy_tests.py`
-
-Rollback criteria are codified in deploy flow:
-
-- If post-deploy smoke tests fail and `ROLLBACK_ON_TEST_FAILURE=true`, deploy rolls back to previous commit.
-- Rollback re-runs backend + landing deployment and restarts monitoring bot.
-
-## Root Access Policy
-
-For safer ops, deploy script blocks root execution by default.
-
-- `ALLOW_DEPLOY_AS_ROOT=false` (default): deployment as root is rejected.
-- Set `ALLOW_DEPLOY_AS_ROOT=true` only for controlled emergency scenarios.
-
-## Dirty Worktree Handling
-
-Deploy can auto-protect local server edits before updating from GitHub.
-
-- `DEPLOY_AUTOSTASH_LOCAL_CHANGES=true` (default): if the repo has local changes, deploy runs `git stash --include-untracked` and then continues with `pull --ff-only`.
-- `DEPLOY_AUTOSTASH_LOCAL_CHANGES=false`: deploy fails fast and prints changed files, requiring manual cleanup.
+- Чеклист релиза: `backend/docs/release-checklist.md`
+- Post-deploy тесты: `backend/scripts/run_post_deploy_tests.py`
+- При `ROLLBACK_ON_TEST_FAILURE=true` скрипт выполняет rollback на предыдущий commit, если smoke-тесты не прошли.

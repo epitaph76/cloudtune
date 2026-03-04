@@ -1,47 +1,63 @@
+[Лендинг проекта: https://api-mp3-player.ru](https://api-mp3-player.ru)
+
 # CloudTune
 
-CloudTune is a fullstack music project with:
-- Flutter client (Android + Windows desktop shell)
-- Go backend (Gin + PostgreSQL)
-- Telegram monitoring bot
-- Static landing pages
+CloudTune — fullstack-проект музыкального плеера:
+- Flutter-клиент (Android + Windows desktop shell);
+- Go backend (Gin + PostgreSQL);
+- Telegram-бот мониторинга;
+- статические лендинги (main + resume).
 
-## Repository Layout
+## Текущая версия
 
-- `backend/` - REST API, DB schema/init, monitoring endpoints, deploy scripts.
-- `frontend/cloudtune_flutter_app/` - Flutter app source code.
-- `monitoring/` - Telegram bot for health/snapshot/deploy commands.
-- `landing/` - static site and resume landing pages.
-- `cloudtune_andr.apk` - latest Android artifact in repo root.
-- `cloudtune_win/` and `cloudtune_win.zip` - latest Windows artifact in repo root.
+- Flutter-клиент: `1.8.6+8` (из `frontend/cloudtune_flutter_app/pubspec.yaml`).
+- Артефакты релиза в корне репозитория:
+  - `cloudtune_andr.apk`
+  - `cloudtune_win/`
+  - `cloudtune_win.zip`
 
-## Current App Behavior (Important)
+## Структура репозитория
 
-- Cloud storage is refreshed:
-  - on the first open of the Cloud tab after app launch/auth success
-  - on manual pull-to-refresh
-- Cloud playlist actions are separated:
-  - `Download to local` adds/merges tracks into local playlist and must not remove existing local tracks
-  - `Sync` can fully align local playlist with cloud (including removals)
+- `backend/` — REST API, БД, monitoring endpoints, deploy-скрипты.
+- `frontend/cloudtune_flutter_app/` — исходники Flutter-приложения.
+- `monitoring/` — Telegram-бот мониторинга и удаленного деплоя.
+- `landing/` — основной статический лендинг.
+- `landing/resume/` — отдельный resume-лендинг.
 
-## Quick Start
+## Быстрый старт
 
-### Backend
+### Backend (local dev)
 
 ```bash
 cd backend
+docker compose up --build
+```
+
+API по умолчанию: `http://localhost:8080`.
+
+### Backend (production compose)
+
+```bash
+cd backend
+cp .env.prod.example .env.prod
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
-### Flutter App
+### Flutter app
 
 ```bash
 cd frontend/cloudtune_flutter_app
 flutter pub get
+flutter run
+```
+
+Для своего backend:
+
+```bash
 flutter run --dart-define=API_BASE_URL=https://api.your-domain.com
 ```
 
-### Monitoring Bot
+### Monitoring bot
 
 ```bash
 cd monitoring
@@ -51,36 +67,37 @@ pip install -r requirements.txt
 python src/bot.py
 ```
 
-## Build and Update Root Artifacts
+## Сборка и обновление артефактов в корне
 
-Run from `frontend/cloudtune_flutter_app`:
+Сборка (из `frontend/cloudtune_flutter_app`):
 
 ```bash
 flutter build apk --release
 flutter build windows --release
 ```
 
-Then update root artifacts (from repo root):
+Копирование артефактов (из корня репозитория):
 
 ```powershell
 Copy-Item frontend/cloudtune_flutter_app/build/app/outputs/flutter-apk/app-release.apk cloudtune_andr.apk -Force
+New-Item -ItemType Directory -Path cloudtune_win -Force | Out-Null
 Copy-Item frontend/cloudtune_flutter_app/build/windows/x64/runner/Release/* cloudtune_win -Recurse -Force
 Compress-Archive -Path cloudtune_win\* -DestinationPath cloudtune_win.zip -Force
 ```
 
-## Verification
-
-From `frontend/cloudtune_flutter_app`:
+## Проверка
 
 ```bash
+cd frontend/cloudtune_flutter_app
 flutter analyze
 flutter test
 ```
 
-## Additional Docs
+## Документация по модулям
 
 - `backend/README.md`
 - `frontend/README.md`
 - `frontend/cloudtune_flutter_app/README.md`
 - `monitoring/README.md`
 - `landing/README.md`
+- `landing/resume/README.md`
