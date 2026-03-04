@@ -74,16 +74,22 @@ class YandexDiskService {
   final Dio _dio;
   final FlutterSecureStorage _secureStorage;
 
-  String buildOAuthAuthorizeUrl({required String clientId}) {
+  String buildOAuthAuthorizeUrl({
+    required String clientId,
+    String? redirectUri,
+  }) {
     final trimmedClientId = clientId.trim();
     if (trimmedClientId.isEmpty) {
       throw StateError('YANDEX_OAUTH_CLIENT_ID is empty');
     }
 
+    final trimmedRedirectUri = redirectUri?.trim();
     return Uri.https('oauth.yandex.ru', '/authorize', {
       'response_type': 'token',
       'client_id': trimmedClientId,
       'force_confirm': 'yes',
+      if (trimmedRedirectUri != null && trimmedRedirectUri.isNotEmpty)
+        'redirect_uri': trimmedRedirectUri,
     }).toString();
   }
 

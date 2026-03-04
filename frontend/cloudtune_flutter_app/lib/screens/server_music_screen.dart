@@ -803,7 +803,10 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
       return;
     }
 
-    final url = _yandexDiskService.buildOAuthAuthorizeUrl(clientId: clientId);
+    final url = _yandexDiskService.buildOAuthAuthorizeUrl(
+      clientId: clientId,
+      redirectUri: Constants.yandexOauthRedirectUri,
+    );
     final opened = await launchUrl(
       Uri.parse(url),
       mode: LaunchMode.externalApplication,
@@ -2347,10 +2350,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
           for (final file in sorted) file.path: _safeFileModifiedEpoch(file),
         };
         sorted.sort(
-          (left, right) =>
-              (modifiedEpochByPath[right.path] ?? 0).compareTo(
-                modifiedEpochByPath[left.path] ?? 0,
-              ),
+          (left, right) => (modifiedEpochByPath[right.path] ?? 0).compareTo(
+            modifiedEpochByPath[left.path] ?? 0,
+          ),
         );
         break;
     }
