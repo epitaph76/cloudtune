@@ -92,9 +92,11 @@ flutter run --dart-define=API_BASE_URL=https://api.your-domain.com --dart-define
 
 ```bash
 flutter run \
-  --dart-define=YANDEX_OAUTH_CLIENT_ID=your_client_id \
-  --dart-define=YANDEX_OAUTH_REDIRECT_URI=https://oauth.yandex.ru/verification_code
+  --dart-define=YANDEX_OAUTH_CLIENT_ID=your_client_id
 ```
+
+`YANDEX_OAUTH_REDIRECT_URI` фиксирован в приложении:
+`https://oauth.yandex.ru/verification_code`.
 
 ## Сборки
 

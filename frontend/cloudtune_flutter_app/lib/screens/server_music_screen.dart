@@ -799,12 +799,6 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final hasClientId = Constants.yandexOauthClientId.trim().isNotEmpty;
-            final redirectUri = Uri.tryParse(
-              Constants.yandexOauthRedirectUri.trim(),
-            );
-            final usesDeepLinkRedirect =
-                redirectUri != null &&
-                redirectUri.scheme.toLowerCase() == 'cloudtune';
             const authControlHeight = 56.0;
 
             Future<void> submit() async {
@@ -855,11 +849,7 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      t(
-                        usesDeepLinkRedirect
-                            ? 'yandex_oauth_auto_return_hint'
-                            : 'yandex_oauth_manual_return_hint',
-                      ),
+                      t('yandex_oauth_manual_return_hint'),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 12),
