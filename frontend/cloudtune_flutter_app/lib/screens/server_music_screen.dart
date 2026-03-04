@@ -353,6 +353,9 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
     String t(String key) => AppLocalizations.text(context, key);
     final showFolderImportOption = Platform.isAndroid;
     final showAutoScanOption = Platform.isAndroid;
+    final hasYandexToken =
+        (await _yandexDiskService.readAccessToken())?.isNotEmpty == true;
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -382,6 +385,17 @@ class _ServerMusicScreenState extends State<ServerMusicScreen>
                     await _importFromYandexDisk();
                   },
                 ),
+                if (hasYandexToken)
+                  ListTile(
+                    dense: true,
+                    visualDensity: const VisualDensity(vertical: -2),
+                    leading: const Icon(Icons.key_off_rounded),
+                    title: Text(t('delete_cloud_key')),
+                    onTap: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _removeYandexDiskAccessToken();
+                    },
+                  ),
                 if (showFolderImportOption)
                   ListTile(
                     leading: const Icon(Icons.folder_rounded),
