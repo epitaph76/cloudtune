@@ -44,6 +44,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
 ### Flutter app
+<img width="1920" height="1111" alt="изображение" src="https://github.com/user-attachments/assets/579bdeec-72bb-435b-94c1-b84e00a41876" />
 
 ```bash
 cd frontend/cloudtune_flutter_app
