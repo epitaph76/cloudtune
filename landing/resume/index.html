@@ -2,433 +2,957 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Илья Белов - Fullstack Developer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Илья Белов - Junior Backend / Fullstack Developer</title>
   <meta
     name="description"
-    content="Резюме Ильи Белова: fullstack-разработка (Go, Python, Dart, SQL), Docker, Nginx, PostgreSQL."
+    content="Резюме Ильи Белова: Junior Backend / Fullstack Developer. CloudTune, EpLua, РТУ МИРЭА, Go, Python, Flutter, PostgreSQL, Docker."
   />
+  <meta name="theme-color" content="#f6efe4" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Oranienbaum&display=swap"
     rel="stylesheet"
   />
   <style>
     :root {
-      --bg-0: #0f1a15;
-      --bg-1: #14211b;
-      --bg-2: #1b2b23;
-      --text: #e8f1ec;
-      --muted: #a8c4b5;
-      --card: rgba(26, 38, 32, 0.86);
-      --line: rgba(124, 184, 153, 0.3);
-      --primary: #7cb899;
-      --primary-2: #5ca382;
-      --radius-xl: 26px;
-      --radius-lg: 18px;
-      --radius-md: 12px;
-      --shadow: 0 24px 56px rgba(0, 0, 0, 0.35);
-      --mono: "Unbounded", "Manrope", sans-serif;
+      --paper: oklch(97.3% 0.017 84);
+      --paper-deep: oklch(94.6% 0.022 84);
+      --surface: oklch(95.8% 0.018 80);
+      --surface-strong: oklch(91.6% 0.028 79);
+      --ink: oklch(28% 0.102 264);
+      --ink-soft: oklch(43% 0.056 264);
+      --ink-faint: oklch(63% 0.026 255);
+      --accent: oklch(59% 0.194 31);
+      --accent-soft: oklch(88% 0.046 32);
+      --line: oklch(79% 0.03 250);
+      --shadow: 0 18px 48px color-mix(in oklch, var(--ink) 11%, transparent);
+      --space-2xs: 0.25rem;
+      --space-xs: 0.5rem;
+      --space-sm: 0.75rem;
+      --space-md: 1rem;
+      --space-lg: 1.5rem;
+      --space-xl: 2rem;
+      --space-2xl: 3rem;
+      --space-3xl: 4rem;
+      --space-4xl: 6rem;
+      --radius-sm: 0.9rem;
+      --radius-md: 1.4rem;
+      --radius-lg: 2rem;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-soft: cubic-bezier(0.25, 1, 0.5, 1);
+      --page-width: min(1180px, 100%);
     }
 
     * {
       box-sizing: border-box;
     }
 
+    html {
+      scroll-behavior: smooth;
+      background: var(--paper);
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
-      color: var(--text);
-      font-family: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--ink);
+      font-family: "Golos Text", "Segoe UI", sans-serif;
       background:
-        radial-gradient(880px 540px at 10% -8%, rgba(124, 184, 153, 0.16), transparent 58%),
-        radial-gradient(720px 520px at 96% 0%, rgba(106, 170, 224, 0.13), transparent 56%),
-        linear-gradient(160deg, var(--bg-0), var(--bg-1) 52%, var(--bg-2));
-      padding: 26px 16px 34px;
+        radial-gradient(circle at 12% 18%, color-mix(in oklch, var(--accent) 12%, transparent), transparent 24%),
+        radial-gradient(circle at 92% 8%, color-mix(in oklch, var(--ink) 8%, transparent), transparent 28%),
+        linear-gradient(180deg, var(--paper), var(--paper-deep));
+      padding:
+        max(18px, env(safe-area-inset-top))
+        max(16px, env(safe-area-inset-right))
+        max(28px, env(safe-area-inset-bottom))
+        max(16px, env(safe-area-inset-left));
+      overflow-x: clip;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::before {
+      background:
+        linear-gradient(90deg, color-mix(in oklch, var(--ink) 8%, transparent) 1px, transparent 1px),
+        linear-gradient(180deg, color-mix(in oklch, var(--ink) 6%, transparent) 1px, transparent 1px);
+      background-size: clamp(64px, 8vw, 102px) 100%, 100% 72px;
+      opacity: 0.22;
+    }
+
+    body::after {
+      inset: auto 8% 8% auto;
+      width: clamp(160px, 18vw, 280px);
+      height: clamp(160px, 18vw, 280px);
+      border-radius: 50%;
+      background: color-mix(in oklch, var(--accent) 15%, transparent);
+      filter: blur(6px);
+      opacity: 0.55;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    p,
+    li {
+      line-height: 1.65;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      text-wrap: balance;
+      font-family: "Oranienbaum", Georgia, serif;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+    }
+
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
     }
 
     .page {
-      width: min(1020px, 100%);
+      position: relative;
+      z-index: 1;
+      width: var(--page-width);
       margin: 0 auto;
       display: grid;
-      gap: 16px;
-    }
-
-    .card {
-      border-radius: var(--radius-xl);
-      border: 1px solid var(--line);
-      background: var(--card);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(8px);
+      gap: var(--space-4xl);
+      padding-block: var(--space-xl) var(--space-2xl);
     }
 
     .hero {
-      padding: clamp(22px, 3.6vw, 34px);
+      position: relative;
       display: grid;
-      gap: 14px;
+      gap: clamp(2rem, 3vw, 3rem);
+      padding-block: var(--space-xl) var(--space-sm);
     }
 
-    .badge {
-      margin: 0;
-      width: fit-content;
-      border-radius: 999px;
-      border: 1px solid rgba(124, 184, 153, 0.55);
-      background: rgba(124, 184, 153, 0.16);
-      color: #d4ebdf;
-      padding: 7px 12px;
-      font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      font-weight: 800;
+    .hero::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: min(34vw, 18rem);
+      width: clamp(7rem, 14vw, 12rem);
+      height: 0.8rem;
+      background: var(--accent);
+      transform: translateY(-0.3rem);
     }
 
-    h1 {
-      margin: 0;
-      font-family: var(--mono);
-      font-size: clamp(30px, 5vw, 50px);
-      line-height: 1.08;
-      letter-spacing: -0.01em;
-      max-width: 14ch;
-    }
-
-    .hero p {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.68;
-      font-size: 17px;
-      max-width: 76ch;
-    }
-
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .btn {
-      text-decoration: none;
-      border-radius: 14px;
-      border: 1px solid transparent;
-      padding: 11px 16px;
-      font-weight: 700;
-      font-size: 15px;
-      display: inline-flex;
-      justify-content: center;
+    .hero-grid {
+      display: grid;
+      gap: clamp(1.5rem, 4vw, 4rem);
       align-items: center;
-      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
     }
 
-    .btn:hover {
-      transform: translateY(-2px);
-    }
-
-    .btn-primary {
-      color: #0d1a14;
-      background: linear-gradient(135deg, var(--primary), var(--primary-2));
-      box-shadow: 0 10px 28px rgba(92, 163, 130, 0.35);
-    }
-
-    .btn-secondary {
-      color: #d4ebdf;
-      border-color: rgba(124, 184, 153, 0.4);
-      background: rgba(20, 34, 27, 0.56);
-    }
-
-    .meta {
-      list-style: none;
-      margin: 4px 0 0;
-      padding: 0;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .meta li {
-      border-radius: 999px;
-      border: 1px solid rgba(124, 184, 153, 0.34);
-      background: rgba(23, 39, 31, 0.62);
-      color: #cfe7db;
-      font-size: 12px;
-      font-family: var(--mono);
-      padding: 8px 11px;
-    }
-
-    .grid {
+    .hero-rail {
       display: grid;
-      gap: 16px;
-      grid-template-columns: 1.08fr 0.92fr;
+      gap: 1.15rem;
+      align-content: start;
+      max-width: 22rem;
+    }
+
+    .location-lock {
+      display: grid;
+      gap: 0.65rem;
+      max-width: 24ch;
+    }
+
+    .location {
+      margin: 0;
+      font-size: 0.95rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .rail-note {
+      margin: 0;
+      color: var(--ink-soft);
+      font-size: 0.98rem;
+      line-height: 1.55;
+      max-width: 24ch;
+    }
+
+    .hero-links {
+      display: grid;
+      gap: 0.85rem;
+      grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    }
+
+    .hero-link {
+      display: grid;
+      gap: var(--space-xs);
+      min-height: 5.1rem;
+      padding: 0.95rem 1rem;
+      text-decoration: none;
+      background: color-mix(in oklch, var(--surface) 90%, var(--paper));
+      border: 1px solid color-mix(in oklch, var(--line) 88%, var(--paper));
+      border-radius: 1.35rem;
+      box-shadow: var(--shadow);
+      transition:
+        transform 260ms var(--ease-soft),
+        border-color 200ms var(--ease-soft),
+        background-color 200ms var(--ease-soft),
+        box-shadow 260ms var(--ease-soft);
+    }
+
+    .hero-link:hover,
+    .hero-link:focus-visible {
+      transform: translate3d(0, -4px, 0);
+      border-color: color-mix(in oklch, var(--accent) 46%, var(--line));
+      background: color-mix(in oklch, var(--accent-soft) 42%, var(--paper));
+      box-shadow: 0 22px 54px color-mix(in oklch, var(--ink) 12%, transparent);
+      outline: none;
+    }
+
+    .hero-link-title {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .hero-link-meta {
+      color: var(--ink-soft);
+      font-size: 0.92rem;
+      word-break: break-word;
+    }
+
+    .hero-copy {
+      display: grid;
+      gap: 0.85rem;
+      align-content: center;
+    }
+
+    .role {
+      margin: 0;
+      font-size: clamp(1.05rem, 0.92rem + 0.9vw, 1.55rem);
+      line-height: 1.25;
+      color: var(--ink-soft);
+      max-width: 17ch;
+    }
+
+    .name {
+      font-size: clamp(4.6rem, 14vw, 9.4rem);
+      line-height: 0.82;
+      margin-left: -0.04em;
+      text-transform: uppercase;
+      max-width: 6ch;
+    }
+
+    .hero-stack {
+      margin: 0;
+      display: grid;
+      gap: 0.35rem;
+      max-width: 48ch;
+      color: var(--ink);
+      font-size: clamp(0.98rem, 0.94rem + 0.16vw, 1.05rem);
+      line-height: 1.55;
+    }
+
+    .stack-prefix {
+      font-size: 0.84rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
     }
 
     .section {
-      padding: 22px;
       display: grid;
-      gap: 12px;
-      border-radius: var(--radius-lg);
+      gap: var(--space-xl);
     }
 
-    h2 {
+    .section-header {
+      display: grid;
+      gap: var(--space-sm);
+      align-items: start;
+      justify-items: start;
+    }
+
+    .section-label {
       margin: 0;
-      font-family: var(--mono);
-      font-size: 23px;
-      letter-spacing: -0.01em;
-    }
-
-    .section p {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.62;
-    }
-
-    .chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .chips span {
-      border-radius: 999px;
-      border: 1px solid rgba(124, 184, 153, 0.35);
-      background: rgba(28, 45, 37, 0.66);
-      color: #d8ece2;
-      padding: 8px 12px;
-      font-size: 13px;
-      font-weight: 600;
-    }
-
-    .timeline {
-      display: grid;
-      gap: 10px;
-    }
-
-    .item {
-      border-radius: var(--radius-md);
-      border: 1px solid rgba(124, 184, 153, 0.28);
-      background: rgba(30, 47, 39, 0.6);
-      padding: 12px 13px;
-      display: grid;
-      gap: 7px;
-    }
-
-    .item-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .item-head strong {
-      color: #e7f4ee;
-      font-size: 15px;
-      font-family: var(--mono);
-      line-height: 1.35;
-    }
-
-    .tag {
-      border-radius: 999px;
-      border: 1px solid rgba(124, 184, 153, 0.35);
-      background: rgba(22, 37, 30, 0.66);
-      color: #cae4d7;
-      font-size: 12px;
-      padding: 4px 8px;
-      white-space: nowrap;
-    }
-
-    .item ul {
-      margin: 0;
-      padding-left: 18px;
-      color: #d6eade;
-      line-height: 1.5;
-      display: grid;
-      gap: 4px;
-      font-size: 14px;
-    }
-
-    .minimal-project {
-      border-radius: var(--radius-md);
-      border: 1px solid rgba(124, 184, 153, 0.26);
-      background: rgba(23, 39, 31, 0.58);
-      padding: 13px;
-    }
-
-    .minimal-project p {
-      margin: 0;
-      color: #d0e6da;
-      line-height: 1.55;
-      font-size: 14px;
-    }
-
-    .contacts {
-      display: grid;
-      gap: 8px;
-    }
-
-    .contacts a {
       width: fit-content;
-      color: #d8ece2;
+      font-size: 0.82rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .experience-shell {
+      display: grid;
+      gap: var(--space-xl);
+    }
+
+    .projects-showcase {
+      display: grid;
+      gap: var(--space-lg);
+      align-items: stretch;
+    }
+
+    .feature-story {
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      gap: var(--space-lg);
+      padding: clamp(1.55rem, 2.6vw, 2.45rem);
+      color: oklch(96% 0.014 85);
+      background:
+        linear-gradient(180deg, color-mix(in oklch, var(--ink) 94%, black), color-mix(in oklch, var(--ink) 84%, var(--accent) 10%));
+      border-radius: var(--radius-lg);
+      box-shadow: 0 26px 64px color-mix(in oklch, var(--ink) 24%, transparent);
+      transition:
+        transform 260ms var(--ease-soft),
+        box-shadow 260ms var(--ease-soft);
+    }
+
+    .feature-story::after {
+      content: "";
+      position: absolute;
+      right: -6%;
+      top: -12%;
+      width: clamp(12rem, 26vw, 20rem);
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background: color-mix(in oklch, var(--accent) 26%, transparent);
+      opacity: 0.72;
+    }
+
+    .feature-meta {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      gap: 1rem;
+      align-items: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .feature-index {
+      margin: 0;
+      font-family: "Oranienbaum", Georgia, serif;
+      font-size: clamp(2.8rem, 4vw, 4.3rem);
+      line-height: 0.82;
+      color: color-mix(in oklch, white 88%, var(--accent));
+    }
+
+    .feature-type {
+      margin: 0;
+      font-size: 0.8rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: color-mix(in oklch, white 78%, var(--accent));
+      font-weight: 700;
+      max-width: 16ch;
+      line-height: 1.3;
+    }
+
+    .feature-body {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 0.95rem;
+    }
+
+    .feature-body h2 {
+      color: white;
+      font-size: clamp(2.7rem, 4.6vw, 4rem);
+      line-height: 0.92;
+      max-width: 10ch;
+    }
+
+    .feature-subtitle {
+      margin: 0;
+      color: color-mix(in oklch, white 78%, var(--paper));
+      font-size: clamp(1rem, 0.95rem + 0.16vw, 1.08rem);
+      max-width: 44ch;
+    }
+
+    .feature-points {
+      display: grid;
+      gap: 0.95rem;
+      max-width: 54ch;
+    }
+
+    .feature-points li {
+      position: relative;
+      padding-left: 1.2rem;
+      color: color-mix(in oklch, white 88%, var(--paper));
+      font-size: 1.03rem;
+    }
+
+    .feature-points li::before {
+      content: "";
+      position: absolute;
+      top: 0.78rem;
+      left: 0;
+      width: 0.52rem;
+      height: 0.52rem;
+      background: var(--accent);
+      border-radius: 0.16rem;
+    }
+
+    .project-link {
+      color: inherit;
       text-decoration: none;
-      border-bottom: 1px dashed rgba(124, 184, 153, 0.6);
+      cursor: pointer;
+    }
+
+    .project-link:visited {
+      color: inherit;
+    }
+
+    .feature-story:hover,
+    .feature-story:focus-visible {
+      transform: translate3d(0, -4px, 0);
+      box-shadow: 0 30px 74px color-mix(in oklch, var(--ink) 28%, transparent);
+      outline: none;
+    }
+
+    .project-sheet {
+      display: grid;
+      gap: 1rem;
+      padding: clamp(1.4rem, 2vw, 2rem);
+      align-content: start;
+      background: color-mix(in oklch, var(--surface) 92%, var(--paper));
+      border: 1px solid color-mix(in oklch, var(--line) 84%, var(--paper));
+      border-radius: var(--radius-md);
+      box-shadow: 0 14px 34px color-mix(in oklch, var(--ink) 8%, transparent);
+      transition:
+        transform 260ms var(--ease-soft),
+        box-shadow 260ms var(--ease-soft),
+        border-color 200ms var(--ease-soft);
+    }
+
+    .project-sheet:hover,
+    .project-sheet:focus-within {
+      transform: translate3d(0, -4px, 0);
+      box-shadow: 0 22px 56px color-mix(in oklch, var(--ink) 14%, transparent);
+      border-color: color-mix(in oklch, var(--accent) 34%, var(--line));
+    }
+
+    .project-header {
+      display: grid;
+      gap: 0.55rem;
+    }
+
+    .project-index {
+      margin: 0;
+      font-size: 0.82rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .project-sheet h3 {
+      font-size: clamp(2.5rem, 4vw, 3.35rem);
+      line-height: 0.92;
+    }
+
+    .project-meta,
+    .project-body {
+      margin: 0;
+      color: var(--ink-soft);
+      max-width: 34ch;
+    }
+
+    .project-list {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .project-list li {
+      position: relative;
+      padding-left: 1.15rem;
+      max-width: 34ch;
+      color: var(--ink);
+      line-height: 1.55;
+    }
+
+    .project-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.78rem;
+      width: 0.38rem;
+      height: 0.38rem;
+      border-radius: 50%;
+      background: color-mix(in oklch, var(--accent) 84%, var(--paper));
+    }
+
+    .support-grid {
+      display: grid;
+      gap: var(--space-lg);
+    }
+
+    .support-block,
+    .wide-block {
+      position: relative;
+      display: grid;
+      gap: var(--space-lg);
+      padding: clamp(1.2rem, 2vw, 1.8rem) 0;
+      background:
+        linear-gradient(180deg, color-mix(in oklch, var(--paper-deep) 32%, transparent), transparent 58%);
+      border-top: 1px solid color-mix(in oklch, var(--line) 80%, var(--paper));
+      border-bottom: 1px solid color-mix(in oklch, var(--line) 66%, var(--paper));
+    }
+
+    .support-block h2,
+    .wide-block h2 {
+      font-size: clamp(1.95rem, 3.4vw, 2.9rem);
+      line-height: 0.98;
+    }
+
+    .support-kicker {
+      margin: 0;
+      color: var(--ink-soft);
+      max-width: 56ch;
+    }
+
+    .mini-ledger {
+      display: grid;
+      gap: var(--space-md);
+    }
+
+    .mini-ledger article {
+      display: grid;
+      gap: var(--space-xs);
+      padding-top: var(--space-sm);
+      border-top: 1px solid color-mix(in oklch, var(--line) 70%, var(--paper));
+    }
+
+    .mini-ledger h3 {
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+
+    .mini-ledger p,
+    .support-block p,
+    .wide-block p {
+      margin: 0;
+      max-width: 65ch;
+      color: var(--ink-soft);
+    }
+
+    .inline-value {
+      color: var(--ink);
       font-weight: 600;
     }
 
-    .contacts a:hover {
-      color: #effaf5;
+    .project-capsule {
+      display: grid;
+      gap: var(--space-sm);
+      padding-top: var(--space-sm);
+      border-top: 1px solid color-mix(in oklch, var(--line) 70%, var(--paper));
     }
 
-    footer {
-      text-align: center;
-      color: #9fb9aa;
-      font-size: 13px;
-      padding-top: 4px;
+    .project-capsule h3 {
+      font-size: 1.45rem;
+      line-height: 1;
+    }
+
+    .meta-strip {
+      display: grid;
+      gap: var(--space-lg);
+    }
+
+    .stack-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-xs);
+      margin: 0;
+    }
+
+    .stack-list li {
+      padding: 0.5rem 0.72rem;
+      border-radius: 999px;
+      background: color-mix(in oklch, var(--accent-soft) 54%, var(--paper));
+      border: 1px solid color-mix(in oklch, var(--accent) 18%, var(--paper));
+      color: var(--ink);
+      font-size: 0.95rem;
+    }
+
+    .interest-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm) var(--space-md);
+      align-items: center;
+      font-family: "Oranienbaum", Georgia, serif;
+      color: var(--ink);
+    }
+
+    .interest-cloud span {
+      font-size: clamp(1.8rem, 3.4vw, 3.4rem);
+      line-height: 0.95;
+    }
+
+    .interest-cloud span:nth-child(2),
+    .interest-cloud span:nth-child(4) {
+      color: color-mix(in oklch, var(--accent) 86%, var(--ink));
+    }
+
+    .resume-footer {
+      display: grid;
+      gap: var(--space-sm);
+      padding-top: var(--space-lg);
+      border-top: 1px solid color-mix(in oklch, var(--line) 74%, var(--paper));
+      color: var(--ink-faint);
+      font-size: 0.92rem;
     }
 
     .reveal {
       opacity: 0;
-      transform: translateY(14px);
-      animation: reveal 0.62s cubic-bezier(0.22, 0.65, 0.25, 1) forwards;
+      transform: translate3d(0, 2rem, 0);
+      transition:
+        opacity 760ms var(--ease-out),
+        transform 760ms var(--ease-out);
+      transition-delay: var(--delay, 0ms);
     }
 
-    .delay-1 { animation-delay: 0.08s; }
-    .delay-2 { animation-delay: 0.16s; }
-    .delay-3 { animation-delay: 0.24s; }
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
 
-    @keyframes reveal {
-      to {
-        opacity: 1;
-        transform: translateY(0);
+    @media (min-width: 760px) {
+      .page {
+        gap: 5rem;
+      }
+
+      .hero-grid {
+        grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
+      }
+
+      .experience-shell {
+        grid-template-columns: 1fr;
+        gap: var(--space-lg);
+      }
+
+      .section-header {
+        position: static;
+      }
+
+      .projects-showcase {
+        grid-template-columns: minmax(0, 1.3fr) minmax(20rem, 0.88fr);
+      }
+
+      .feature-story {
+        grid-template-columns: minmax(6rem, 7rem) minmax(0, 1fr);
+        align-items: start;
+      }
+
+      .support-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .meta-strip {
+        grid-template-columns: 0.82fr 1.18fr;
       }
     }
 
-    @media (max-width: 900px) {
-      .grid {
+    @media (min-width: 1080px) {
+      .page {
+        padding-inline: var(--space-md);
+      }
+
+      .name {
+        max-width: none;
+      }
+
+      .hero-copy {
+        padding-left: clamp(0rem, 2.2vw, 2rem);
+      }
+    }
+
+    @media (max-width: 759px) {
+      .hero {
+        gap: var(--space-xl);
+      }
+
+      .section {
+        gap: var(--space-lg);
+      }
+
+      .section-label {
+        letter-spacing: 0.18em;
+      }
+
+      .hero::before {
+        left: 0;
+        width: 8rem;
+      }
+
+      .hero-links {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.65rem;
+      }
+
+      .hero-link {
+        min-height: 4.5rem;
+        padding: 0.78rem;
+      }
+
+      .hero-link-title {
+        font-size: 0.98rem;
+      }
+
+      .hero-link-meta {
+        font-size: 0.82rem;
+      }
+
+      .hero-copy {
+        gap: 0.72rem;
+      }
+
+      .role,
+      .hero-stack {
+        font-size: 0.98rem;
+      }
+
+      .rail-note {
+        font-size: 0.94rem;
+      }
+
+      .feature-story::after {
+        right: -12%;
+        top: auto;
+        bottom: -18%;
+      }
+
+      .projects-showcase {
         grid-template-columns: 1fr;
       }
+    }
 
-      .hero p {
-        font-size: 16px;
+    @media (max-width: 420px) {
+      .hero-links {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
 
-    @media (max-width: 620px) {
-      body {
-        padding: 14px 10px 24px;
+    @media (hover: none) {
+      .hero-link:hover,
+      .project-sheet:hover {
+        transform: none;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
       }
 
-      .hero,
-      .section {
-        padding: 17px;
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
       }
 
-      .actions {
-        width: 100%;
-      }
-
-      .btn {
-        width: 100%;
+      .reveal,
+      .reveal.is-visible {
+        opacity: 1;
+        transform: none;
       }
     }
   </style>
 </head>
 <body>
   <main class="page">
-    <header class="card hero reveal">
-      <p class="badge">Resume • Fullstack</p>
-      <h1>Илья Белов</h1>
-      <p>
-        Fullstack-разработчик (Go / Flutter / Python), Москва.
-        Учусь на 3 курсе РТУ МИРЭА по направлению «Информационные системы и технологии».
-        Фокус: production-практика, стабильность сервиса, аккуратная эксплуатация.
-      </p>
-      <div class="actions">
-        <a class="btn btn-primary" href="https://github.com/epitaph76" target="_blank" rel="noopener noreferrer">GitHub</a>
-        <a class="btn btn-secondary" href="./cases.html">Ответы на кейсы</a>
-        <a class="btn btn-secondary" href="mailto:ilyabelov041006@gmail.com">ilyabelov041006@gmail.com</a>
-        <a class="btn btn-secondary" href="https://api-mp3-player.ru" target="_blank" rel="noopener noreferrer">Основной сайт проекта</a>
+    <header class="hero">
+      <div class="hero-grid">
+        <div class="hero-rail">
+          <div class="location-lock reveal is-visible" style="--delay: 0ms;">
+            <p class="location">Москва, Россия</p>
+            <p class="rail-note">Backend, production-сборки и fullstack-проекты с упором на аккуратную эксплуатацию и понятную архитектуру.</p>
+          </div>
+
+          <nav class="hero-links reveal is-visible" aria-label="Основные ссылки" style="--delay: 110ms;">
+            <a class="hero-link" href="mailto:ilyabelov041006@gmail.com">
+              <span class="hero-link-title">Email</span>
+              <span class="hero-link-meta">ilyabelov041006@gmail.com</span>
+            </a>
+            <a class="hero-link" href="https://github.com/epitaph76" target="_blank" rel="noopener noreferrer">
+              <span class="hero-link-title">GitHub</span>
+              <span class="hero-link-meta">github.com/epitaph76</span>
+            </a>
+          </nav>
+        </div>
+
+        <div class="hero-copy">
+          <p class="role reveal is-visible" style="--delay: 180ms;">Junior Backend / Fullstack Developer</p>
+          <h1 class="name reveal is-visible" style="--delay: 260ms;">Илья<br />Белов</h1>
+          <p class="hero-stack reveal is-visible" style="--delay: 360ms;">
+            <span class="stack-prefix">Стек</span>
+            Go, Python, Dart, SQL, PostgreSQL, Gin, FastAPI, Flutter, Docker, Nginx, Linux, Git.
+          </p>
+        </div>
       </div>
-      <ul class="meta">
-        <li>Москва</li>
-        <li>РТУ МИРЭА, 3 курс</li>
-        <li>Go / Python / Dart / SQL</li>
-        <li>Docker / Nginx / PostgreSQL</li>
-      </ul>
     </header>
 
-    <section class="grid">
-      <article class="card section reveal delay-1">
-        <h2>Технические навыки</h2>
-        <div class="chips">
-          <span>Go + Gin</span>
-          <span>Python</span>
-          <span>Dart / Flutter</span>
-          <span>SQL</span>
-          <span>PostgreSQL</span>
-          <span>Docker</span>
-          <span>Nginx</span>
-          <span>Linux (Ubuntu)</span>
+    <section class="section">
+      <div class="experience-shell">
+        <div class="section-header reveal" style="--delay: 40ms;">
+          <p class="section-label">Основные проекты</p>
         </div>
-        <p>
-          Умею собирать и поддерживать сервис от API и БД до деплоя и мониторинга.
-          В приоритете предсказуемость релизов, логичность архитектуры и контроль состояния прод-среды.
-        </p>
 
-        <div class="minimal-project">
-          <p>
-            Ключевой проект: персональный музыкальный сервис с локальным и облачным режимом.
-            Здесь только краткая ссылка, детали проекта вынесены на отдельный основной сайт:
-            <a href="https://api-mp3-player.ru" target="_blank" rel="noopener noreferrer">api-mp3-player.ru</a>.
-          </p>
+        <div class="projects-showcase">
+          <a class="feature-story project-link reveal" href="https://api-mp3-player.ru/" target="_blank" rel="noopener noreferrer" style="--delay: 0ms;">
+            <div class="feature-meta">
+              <p class="feature-index">01</p>
+              <p class="feature-type">Ключевой fullstack-проект</p>
+            </div>
+
+            <div class="feature-body">
+              <h2>CloudTune</h2>
+              <p class="feature-subtitle">Go, Flutter, PostgreSQL, Docker, Nginx, Python</p>
+              <ul class="feature-points">
+                <li>Разрабатываю музыкальный сервис с Flutter-клиентом, Go backend на Gin + PostgreSQL, Telegram-ботом мониторинга и отдельным лендингом проекта.</li>
+                <li>Поднимаю локальную и production-сборку через Docker Compose, настраиваю деплой, мониторинг и эксплуатацию сервиса.</li>
+              </ul>
+            </div>
+          </a>
+
+          <a class="project-sheet project-link reveal" href="https://github.com/epitaph76/EpLua" target="_blank" rel="noopener noreferrer" style="--delay: 110ms;">
+            <div class="project-header">
+              <p class="project-index">02 / pet project</p>
+              <h3>EpLua</h3>
+              <p class="project-meta">Python / backend pet-проект • FastAPI, Docker, Ollama, Lua</p>
+            </div>
+            <ul class="project-list">
+              <li>Сделал локального агента, который по пользовательскому описанию и JSON-контексту генерирует LowCode-совместимый Lua-код.</li>
+              <li>Спроектировал pipeline planner -&gt; prompt -&gt; generation -&gt; validation -&gt; bounded repair с упором на предсказуемость результата.</li>
+            </ul>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="support-grid">
+      <article class="support-block reveal" style="--delay: 0ms;">
+        <p class="section-label">Образование</p>
+        <h2>РТУ МИРЭА</h2>
+        <p class="support-kicker">09.03.02 Информационные системы и технологии • 2 курс</p>
+        <p>Параллельно развиваю собственные backend/fullstack и ML-проекты.</p>
+      </article>
+
+      <article class="support-block reveal" style="--delay: 80ms;">
+        <p class="section-label">Английский</p>
+        <h2>Intermediate</h2>
+        <p>Читаю техническую документацию, README и issue на английском.</p>
+      </article>
+    </section>
+
+    <section class="support-grid">
+      <article class="wide-block reveal" style="--delay: 0ms;">
+        <p class="section-label">Дополнительные активности</p>
+        <div class="mini-ledger">
+          <article>
+            <h3>CTF</h3>
+            <p>Участвовал в CTF-соревнованиях; интересуюсь безопасностью веб-приложений, дебагом и сетевыми протоколами.</p>
+          </article>
+          <article>
+            <h3>ML-хакатон</h3>
+            <p>Участвовал в ML-хакатоне; интересуюсь retrieval-поиском, качественными метриками и модельными сервисами.</p>
+          </article>
         </div>
       </article>
 
-      <aside class="card section reveal delay-2">
-        <h2>Контакты</h2>
-        <div class="contacts">
-          <a href="mailto:ilyabelov041006@gmail.com">ilyabelov041006@gmail.com</a>
-          <a href="https://github.com/epitaph76" target="_blank" rel="noopener noreferrer">github.com/epitaph76</a>
-          <a href="https://api-mp3-player.ru" target="_blank" rel="noopener noreferrer">api-mp3-player.ru</a>
+      <article class="wide-block reveal" style="--delay: 90ms;">
+        <p class="section-label">Дополнительные проекты</p>
+        <div class="project-capsule">
+          <h3>CL_ml</h3>
+          <p><span class="inline-value">baseline audio retrieval pipeline</span> с Recall/MRR и optional FAISS.</p>
         </div>
-        <p>
-          Английский: Intermediate. Работаю с технической документацией, issue и README на английском.
-        </p>
-        <p>
-          Интересы: безопасность веб-приложений, сетевые протоколы и эксплуатация production-сервисов.
-        </p>
-      </aside>
+        <div class="project-capsule">
+          <h3>WhiteOps</h3>
+          <p><span class="inline-value">MVP backend-first оркестратора AI-агентов</span> с DAG scheduler и realtime events.</p>
+        </div>
+        <div class="project-capsule">
+          <h3>ОДК «Сатурн»</h3>
+          <p><span class="inline-value">Стажёр, отдел цифровой трансформации.</span> Обучал модель для распознавания маркировок на деталях, работал с обработкой изображений, парсингом данных и технической поддержкой внедрения.</p>
+        </div>
+      </article>
     </section>
 
-    <section class="card section reveal delay-3">
-      <h2>Опыт</h2>
-      <div class="timeline">
-        <article class="item">
-          <div class="item-head">
-            <strong>CloudTune Player с облачным хранением — fullstack pet-проект</strong>
-            <span class="tag">Fullstack / DevOps</span>
-          </div>
-          <ul>
-            <li>Запустил и развиваю музыкальный плеер с локальным и облачным режимом.</li>
-            <li>Поднял сервер и CI/CD деплой, веду эксплуатацию прода (DevOps: Docker, Nginx, Linux).</li>
-            <li>Сделал backend API и логику хранения данных (Backend: Go, PostgreSQL).</li>
-            <li>Реализовал мониторинг и бот управления деплоем (Monitoring: Python).</li>
-            <li>Разработал кроссплатформенное приложение и интерфейс (App: Flutter, Design: Figma).</li>
-            <li>Подготовил релизы и выложил приложение в магазины (Release: Android).</li>
-          </ul>
-        </article>
+    <section class="meta-strip">
+      <article class="wide-block reveal" style="--delay: 0ms;">
+        <p class="section-label">Стек</p>
+        <ul class="stack-list" aria-label="Технологический стек">
+          <li>Go</li>
+          <li>Python</li>
+          <li>Dart</li>
+          <li>SQL</li>
+          <li>PostgreSQL</li>
+          <li>Gin</li>
+          <li>FastAPI</li>
+          <li>Flutter</li>
+          <li>Docker</li>
+          <li>Nginx</li>
+          <li>Linux</li>
+          <li>Git</li>
+        </ul>
+      </article>
 
-        <article class="item">
-          <div class="item-head">
-            <strong>ОДК «Сатурн» - стажёр, отдел цифровой трансформации</strong>
-            <span class="tag">Автоматизация процессов</span>
-          </div>
-          <ul>
-            <li>Обучал модель для распознавания маркировок на деталях (обработка изображений, парсинг данных).</li>
-            <li>Интегрировал результаты в рабочий процесс отдела и помогал с техподдержкой внедрения.</li>
-          </ul>
-        </article>
-      </div>
+      <article class="wide-block reveal" style="--delay: 90ms;">
+        <p class="section-label">Профессиональные интересы</p>
+        <div class="interest-cloud" aria-label="Профессиональные интересы">
+          <span>Backend</span>
+          <span>Go</span>
+          <span>Python</span>
+          <span>Docker</span>
+          <span>Security</span>
+        </div>
+      </article>
     </section>
-
-    <footer>Илья Белов • Резюме • обновлено 25.02.2026</footer>
   </main>
+
+  <script>
+    (() => {
+      const items = document.querySelectorAll(".reveal");
+      if (!items.length) {
+        return;
+      }
+
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduceMotion || !("IntersectionObserver" in window)) {
+        items.forEach((item) => item.classList.add("is-visible"));
+        return;
+      }
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("is-visible");
+              observer.unobserve(entry.target);
+            }
+          });
+        },
+        {
+          threshold: 0.16,
+          rootMargin: "0px 0px -10% 0px"
+        }
+      );
+
+      items.forEach((item) => observer.observe(item));
+    })();
+  </script>
 </body>
 </html>
