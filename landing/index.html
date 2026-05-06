@@ -8,7 +8,7 @@
     name="description"
     content="CloudTune: Flutter клиент (Android + Windows), Go backend, PostgreSQL, облачное хранилище и Telegram-мониторинг."
   />
-  <meta name="theme-color" content="#f6f1e6" />
+  <meta name="theme-color" content="#071414" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -17,25 +17,25 @@
   />
   <style>
     :root {
-      --paper: oklch(97.2% 0.012 90);
-      --paper-deep: oklch(94.6% 0.018 92);
-      --surface: oklch(96.3% 0.014 88);
-      --surface-strong: oklch(91.8% 0.026 88);
-      --ink: oklch(29% 0.088 223);
-      --ink-soft: oklch(43% 0.046 223);
-      --ink-faint: oklch(63% 0.024 220);
-      --petrol: oklch(31% 0.095 223);
-      --petrol-soft: oklch(39% 0.062 219);
-      --citron: oklch(84% 0.17 112);
-      --citron-deep: oklch(71% 0.14 114);
-      --signal: oklch(64% 0.182 33);
-      --line: oklch(82% 0.024 220);
-      --line-strong: oklch(74% 0.032 218);
-      --shadow-soft: 0 18px 52px color-mix(in oklch, var(--petrol) 10%, transparent);
-      --shadow-strong: 0 28px 72px color-mix(in oklch, var(--petrol) 22%, transparent);
-      --radius-sm: 0.9rem;
-      --radius-md: 1.4rem;
-      --radius-lg: 2rem;
+      --paper: oklch(11.4% 0.028 196);
+      --paper-deep: oklch(9.8% 0.024 196);
+      --surface: oklch(18.2% 0.032 190);
+      --surface-strong: oklch(23.5% 0.038 188);
+      --ink: oklch(91.8% 0.018 92);
+      --ink-soft: oklch(76% 0.025 96);
+      --ink-faint: oklch(64% 0.023 108);
+      --petrol: var(--ink);
+      --petrol-soft: var(--ink-soft);
+      --citron: oklch(86% 0.25 135);
+      --citron-deep: oklch(72% 0.24 135);
+      --signal: var(--citron);
+      --line: oklch(38% 0.036 190);
+      --line-strong: oklch(49% 0.042 188);
+      --shadow-soft: 0 12px 28px color-mix(in oklch, var(--paper-deep) 70%, transparent);
+      --shadow-strong: 0 18px 42px color-mix(in oklch, var(--paper-deep) 82%, transparent);
+      --radius-sm: 2px;
+      --radius-md: 2px;
+      --radius-lg: 3px;
       --space-2xs: 0.25rem;
       --space-xs: 0.5rem;
       --space-sm: 0.75rem;
@@ -52,6 +52,7 @@
 
     * {
       box-sizing: border-box;
+      min-width: 0;
     }
 
     html {
@@ -61,13 +62,16 @@
 
     body {
       margin: 0;
+      width: 100%;
+      max-width: 100vw;
       min-height: 100vh;
       color: var(--ink);
       font-family: "Golos Text", "Segoe UI", sans-serif;
-      background:
-        radial-gradient(circle at 12% 10%, color-mix(in oklch, var(--signal) 13%, transparent), transparent 24%),
-        radial-gradient(circle at 90% 14%, color-mix(in oklch, var(--citron) 16%, transparent), transparent 22%),
-        linear-gradient(180deg, var(--paper), var(--paper-deep));
+      background-color: var(--paper);
+      background-image:
+        linear-gradient(90deg, color-mix(in oklch, var(--line) 18%, transparent) 1px, transparent 1px),
+        linear-gradient(180deg, color-mix(in oklch, var(--line) 13%, transparent) 1px, transparent 1px);
+      background-size: clamp(68px, 7vw, 104px) 100%, 100% 72px;
       padding:
         max(18px, env(safe-area-inset-top))
         max(16px, env(safe-area-inset-right))
@@ -86,21 +90,11 @@
     }
 
     body::before {
-      background:
-        linear-gradient(90deg, color-mix(in oklch, var(--petrol) 7%, transparent) 1px, transparent 1px),
-        linear-gradient(180deg, color-mix(in oklch, var(--petrol) 6%, transparent) 1px, transparent 1px);
-      background-size: clamp(72px, 8vw, 112px) 100%, 100% 76px;
-      opacity: 0.2;
+      display: none;
     }
 
     body::after {
-      inset: auto auto 4% 78%;
-      width: clamp(180px, 22vw, 320px);
-      height: clamp(180px, 22vw, 320px);
-      border-radius: 50%;
-      background: color-mix(in oklch, var(--citron) 16%, transparent);
-      filter: blur(12px);
-      opacity: 0.7;
+      display: none;
     }
 
     a {
@@ -114,7 +108,7 @@
       text-wrap: balance;
       font-family: "Oranienbaum", Georgia, serif;
       font-weight: 400;
-      letter-spacing: -0.02em;
+      letter-spacing: 0;
     }
 
     p,
@@ -156,7 +150,7 @@
       width: fit-content;
       font-size: 0.82rem;
       font-weight: 700;
-      letter-spacing: 0.22em;
+      letter-spacing: 0;
       text-transform: uppercase;
       color: var(--signal);
     }
@@ -209,9 +203,9 @@
       gap: 0.45rem;
       padding: 1rem 1.05rem;
       min-height: 5rem;
-      border-radius: 1.35rem;
+      border-radius: var(--radius-md);
       border: 1px solid color-mix(in oklch, var(--line-strong) 72%, var(--paper));
-      background: color-mix(in oklch, var(--surface) 92%, var(--paper));
+      background: color-mix(in oklch, var(--surface) 82%, var(--paper));
       box-shadow: var(--shadow-soft);
       text-decoration: none;
       transition:
@@ -225,15 +219,15 @@
     .hero-cta:focus-visible {
       transform: translate3d(0, -4px, 0);
       border-color: color-mix(in oklch, var(--signal) 34%, var(--line-strong));
-      background: color-mix(in oklch, var(--citron) 18%, var(--paper));
-      box-shadow: 0 24px 56px color-mix(in oklch, var(--petrol) 16%, transparent);
+      background: color-mix(in oklch, var(--citron) 14%, var(--surface));
+      box-shadow: 0 18px 42px color-mix(in oklch, var(--citron) 12%, transparent);
       outline: none;
     }
 
     .hero-cta-title {
       font-size: 1rem;
       font-weight: 700;
-      letter-spacing: 0.01em;
+      letter-spacing: 0;
     }
 
     .hero-cta-meta {
@@ -258,7 +252,7 @@
       color: var(--ink-faint);
       font-size: 0.78rem;
       font-weight: 700;
-      letter-spacing: 0.18em;
+      letter-spacing: 0;
       text-transform: uppercase;
     }
 
@@ -274,7 +268,7 @@
     }
 
     .hero-title {
-      font-size: clamp(3.5rem, 8.5vw, 6.6rem);
+      font-size: 5.9rem;
       line-height: 0.88;
       color: var(--petrol);
       max-width: 10.2ch;
@@ -284,7 +278,7 @@
 
     .hero-body {
       margin: 0;
-      font-size: clamp(1.1rem, 0.98rem + 0.54vw, 1.32rem);
+      font-size: 1.18rem;
       line-height: 1.55;
       max-width: 43ch;
       color: var(--petrol-soft);
@@ -299,9 +293,9 @@
 
     .hero-tags li {
       padding: 0.52rem 0.76rem;
-      border-radius: 999px;
-      background: color-mix(in oklch, var(--citron) 18%, var(--paper));
-      border: 1px solid color-mix(in oklch, var(--citron-deep) 16%, var(--paper));
+      border-radius: var(--radius-sm);
+      background: color-mix(in oklch, var(--citron) 13%, var(--surface));
+      border: 1px solid color-mix(in oklch, var(--citron-deep) 20%, var(--line));
       color: var(--petrol);
       font-size: 0.88rem;
       font-weight: 600;
@@ -329,9 +323,9 @@
     }
 
     .frame.primary {
-      background: linear-gradient(180deg, color-mix(in oklch, var(--petrol) 92%, black), color-mix(in oklch, var(--petrol) 84%, var(--citron) 8%));
-      border-color: color-mix(in oklch, var(--petrol) 40%, var(--line-strong));
-      color: oklch(96% 0.01 95);
+      background: color-mix(in oklch, var(--surface-strong) 76%, var(--paper));
+      border-color: color-mix(in oklch, var(--citron) 24%, var(--line-strong));
+      color: var(--ink);
       box-shadow: var(--shadow-strong);
     }
 
@@ -342,11 +336,11 @@
     }
 
     .frame.primary .frame-head {
-      color: color-mix(in oklch, white 94%, var(--citron));
+      color: var(--ink);
     }
 
     .frame-title {
-      font-size: clamp(1.8rem, 3.6vw, 3rem);
+      font-size: 2.55rem;
       line-height: 0.95;
     }
 
@@ -364,14 +358,12 @@
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      background: color-mix(in oklch, var(--petrol) 90%, black);
+      background: color-mix(in oklch, var(--surface-strong) 72%, var(--paper));
       aspect-ratio: 16 / 10;
     }
 
     .frame.primary .media-wrap {
-      background:
-        radial-gradient(circle at 84% 18%, color-mix(in oklch, var(--citron) 14%, transparent), transparent 24%),
-        linear-gradient(180deg, color-mix(in oklch, var(--petrol) 92%, black), color-mix(in oklch, var(--petrol) 82%, var(--signal) 8%));
+      background: color-mix(in oklch, var(--surface-strong) 72%, var(--paper));
     }
 
     .media-wrap.mobile {
@@ -398,8 +390,8 @@
     }
 
     .frame.primary figcaption {
-      color: color-mix(in oklch, white 80%, var(--paper));
-      border-top-color: color-mix(in oklch, white 10%, transparent);
+      color: var(--ink-soft);
+      border-top-color: color-mix(in oklch, var(--line) 72%, transparent);
     }
 
     .board {
@@ -408,8 +400,7 @@
       padding: clamp(1.4rem, 2.2vw, 2rem);
       border-radius: var(--radius-lg);
       border: 1px solid color-mix(in oklch, var(--line-strong) 72%, var(--paper));
-      background:
-        linear-gradient(180deg, color-mix(in oklch, var(--surface) 86%, var(--paper)), color-mix(in oklch, var(--surface-strong) 28%, var(--paper)));
+      background: color-mix(in oklch, var(--surface) 76%, var(--paper));
       box-shadow: var(--shadow-soft);
     }
 
@@ -425,7 +416,7 @@
     }
 
     .board-title {
-      font-size: clamp(1.9rem, 3vw, 2.8rem);
+      font-size: 2.45rem;
       line-height: 0.96;
       color: var(--petrol);
     }
@@ -456,7 +447,7 @@
       left: 0;
       width: 0.42rem;
       height: 0.42rem;
-      border-radius: 50%;
+      border-radius: var(--radius-sm);
       background: var(--signal);
     }
 
@@ -469,9 +460,9 @@
       display: grid;
       gap: 0.2rem;
       padding: 0.9rem 1rem;
-      border-radius: 1rem;
+      border-radius: var(--radius-md);
       border: 1px solid color-mix(in oklch, var(--line) 74%, var(--paper));
-      background: color-mix(in oklch, var(--paper) 72%, var(--surface));
+      background: color-mix(in oklch, var(--surface) 72%, var(--paper));
       color: var(--petrol);
       font-weight: 600;
       box-shadow: 0 10px 24px color-mix(in oklch, var(--petrol) 6%, transparent);
@@ -493,14 +484,14 @@
     }
 
     .download-card.primary {
-      background: linear-gradient(180deg, color-mix(in oklch, var(--petrol) 95%, black), color-mix(in oklch, var(--petrol) 85%, var(--signal) 7%));
-      border-color: color-mix(in oklch, var(--petrol) 42%, var(--line-strong));
-      color: oklch(96% 0.01 95);
+      background: color-mix(in oklch, var(--surface-strong) 76%, var(--paper));
+      border-color: color-mix(in oklch, var(--citron) 24%, var(--line-strong));
+      color: var(--ink);
       box-shadow: var(--shadow-strong);
     }
 
     .download-card h3 {
-      font-size: clamp(1.8rem, 3vw, 2.5rem);
+      font-size: 2.25rem;
       line-height: 0.96;
     }
 
@@ -524,7 +515,7 @@
       gap: 0.5rem;
       min-height: 3.25rem;
       padding: 0.85rem 1.15rem;
-      border-radius: 999px;
+      border-radius: var(--radius-md);
       border: 1px solid transparent;
       text-decoration: none;
       font-size: 0.95rem;
@@ -544,12 +535,12 @@
 
     .btn-primary {
       background: var(--citron);
-      color: var(--petrol);
+      color: oklch(14% 0.032 196);
       box-shadow: 0 16px 34px color-mix(in oklch, var(--citron) 26%, transparent);
     }
 
     .btn-secondary {
-      background: color-mix(in oklch, var(--paper) 80%, transparent);
+      background: color-mix(in oklch, var(--surface) 80%, transparent);
       color: inherit;
       border-color: color-mix(in oklch, currentColor 18%, transparent);
     }
@@ -560,8 +551,7 @@
       padding: clamp(1.3rem, 2.2vw, 1.9rem);
       border-radius: var(--radius-lg);
       border: 1px solid color-mix(in oklch, var(--line-strong) 72%, var(--paper));
-      background:
-        linear-gradient(180deg, color-mix(in oklch, var(--surface) 90%, var(--paper)), color-mix(in oklch, var(--surface-strong) 20%, var(--paper)));
+      background: color-mix(in oklch, var(--surface) 76%, var(--paper));
       box-shadow: var(--shadow-soft);
     }
 
@@ -573,9 +563,9 @@
 
     .stack span {
       padding: 0.5rem 0.74rem;
-      border-radius: 999px;
-      background: color-mix(in oklch, var(--citron) 16%, var(--paper));
-      border: 1px solid color-mix(in oklch, var(--citron-deep) 14%, var(--paper));
+      border-radius: var(--radius-sm);
+      background: color-mix(in oklch, var(--citron) 13%, var(--surface));
+      border: 1px solid color-mix(in oklch, var(--citron-deep) 20%, var(--line));
       color: var(--petrol);
       font-size: 0.9rem;
       font-weight: 600;
@@ -618,9 +608,9 @@
       top: 0.55rem;
       width: 0.55rem;
       height: 0.55rem;
-      border-radius: 50%;
+      border-radius: var(--radius-sm);
       background: var(--signal);
-      box-shadow: 0 0 0 6px color-mix(in oklch, var(--signal) 12%, transparent);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--signal) 10%, transparent);
     }
 
     .change-head {
@@ -637,7 +627,7 @@
       width: fit-content;
       font-size: 0.78rem;
       font-weight: 700;
-      letter-spacing: 0.16em;
+      letter-spacing: 0;
       text-transform: uppercase;
       color: var(--signal);
     }
@@ -721,7 +711,7 @@
       }
 
       .hero-title {
-        font-size: clamp(2.7rem, 11vw, 4.6rem);
+        font-size: 3.75rem;
         line-height: 0.9;
         max-width: 6.7ch;
       }
@@ -745,6 +735,18 @@
 
       .media-wrap.mobile {
         width: min(100%, 320px);
+      }
+    }
+
+    @media (max-width: 420px) {
+      .hero-title {
+        font-size: 3.25rem;
+      }
+
+      .frame-title,
+      .board-title,
+      .download-card h3 {
+        font-size: 2rem;
       }
     }
 

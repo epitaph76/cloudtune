@@ -8,7 +8,7 @@
     name="description"
     content="Резюме Ильи Белова: Junior Backend / Fullstack Developer. CloudTune, EpLua, РТУ МИРЭА, Go, Python, Flutter, PostgreSQL, Docker."
   />
-  <meta name="theme-color" content="#f6efe4" />
+  <meta name="theme-color" content="#071414" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -17,17 +17,17 @@
   />
   <style>
     :root {
-      --paper: oklch(97.3% 0.017 84);
-      --paper-deep: oklch(94.6% 0.022 84);
-      --surface: oklch(95.8% 0.018 80);
-      --surface-strong: oklch(91.6% 0.028 79);
-      --ink: oklch(28% 0.102 264);
-      --ink-soft: oklch(43% 0.056 264);
-      --ink-faint: oklch(63% 0.026 255);
-      --accent: oklch(59% 0.194 31);
-      --accent-soft: oklch(88% 0.046 32);
-      --line: oklch(79% 0.03 250);
-      --shadow: 0 18px 48px color-mix(in oklch, var(--ink) 11%, transparent);
+      --paper: oklch(11.4% 0.028 196);
+      --paper-deep: oklch(9.8% 0.024 196);
+      --surface: oklch(18.2% 0.032 190);
+      --surface-strong: oklch(23.5% 0.038 188);
+      --ink: oklch(91.8% 0.018 92);
+      --ink-soft: oklch(76% 0.025 96);
+      --ink-faint: oklch(64% 0.023 108);
+      --accent: oklch(70% 0.19 250);
+      --accent-soft: oklch(80% 0.12 245);
+      --line: oklch(38% 0.036 190);
+      --shadow: 0 12px 28px color-mix(in oklch, var(--paper-deep) 70%, transparent);
       --space-2xs: 0.25rem;
       --space-xs: 0.5rem;
       --space-sm: 0.75rem;
@@ -37,9 +37,9 @@
       --space-2xl: 3rem;
       --space-3xl: 4rem;
       --space-4xl: 6rem;
-      --radius-sm: 0.9rem;
-      --radius-md: 1.4rem;
-      --radius-lg: 2rem;
+      --radius-sm: 2px;
+      --radius-md: 2px;
+      --radius-lg: 3px;
       --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
       --ease-soft: cubic-bezier(0.25, 1, 0.5, 1);
       --page-width: min(1180px, 100%);
@@ -47,6 +47,7 @@
 
     * {
       box-sizing: border-box;
+      min-width: 0;
     }
 
     html {
@@ -56,13 +57,16 @@
 
     body {
       margin: 0;
+      width: 100%;
+      max-width: 100vw;
       min-height: 100vh;
       color: var(--ink);
       font-family: "Golos Text", "Segoe UI", sans-serif;
-      background:
-        radial-gradient(circle at 12% 18%, color-mix(in oklch, var(--accent) 12%, transparent), transparent 24%),
-        radial-gradient(circle at 92% 8%, color-mix(in oklch, var(--ink) 8%, transparent), transparent 28%),
-        linear-gradient(180deg, var(--paper), var(--paper-deep));
+      background-color: var(--paper);
+      background-image:
+        linear-gradient(90deg, color-mix(in oklch, var(--line) 18%, transparent) 1px, transparent 1px),
+        linear-gradient(180deg, color-mix(in oklch, var(--line) 13%, transparent) 1px, transparent 1px);
+      background-size: clamp(68px, 7vw, 104px) 100%, 100% 72px;
       padding:
         max(18px, env(safe-area-inset-top))
         max(16px, env(safe-area-inset-right))
@@ -81,21 +85,11 @@
     }
 
     body::before {
-      background:
-        linear-gradient(90deg, color-mix(in oklch, var(--ink) 8%, transparent) 1px, transparent 1px),
-        linear-gradient(180deg, color-mix(in oklch, var(--ink) 6%, transparent) 1px, transparent 1px);
-      background-size: clamp(64px, 8vw, 102px) 100%, 100% 72px;
-      opacity: 0.22;
+      display: none;
     }
 
     body::after {
-      inset: auto 8% 8% auto;
-      width: clamp(160px, 18vw, 280px);
-      height: clamp(160px, 18vw, 280px);
-      border-radius: 50%;
-      background: color-mix(in oklch, var(--accent) 15%, transparent);
-      filter: blur(6px);
-      opacity: 0.55;
+      display: none;
     }
 
     a {
@@ -114,7 +108,7 @@
       text-wrap: balance;
       font-family: "Oranienbaum", Georgia, serif;
       font-weight: 400;
-      letter-spacing: -0.02em;
+      letter-spacing: 0;
     }
 
     ul {
@@ -173,7 +167,7 @@
     .location {
       margin: 0;
       font-size: 0.95rem;
-      letter-spacing: 0.2em;
+      letter-spacing: 0;
       text-transform: uppercase;
       color: var(--accent);
       font-weight: 700;
@@ -199,9 +193,9 @@
       min-height: 5.1rem;
       padding: 0.95rem 1rem;
       text-decoration: none;
-      background: color-mix(in oklch, var(--surface) 90%, var(--paper));
+      background: color-mix(in oklch, var(--surface) 82%, var(--paper));
       border: 1px solid color-mix(in oklch, var(--line) 88%, var(--paper));
-      border-radius: 1.35rem;
+      border-radius: var(--radius-md);
       box-shadow: var(--shadow);
       transition:
         transform 260ms var(--ease-soft),
@@ -214,15 +208,15 @@
     .hero-link:focus-visible {
       transform: translate3d(0, -4px, 0);
       border-color: color-mix(in oklch, var(--accent) 46%, var(--line));
-      background: color-mix(in oklch, var(--accent-soft) 42%, var(--paper));
-      box-shadow: 0 22px 54px color-mix(in oklch, var(--ink) 12%, transparent);
+      background: color-mix(in oklch, var(--accent) 14%, var(--surface));
+      box-shadow: 0 18px 42px color-mix(in oklch, var(--accent) 12%, transparent);
       outline: none;
     }
 
     .hero-link-title {
       font-size: 1rem;
       font-weight: 700;
-      letter-spacing: 0.01em;
+      letter-spacing: 0;
     }
 
     .hero-link-meta {
@@ -239,14 +233,14 @@
 
     .role {
       margin: 0;
-      font-size: clamp(1.05rem, 0.92rem + 0.9vw, 1.55rem);
+      font-size: 1.32rem;
       line-height: 1.25;
       color: var(--ink-soft);
       max-width: 17ch;
     }
 
     .name {
-      font-size: clamp(4.6rem, 14vw, 9.4rem);
+      font-size: 8.4rem;
       line-height: 0.82;
       margin-left: -0.04em;
       text-transform: uppercase;
@@ -259,13 +253,13 @@
       gap: 0.35rem;
       max-width: 48ch;
       color: var(--ink);
-      font-size: clamp(0.98rem, 0.94rem + 0.16vw, 1.05rem);
+      font-size: 1.02rem;
       line-height: 1.55;
     }
 
     .stack-prefix {
       font-size: 0.84rem;
-      letter-spacing: 0.22em;
+      letter-spacing: 0;
       text-transform: uppercase;
       color: var(--accent);
       font-weight: 700;
@@ -287,7 +281,7 @@
       margin: 0;
       width: fit-content;
       font-size: 0.82rem;
-      letter-spacing: 0.22em;
+      letter-spacing: 0;
       text-transform: uppercase;
       color: var(--accent);
       font-weight: 700;
@@ -310,26 +304,18 @@
       display: grid;
       gap: var(--space-lg);
       padding: clamp(1.55rem, 2.6vw, 2.45rem);
-      color: oklch(96% 0.014 85);
-      background:
-        linear-gradient(180deg, color-mix(in oklch, var(--ink) 94%, black), color-mix(in oklch, var(--ink) 84%, var(--accent) 10%));
+      color: var(--ink);
+      background: color-mix(in oklch, var(--surface-strong) 76%, var(--paper));
       border-radius: var(--radius-lg);
-      box-shadow: 0 26px 64px color-mix(in oklch, var(--ink) 24%, transparent);
+      border: 1px solid color-mix(in oklch, var(--accent) 24%, var(--line));
+      box-shadow: var(--shadow);
       transition:
         transform 260ms var(--ease-soft),
         box-shadow 260ms var(--ease-soft);
     }
 
     .feature-story::after {
-      content: "";
-      position: absolute;
-      right: -6%;
-      top: -12%;
-      width: clamp(12rem, 26vw, 20rem);
-      aspect-ratio: 1;
-      border-radius: 50%;
-      background: color-mix(in oklch, var(--accent) 26%, transparent);
-      opacity: 0.72;
+      display: none;
     }
 
     .feature-meta {
@@ -344,17 +330,17 @@
     .feature-index {
       margin: 0;
       font-family: "Oranienbaum", Georgia, serif;
-      font-size: clamp(2.8rem, 4vw, 4.3rem);
+      font-size: 3.65rem;
       line-height: 0.82;
-      color: color-mix(in oklch, white 88%, var(--accent));
+      color: var(--accent-soft);
     }
 
     .feature-type {
       margin: 0;
       font-size: 0.8rem;
-      letter-spacing: 0.22em;
+      letter-spacing: 0;
       text-transform: uppercase;
-      color: color-mix(in oklch, white 78%, var(--accent));
+      color: var(--accent-soft);
       font-weight: 700;
       max-width: 16ch;
       line-height: 1.3;
@@ -368,16 +354,16 @@
     }
 
     .feature-body h2 {
-      color: white;
-      font-size: clamp(2.7rem, 4.6vw, 4rem);
+      color: var(--ink);
+      font-size: 3.55rem;
       line-height: 0.92;
       max-width: 10ch;
     }
 
     .feature-subtitle {
       margin: 0;
-      color: color-mix(in oklch, white 78%, var(--paper));
-      font-size: clamp(1rem, 0.95rem + 0.16vw, 1.08rem);
+      color: var(--ink-soft);
+      font-size: 1.05rem;
       max-width: 44ch;
     }
 
@@ -390,7 +376,7 @@
     .feature-points li {
       position: relative;
       padding-left: 1.2rem;
-      color: color-mix(in oklch, white 88%, var(--paper));
+      color: var(--ink);
       font-size: 1.03rem;
     }
 
@@ -418,7 +404,7 @@
     .feature-story:hover,
     .feature-story:focus-visible {
       transform: translate3d(0, -4px, 0);
-      box-shadow: 0 30px 74px color-mix(in oklch, var(--ink) 28%, transparent);
+      box-shadow: 0 18px 42px color-mix(in oklch, var(--accent) 12%, transparent);
       outline: none;
     }
 
@@ -427,7 +413,7 @@
       gap: 1rem;
       padding: clamp(1.4rem, 2vw, 2rem);
       align-content: start;
-      background: color-mix(in oklch, var(--surface) 92%, var(--paper));
+      background: color-mix(in oklch, var(--surface) 76%, var(--paper));
       border: 1px solid color-mix(in oklch, var(--line) 84%, var(--paper));
       border-radius: var(--radius-md);
       box-shadow: 0 14px 34px color-mix(in oklch, var(--ink) 8%, transparent);
@@ -440,7 +426,7 @@
     .project-sheet:hover,
     .project-sheet:focus-within {
       transform: translate3d(0, -4px, 0);
-      box-shadow: 0 22px 56px color-mix(in oklch, var(--ink) 14%, transparent);
+      box-shadow: 0 18px 42px color-mix(in oklch, var(--accent) 10%, transparent);
       border-color: color-mix(in oklch, var(--accent) 34%, var(--line));
     }
 
@@ -452,14 +438,14 @@
     .project-index {
       margin: 0;
       font-size: 0.82rem;
-      letter-spacing: 0.22em;
+      letter-spacing: 0;
       text-transform: uppercase;
       color: var(--accent);
       font-weight: 700;
     }
 
     .project-sheet h3 {
-      font-size: clamp(2.5rem, 4vw, 3.35rem);
+      font-size: 2.9rem;
       line-height: 0.92;
     }
 
@@ -490,8 +476,8 @@
       top: 0.78rem;
       width: 0.38rem;
       height: 0.38rem;
-      border-radius: 50%;
-      background: color-mix(in oklch, var(--accent) 84%, var(--paper));
+      border-radius: var(--radius-sm);
+      background: var(--accent);
     }
 
     .support-grid {
@@ -505,15 +491,14 @@
       display: grid;
       gap: var(--space-lg);
       padding: clamp(1.2rem, 2vw, 1.8rem) 0;
-      background:
-        linear-gradient(180deg, color-mix(in oklch, var(--paper-deep) 32%, transparent), transparent 58%);
+      background: transparent;
       border-top: 1px solid color-mix(in oklch, var(--line) 80%, var(--paper));
       border-bottom: 1px solid color-mix(in oklch, var(--line) 66%, var(--paper));
     }
 
     .support-block h2,
     .wide-block h2 {
-      font-size: clamp(1.95rem, 3.4vw, 2.9rem);
+      font-size: 2.55rem;
       line-height: 0.98;
     }
 
@@ -579,9 +564,9 @@
 
     .stack-list li {
       padding: 0.5rem 0.72rem;
-      border-radius: 999px;
-      background: color-mix(in oklch, var(--accent-soft) 54%, var(--paper));
-      border: 1px solid color-mix(in oklch, var(--accent) 18%, var(--paper));
+      border-radius: var(--radius-sm);
+      background: color-mix(in oklch, var(--accent) 13%, var(--surface));
+      border: 1px solid color-mix(in oklch, var(--accent) 22%, var(--line));
       color: var(--ink);
       font-size: 0.95rem;
     }
@@ -596,13 +581,13 @@
     }
 
     .interest-cloud span {
-      font-size: clamp(1.8rem, 3.4vw, 3.4rem);
+      font-size: 2.8rem;
       line-height: 0.95;
     }
 
     .interest-cloud span:nth-child(2),
     .interest-cloud span:nth-child(4) {
-      color: color-mix(in oklch, var(--accent) 86%, var(--ink));
+      color: var(--accent-soft);
     }
 
     .resume-footer {
@@ -688,7 +673,7 @@
       }
 
       .section-label {
-        letter-spacing: 0.18em;
+        letter-spacing: 0;
       }
 
       .hero::before {
