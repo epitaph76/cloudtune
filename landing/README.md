@@ -5,6 +5,7 @@
 ## Содержимое
 
 - `index.html` — основная страница проекта.
+- `eplua/index.html` — отдельная страница проекта EpLua на `https://api-mp3-player.ru/eplua/`.
 - `assets/media/desktop-demo.gif` — desktop-демо.
 - `assets/media/android-demo.mp4` — android-демо.
 - `assets/screens/*.svg` — иллюстрации интерфейса.
@@ -27,6 +28,8 @@ python -m http.server 8081
 
 Открыть: `http://localhost:8081`.
 
+EpLua-страница доступна локально по адресу `http://localhost:8081/eplua/`.
+
 ## Обновление на сервере вручную
 
 ```bash
@@ -38,6 +41,7 @@ scp cloudtune_win.zip cloudtune_andr.apk root@168.222.252.159:/var/www/api-mp3-p
 
 ```bash
 curl -I https://api-mp3-player.ru
+curl -I https://api-mp3-player.ru/eplua/
 curl -I https://api-mp3-player.ru/cloudtune_win.zip
 curl -I https://api-mp3-player.ru/cloudtune_andr.apk
 ```

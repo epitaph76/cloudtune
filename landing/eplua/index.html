@@ -1,0 +1,1181 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>EpLua - локальный агент генерации Lua</title>
+  <meta
+    name="description"
+    content="EpLua: локальный агент для генерации LowCode-compatible Lua по задаче и JSON-контексту. FastAPI, CLI, Ollama, Docker Compose, validation pipeline и bounded repair."
+  />
+  <meta name="theme-color" content="#081616" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Oranienbaum&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --night: oklch(16% 0.035 196);
+      --night-deep: oklch(11.4% 0.028 196);
+      --night-soft: oklch(20.5% 0.034 190);
+      --surface: oklch(22.8% 0.035 190);
+      --surface-strong: oklch(28% 0.039 188);
+      --paper: oklch(91.8% 0.018 92);
+      --paper-soft: oklch(76% 0.025 96);
+      --paper-faint: oklch(64% 0.023 108);
+      --line: oklch(38% 0.036 190);
+      --line-strong: oklch(49% 0.042 188);
+      --accent: oklch(64% 0.18 34);
+      --accent-soft: oklch(76% 0.112 40);
+      --green: oklch(72% 0.14 150);
+      --green-soft: oklch(30% 0.055 150);
+      --amber: oklch(79% 0.12 84);
+      --shadow: 0 12px 28px color-mix(in oklch, var(--night-deep) 70%, transparent);
+      --radius-sm: 2px;
+      --radius-md: 2px;
+      --radius-lg: 3px;
+      --space-2xs: 0.25rem;
+      --space-xs: 0.5rem;
+      --space-sm: 0.75rem;
+      --space-md: 1rem;
+      --space-lg: 1.5rem;
+      --space-xl: 2rem;
+      --space-2xl: 3rem;
+      --space-3xl: 4rem;
+      --space-4xl: 6rem;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-soft: cubic-bezier(0.25, 1, 0.5, 1);
+      --page-width: min(1220px, 100%);
+    }
+
+    * {
+      box-sizing: border-box;
+      min-width: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--night-deep);
+    }
+
+    body {
+      margin: 0;
+      width: 100%;
+      max-width: 100vw;
+      min-height: 100vh;
+      color: var(--paper);
+      font-family: "Golos Text", "Segoe UI", sans-serif;
+      background-color: var(--night-deep);
+      background-image:
+        linear-gradient(90deg, color-mix(in oklch, var(--line) 18%, transparent) 1px, transparent 1px),
+        linear-gradient(180deg, color-mix(in oklch, var(--line) 13%, transparent) 1px, transparent 1px);
+      background-size: clamp(68px, 7vw, 104px) 100%, 100% 72px;
+      padding:
+        max(18px, env(safe-area-inset-top))
+        max(16px, env(safe-area-inset-right))
+        max(28px, env(safe-area-inset-bottom))
+        max(16px, env(safe-area-inset-left));
+      overflow-x: clip;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      display: none;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      color: var(--paper);
+      font-family: "Oranienbaum", Georgia, serif;
+      font-weight: 400;
+      letter-spacing: 0;
+      text-wrap: balance;
+    }
+
+    p,
+    li {
+      line-height: 1.66;
+      overflow-wrap: anywhere;
+    }
+
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    code,
+    pre {
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      width: var(--page-width);
+      margin: 0 auto;
+      display: grid;
+      gap: clamp(3.2rem, 6vw, 5.4rem);
+      padding-block: var(--space-xl) var(--space-2xl);
+    }
+
+    .hero {
+      position: relative;
+      display: grid;
+      gap: clamp(2rem, 4vw, 3.2rem);
+      min-height: min(850px, calc(100dvh - 46px));
+      align-content: center;
+      padding-block: var(--space-xl) var(--space-lg);
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: clamp(0rem, 17vw, 13rem);
+      width: clamp(8rem, 15vw, 12rem);
+      height: 0.8rem;
+      background: var(--accent);
+      transform: translateY(-0.28rem);
+    }
+
+    .topline {
+      display: flex;
+      gap: var(--space-sm);
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .brand-mark {
+      margin: 0;
+      color: var(--accent-soft);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .nav-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-xs);
+      min-width: 0;
+    }
+
+    .nav-links a {
+      min-width: 0;
+      min-height: 2.75rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.55rem 0.8rem;
+      color: var(--paper-soft);
+      text-decoration: none;
+      border-radius: var(--radius-md);
+      border: 1px solid color-mix(in oklch, var(--line) 84%, transparent);
+      background: color-mix(in oklch, var(--surface) 58%, transparent);
+      transition:
+        color 180ms var(--ease-soft),
+        border-color 180ms var(--ease-soft),
+        background-color 180ms var(--ease-soft);
+    }
+
+    .nav-links a:hover,
+    .nav-links a:focus-visible {
+      color: var(--paper);
+      border-color: color-mix(in oklch, var(--accent) 54%, var(--line));
+      background: color-mix(in oklch, var(--accent) 15%, var(--surface));
+      outline: none;
+    }
+
+    .hero-grid {
+      display: grid;
+      gap: clamp(2rem, 5vw, 4.5rem);
+      align-items: end;
+    }
+
+    .hero-copy {
+      display: grid;
+      gap: var(--space-lg);
+      align-content: end;
+      min-width: 0;
+    }
+
+    .kicker,
+    .section-label,
+    .mini-label {
+      margin: 0;
+      width: fit-content;
+      color: var(--accent-soft);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .hero-title {
+      font-size: 9rem;
+      line-height: 0.82;
+      max-width: 6ch;
+      margin-left: -0.045em;
+      text-transform: uppercase;
+    }
+
+    .hero-body {
+      margin: 0;
+      max-width: 52ch;
+      color: var(--paper-soft);
+      font-size: 1.18rem;
+      line-height: 1.58;
+    }
+
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+      align-items: center;
+    }
+
+    .btn {
+      min-height: 3.25rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.85rem 1.15rem;
+      border-radius: var(--radius-md);
+      border: 1px solid transparent;
+      color: inherit;
+      font-size: 0.96rem;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      transition:
+        transform 220ms var(--ease-soft),
+        border-color 180ms var(--ease-soft),
+        background-color 180ms var(--ease-soft),
+        color 180ms var(--ease-soft);
+    }
+
+    .btn:hover,
+    .btn:focus-visible {
+      transform: translate3d(0, -3px, 0);
+      outline: none;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: oklch(17% 0.04 196);
+      box-shadow: 0 12px 26px color-mix(in oklch, var(--accent) 16%, transparent);
+    }
+
+    .btn-secondary {
+      color: var(--paper);
+      border-color: color-mix(in oklch, var(--paper) 18%, transparent);
+      background: color-mix(in oklch, var(--surface) 64%, transparent);
+    }
+
+    .hero-panel {
+      display: grid;
+      gap: var(--space-lg);
+      min-width: 0;
+      padding: clamp(1rem, 2vw, 1.45rem);
+      border-radius: var(--radius-lg);
+      border: 1px solid color-mix(in oklch, var(--line-strong) 76%, transparent);
+      background: color-mix(in oklch, var(--surface) 78%, var(--night-deep));
+      box-shadow: var(--shadow);
+    }
+
+    .terminal {
+      display: grid;
+      gap: 0;
+      min-width: 0;
+      overflow: hidden;
+      border-radius: var(--radius-md);
+      border: 1px solid color-mix(in oklch, var(--line-strong) 80%, transparent);
+      background: oklch(12.5% 0.03 196);
+    }
+
+    .terminal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      padding: 0.8rem 0.95rem;
+      color: var(--paper-faint);
+      border-bottom: 1px solid color-mix(in oklch, var(--line) 84%, transparent);
+      font-size: 0.82rem;
+    }
+
+    .terminal-dots {
+      display: flex;
+      gap: 0.35rem;
+      align-items: center;
+    }
+
+    .terminal-dots span {
+      width: 0.52rem;
+      height: 0.52rem;
+      border-radius: 50%;
+      background: var(--line-strong);
+    }
+
+    .terminal-dots span:nth-child(1) {
+      background: var(--accent);
+    }
+
+    .terminal-dots span:nth-child(2) {
+      background: var(--amber);
+    }
+
+    .terminal-dots span:nth-child(3) {
+      background: var(--green);
+    }
+
+    .terminal pre {
+      min-width: 0;
+      max-width: 100%;
+      margin: 0;
+      padding: clamp(1rem, 2vw, 1.45rem);
+      overflow-x: auto;
+      color: var(--paper);
+      font-size: 0.9rem;
+      line-height: 1.68;
+      tab-size: 2;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .terminal code {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .terminal .comment {
+      color: var(--paper-faint);
+    }
+
+    .terminal .accent {
+      color: var(--accent-soft);
+    }
+
+    .terminal .ok {
+      color: var(--green);
+    }
+
+    .fact-grid {
+      display: grid;
+      gap: var(--space-sm);
+      grid-template-columns: repeat(auto-fit, minmax(8.6rem, 1fr));
+    }
+
+    .fact {
+      display: grid;
+      gap: 0.35rem;
+      padding: 0.95rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid color-mix(in oklch, var(--line) 80%, transparent);
+      background: color-mix(in oklch, var(--night-soft) 78%, transparent);
+    }
+
+    .fact-value {
+      color: var(--paper);
+      font-family: "Oranienbaum", Georgia, serif;
+      font-size: 2.7rem;
+      line-height: 0.9;
+    }
+
+    .fact-label {
+      color: var(--paper-faint);
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+
+    .section {
+      display: grid;
+      gap: var(--space-xl);
+      scroll-margin-top: var(--space-xl);
+    }
+
+    .section-head {
+      display: grid;
+      gap: var(--space-sm);
+      max-width: 74ch;
+    }
+
+    .section-title {
+      font-size: 4.1rem;
+      line-height: 0.92;
+    }
+
+    .section-copy {
+      margin: 0;
+      max-width: 70ch;
+      color: var(--paper-soft);
+      font-size: 1.08rem;
+    }
+
+    .pipeline-board {
+      display: grid;
+      gap: var(--space-lg);
+      min-width: 0;
+      padding: clamp(1rem, 2.2vw, 1.8rem);
+      border-radius: var(--radius-lg);
+      border: 1px solid color-mix(in oklch, var(--line-strong) 74%, transparent);
+      background: color-mix(in oklch, var(--surface) 72%, transparent);
+      box-shadow: var(--shadow);
+    }
+
+    .pipeline {
+      display: grid;
+      gap: var(--space-sm);
+      grid-template-columns: repeat(7, minmax(8.5rem, 1fr));
+      overflow-x: auto;
+      padding-bottom: 0.25rem;
+      scrollbar-color: var(--line-strong) transparent;
+    }
+
+    .step {
+      position: relative;
+      min-height: 9rem;
+      display: grid;
+      gap: var(--space-sm);
+      align-content: start;
+      padding: 1rem;
+      border-radius: var(--radius-md);
+      border: 1px solid color-mix(in oklch, var(--line) 86%, transparent);
+      background: color-mix(in oklch, var(--night-soft) 72%, var(--night-deep));
+    }
+
+    .step::after {
+      content: "->";
+      position: absolute;
+      top: 1rem;
+      right: -0.92rem;
+      color: var(--accent-soft);
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 0.9rem;
+      z-index: 2;
+    }
+
+    .step:last-child::after {
+      content: "";
+    }
+
+    .step-index {
+      color: var(--accent-soft);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .step strong {
+      font-size: 1rem;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    .step span:last-child {
+      color: var(--paper-faint);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .repair-grid {
+      display: grid;
+      gap: var(--space-lg);
+      align-items: stretch;
+    }
+
+    .repair-card,
+    .proof-panel,
+    .contract-panel {
+      display: grid;
+      gap: var(--space-md);
+      min-width: 0;
+      padding: clamp(1.15rem, 2vw, 1.7rem);
+      border-radius: var(--radius-lg);
+      border: 1px solid color-mix(in oklch, var(--line) 82%, transparent);
+      background: color-mix(in oklch, var(--surface) 68%, transparent);
+    }
+
+    .repair-card h3,
+    .proof-panel h3,
+    .contract-panel h3 {
+      font-size: 2.25rem;
+      line-height: 0.95;
+    }
+
+    .repair-card p,
+    .proof-panel p,
+    .contract-panel p {
+      margin: 0;
+      color: var(--paper-soft);
+      max-width: 62ch;
+    }
+
+    .loop {
+      display: grid;
+      gap: 0;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      border: 1px solid color-mix(in oklch, var(--line-strong) 70%, transparent);
+      background: color-mix(in oklch, var(--night-deep) 72%, transparent);
+      color: var(--paper);
+    }
+
+    .loop li {
+      display: grid;
+      grid-template-columns: 2.1rem minmax(0, 1fr);
+      gap: var(--space-sm);
+      min-height: 2.75rem;
+      align-items: center;
+      padding: 0.65rem 0.8rem;
+      border-bottom: 1px solid color-mix(in oklch, var(--line) 72%, transparent);
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .loop li:last-child {
+      border-bottom: 0;
+    }
+
+    .loop-index {
+      color: var(--accent-soft);
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .proof-grid {
+      display: grid;
+      gap: var(--space-lg);
+      align-items: stretch;
+    }
+
+    .benchmark {
+      display: grid;
+      gap: var(--space-sm);
+    }
+
+    .benchmark-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--space-sm);
+      align-items: baseline;
+      padding-block: 0.85rem;
+      border-bottom: 1px solid color-mix(in oklch, var(--line) 76%, transparent);
+    }
+
+    .benchmark-row:last-child {
+      border-bottom: 0;
+    }
+
+    .benchmark-row span:first-child {
+      color: var(--paper-soft);
+    }
+
+    .benchmark-row strong {
+      color: var(--green);
+      font-family: "Oranienbaum", Georgia, serif;
+      font-size: 2.35rem;
+      font-weight: 400;
+      line-height: 0.9;
+      white-space: nowrap;
+    }
+
+    .contract-grid {
+      display: grid;
+      gap: var(--space-lg);
+      align-items: start;
+    }
+
+    .rule-list {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .rule-list li {
+      position: relative;
+      padding: 0.85rem 0.95rem;
+      border-radius: var(--radius-sm);
+      color: var(--paper);
+      background: color-mix(in oklch, var(--night-soft) 72%, transparent);
+      border: 1px solid color-mix(in oklch, var(--line) 74%, transparent);
+    }
+
+    .rule-list code {
+      color: var(--accent-soft);
+      font-size: 0.93em;
+    }
+
+    .stack-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-xs);
+    }
+
+    .stack-strip span {
+      display: inline-flex;
+      min-height: 2.45rem;
+      align-items: center;
+      padding: 0.52rem 0.76rem;
+      border-radius: var(--radius-sm);
+      color: var(--paper);
+      background: color-mix(in oklch, var(--green-soft) 78%, transparent);
+      border: 1px solid color-mix(in oklch, var(--green) 22%, var(--line));
+      font-size: 0.91rem;
+      font-weight: 600;
+    }
+
+    .run-grid {
+      display: grid;
+      gap: var(--space-lg);
+      align-items: start;
+    }
+
+    .link-card {
+      display: grid;
+      gap: var(--space-md);
+      padding: clamp(1.2rem, 2.1vw, 1.8rem);
+      border-radius: var(--radius-lg);
+      border: 1px solid color-mix(in oklch, var(--accent) 34%, var(--line));
+      background: color-mix(in oklch, var(--surface) 78%, var(--night-deep));
+      text-decoration: none;
+      box-shadow: var(--shadow);
+      transition:
+        transform 220ms var(--ease-soft),
+        border-color 180ms var(--ease-soft),
+        background-color 180ms var(--ease-soft);
+    }
+
+    .link-card:hover,
+    .link-card:focus-visible {
+      transform: translate3d(0, -4px, 0);
+      border-color: var(--accent-soft);
+      outline: none;
+    }
+
+    .link-card h3 {
+      color: var(--paper);
+      font-size: 2.65rem;
+      line-height: 0.95;
+    }
+
+    .link-card p {
+      margin: 0;
+      color: var(--paper-soft);
+      max-width: 44ch;
+    }
+
+    .footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+      justify-content: space-between;
+      padding-top: var(--space-lg);
+      border-top: 1px solid color-mix(in oklch, var(--line) 82%, transparent);
+      color: var(--paper-faint);
+      font-size: 0.92rem;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translate3d(0, 1.6rem, 0);
+      transition:
+        opacity 620ms var(--ease-out),
+        transform 620ms var(--ease-out);
+      transition-delay: var(--delay, 0ms);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+
+    @media (min-width: 820px) {
+      .hero-grid {
+        grid-template-columns: minmax(0, 0.92fr) minmax(28rem, 1.08fr);
+      }
+
+      .repair-grid,
+      .proof-grid,
+      .contract-grid,
+      .run-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (min-width: 1120px) {
+      .page {
+        padding-inline: var(--space-md);
+      }
+    }
+
+    @media (min-width: 820px) and (max-width: 1199px) {
+      .pipeline {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        overflow: visible;
+      }
+
+      .step::after {
+        content: "";
+      }
+    }
+
+    @media (max-width: 819px) {
+      body {
+        padding: 16px 12px 24px;
+      }
+
+      .page {
+        gap: 3rem;
+      }
+
+      .hero {
+        min-height: auto;
+        align-content: start;
+        padding-top: var(--space-2xl);
+      }
+
+      .hero::before {
+        left: 0;
+        width: 8rem;
+      }
+
+      .hero-title {
+        font-size: 6.6rem;
+      }
+
+      .hero-lede,
+      .section-deck {
+        font-size: 1.04rem;
+      }
+
+      .section-title {
+        font-size: 2.7rem;
+      }
+
+      .fact-value {
+        font-size: 2.15rem;
+      }
+
+      .repair-card h3,
+      .proof-panel h3,
+      .contract-panel h3 {
+        font-size: 1.85rem;
+      }
+
+      .result-number,
+      .link-card h3 {
+        font-size: 2.05rem;
+      }
+
+      .action-row,
+      .btn {
+        width: 100%;
+      }
+
+      .topline {
+        align-items: flex-start;
+      }
+
+      .nav-links {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+      }
+
+      .nav-links a {
+        padding-inline: 0.5rem;
+        font-size: 0.9rem;
+      }
+
+      .nav-links a:last-child {
+        grid-column: 1 / -1;
+      }
+
+      .pipeline {
+        grid-template-columns: 1fr;
+        overflow: visible;
+      }
+
+      .step {
+        min-height: auto;
+      }
+
+      .step::after {
+        content: "";
+      }
+
+      .benchmark-row {
+        grid-template-columns: 1fr;
+      }
+
+      .benchmark-row strong {
+        white-space: normal;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .hero-title {
+        font-size: 5.1rem;
+      }
+
+      .section-title {
+        font-size: 2.35rem;
+      }
+    }
+
+    @media (hover: none) {
+      .btn:hover,
+      .link-card:hover {
+        transform: none;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+
+      .reveal,
+      .reveal.is-visible {
+        opacity: 1;
+        transform: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div class="topline reveal is-visible" style="--delay: 0ms;">
+        <p class="brand-mark">api-mp3-player.ru / eplua</p>
+        <nav class="nav-links" aria-label="Навигация по лендингам">
+          <a href="/">CloudTune</a>
+          <a href="https://resume.api-mp3-player.ru/">Резюме</a>
+          <a href="#pipeline">Pipeline</a>
+        </nav>
+      </div>
+
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="kicker reveal is-visible" style="--delay: 80ms;">LocalScript agent / pet project</p>
+          <h1 class="hero-title reveal is-visible" style="--delay: 140ms;">EpLua</h1>
+          <p class="hero-body reveal is-visible" style="--delay: 210ms;">
+            Локальный агент, который по пользовательской задаче и JSON-контексту генерирует
+            LowCode-compatible Lua. Не универсальный coding assistant, а узкий backend-first
+            pipeline с проверкой результата и ограниченным repair loop.
+          </p>
+          <div class="action-row reveal is-visible" style="--delay: 300ms;">
+            <a class="btn btn-primary" href="https://github.com/epitaph76/EpLua" target="_blank" rel="noopener noreferrer">Открыть GitHub</a>
+            <a class="btn btn-secondary" href="#how-it-works">Как устроено</a>
+          </div>
+        </div>
+
+        <aside class="hero-panel reveal is-visible" aria-label="Ключевые факты EpLua" style="--delay: 190ms;">
+          <div class="terminal">
+            <div class="terminal-head">
+              <span>luamts generate --mode release</span>
+              <span class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+            </div>
+            <pre><code><span class="comment"># task + LowCode context</span>
+POST /generate
+{
+  "task_text": "Верни последний email",
+  "provided_context": "{\"wf\":{\"vars\":{\"emails\":[...]}}}",
+  "mode": "release"
+}
+
+<span class="comment"># validated response</span>
+{ "result": "<span class="accent">lua{return wf.vars.emails[#wf.vars.emails]}lua</span>" }
+<span class="ok">status: passed</span></code></pre>
+          </div>
+
+          <div class="fact-grid">
+            <div class="fact">
+              <span class="fact-value">50/50</span>
+              <span class="fact-label">benchmark tasks passed в `7_progon`</span>
+            </div>
+            <div class="fact">
+              <span class="fact-value">47</span>
+              <span class="fact-label">прошли без дополнительной подсказки</span>
+            </div>
+            <div class="fact">
+              <span class="fact-value">2</span>
+              <span class="fact-label">repair budget по умолчанию</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section" id="pipeline">
+      <div class="section-head reveal">
+        <p class="section-label">Technical proof</p>
+        <h2 class="section-title">Pipeline виден как система, а не как чат-обёртка</h2>
+        <p class="section-copy">
+          Основной API path `POST /generate` разделён на планирование, prompt additions,
+          генерацию, deterministic validation и semantic validation. Lua выдаёт только generator.
+        </p>
+      </div>
+
+      <div class="pipeline-board reveal" id="how-it-works" style="--delay: 90ms;">
+        <div class="pipeline" aria-label="Happy path pipeline">
+          <article class="step">
+            <span class="step-index">01</span>
+            <strong>request_received</strong>
+            <span>API принимает задачу и контекст.</span>
+          </article>
+          <article class="step">
+            <span class="step-index">02</span>
+            <strong>planner</strong>
+            <span>Собирает компактный TaskSpec.</span>
+          </article>
+          <article class="step">
+            <span class="step-index">03</span>
+            <strong>prompter</strong>
+            <span>Добавляет короткие подсказки без переписывания контракта.</span>
+          </article>
+          <article class="step">
+            <span class="step-index">04</span>
+            <strong>generation</strong>
+            <span>Возвращает только JSON object с Lua wrapper.</span>
+          </article>
+          <article class="step">
+            <span class="step-index">05</span>
+            <strong>deterministic_validation</strong>
+            <span>Формат, синтаксис, static checks и hard rules.</span>
+          </article>
+          <article class="step">
+            <span class="step-index">06</span>
+            <strong>semantic_validation</strong>
+            <span>Проверка смысла после deterministic pass.</span>
+          </article>
+          <article class="step">
+            <span class="step-index">07</span>
+            <strong>response_ready</strong>
+            <span>Финальный статус и результат для API/CLI.</span>
+          </article>
+        </div>
+      </div>
+
+      <div class="repair-grid">
+        <article class="repair-card reveal" style="--delay: 70ms;">
+          <p class="mini-label">Bounded repair</p>
+          <h3>Repair ограничен бюджетом, а не уходит в бесконечный цикл</h3>
+          <ol class="loop" aria-label="Repair loop">
+            <li><span class="loop-index">R1</span><span>deterministic_validation</span></li>
+            <li><span class="loop-index">R2</span><span>repair_generation</span></li>
+            <li><span class="loop-index">R3</span><span>semantic_validation</span></li>
+            <li><span class="loop-index">R4</span><span>response_ready</span></li>
+          </ol>
+          <p>
+            Если ошибка repairable, orchestrator делает ограниченный проход generator-а.
+            При исчерпании бюджета CLI может перейти в user-assisted repair вместо скрытых повторов.
+          </p>
+        </article>
+
+        <article class="repair-card reveal" style="--delay: 130ms;">
+          <p class="mini-label">Local runtime</p>
+          <h3>Release-контур воспроизводится локально через Docker Compose и Ollama</h3>
+          <p>
+            Конкурсный/demo runtime не опирается на внешние AI API: модель запускается через Ollama,
+            cloud-tags запрещены, а compact параметры фиксируются для предсказуемой проверки.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head reveal">
+        <p class="section-label">Contract / constraints</p>
+        <h2 class="section-title">Генерация зажата LowCode-контрактом</h2>
+        <p class="section-copy">
+          EpLua проектировался вокруг строгого output shape: JSON object, Lua wrapper,
+          прямой доступ к LowCode-переменным и запрет лишнего вывода.
+        </p>
+      </div>
+
+      <div class="contract-grid">
+        <article class="contract-panel reveal" style="--delay: 70ms;">
+          <h3>Hard rules</h3>
+          <ul class="rule-list">
+            <li>Ответ только JSON object; Lua внутри строки вида <code>lua{...}lua</code>.</li>
+            <li>LowCode variables доступны через <code>wf.vars</code>, init variables через <code>wf.initVariables</code>.</li>
+            <li>JsonPath, markdown, <code>print</code>, debug output и пояснения вокруг JSON запрещены.</li>
+            <li><code>error()</code> запрещён: для некорректного входа возвращается <code>nil</code>, <code>false</code> или пустая строка по смыслу задачи.</li>
+            <li>Новые массивы создаются через <code>_utils.array.new()</code>, существующие маркируются через <code>_utils.array.markAsArray(arr)</code>.</li>
+          </ul>
+        </article>
+
+        <article class="contract-panel reveal" style="--delay: 130ms;">
+          <h3>Runtime inventory</h3>
+          <div class="stack-strip" aria-label="Стек EpLua">
+            <span>Python 3.12</span>
+            <span>FastAPI</span>
+            <span>Uvicorn</span>
+            <span>Ollama</span>
+            <span>Docker Compose</span>
+            <span>Lua 5.4</span>
+            <span>luacheck</span>
+            <span>StyLua</span>
+            <span>CLI `luamts`</span>
+            <span>POST /generate</span>
+            <span>/generate/progress</span>
+          </div>
+          <p>
+            CLI остаётся тонким клиентом поверх API: интерактивный режим, release/debug/releaseSlim,
+            `/plan`, `/repair-budget`, `/status` и live progress по слоям pipeline.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head reveal">
+        <p class="section-label">Benchmark</p>
+        <h2 class="section-title">Проверка результата вынесена в артефакты</h2>
+        <p class="section-copy">
+          Последний прогон `artifacts/benchmark_runs/7_progon/` использует 50 выбранных задач
+          из набора на 300 задач. Эталонное решение сохраняется для анализа, но не подмешивается в prompt.
+        </p>
+      </div>
+
+      <div class="proof-grid">
+        <article class="proof-panel reveal" style="--delay: 70ms;">
+          <h3>Итог `7_progon`</h3>
+          <div class="benchmark">
+            <div class="benchmark-row">
+              <span>Всего задач</span>
+              <strong>50</strong>
+            </div>
+            <div class="benchmark-row">
+              <span>Статус passed</span>
+              <strong>50/50</strong>
+            </div>
+            <div class="benchmark-row">
+              <span>Passed без hint</span>
+              <strong>47</strong>
+            </div>
+            <div class="benchmark-row">
+              <span>Passed с hint</span>
+              <strong>3</strong>
+            </div>
+            <div class="benchmark-row">
+              <span>С первой генерации</span>
+              <strong>48</strong>
+            </div>
+            <div class="benchmark-row">
+              <span>Со второй генерации</span>
+              <strong>2</strong>
+            </div>
+          </div>
+        </article>
+
+        <article class="proof-panel reveal" style="--delay: 130ms;">
+          <h3>Что это доказывает</h3>
+          <p>
+            Проект показывает не только генерацию, но и инженерную рамку вокруг неё:
+            воспроизводимый запуск, явные ограничения, validation reports и контролируемый repair.
+          </p>
+          <div class="terminal">
+            <div class="terminal-head">
+              <span>quick start</span>
+              <span class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+            </div>
+            <pre><code>docker compose up --build
+docker compose exec api luamts doctor
+docker compose exec api luamts generate \
+  --mode release \
+  --task "Из массива emails верни последний email." \
+  --context '{"wf":{"vars":{"emails":["a@example.com","b@example.com"]}}}'</code></pre>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="run-grid">
+        <div class="section-head reveal">
+          <p class="section-label">Source</p>
+          <h2 class="section-title">Код, README и docs лежат в открытом репозитории</h2>
+          <p class="section-copy">
+            В репозитории есть описание pipeline, CLI, Docker-поставки, constraints, output modes
+            и development checks.
+          </p>
+        </div>
+
+        <a class="link-card reveal" href="https://github.com/epitaph76/EpLua" target="_blank" rel="noopener noreferrer" style="--delay: 90ms;">
+          <p class="mini-label">GitHub</p>
+          <h3>epitaph76/EpLua</h3>
+          <p>README, FastAPI backend, CLI, orchestrator packages, validators, benchmark helpers и документация.</p>
+        </a>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>EpLua / luaMTS • local LowCode Lua agent</span>
+      <span>api-mp3-player.ru/eplua</span>
+    </footer>
+  </main>
+
+  <script>
+    (() => {
+      const items = document.querySelectorAll(".reveal");
+      if (!items.length) {
+        return;
+      }
+
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduceMotion || !("IntersectionObserver" in window)) {
+        items.forEach((item) => item.classList.add("is-visible"));
+        return;
+      }
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("is-visible");
+              observer.unobserve(entry.target);
+            }
+          });
+        },
+        {
+          threshold: 0.14,
+          rootMargin: "0px 0px -8% 0px"
+        }
+      );
+
+      items.forEach((item) => observer.observe(item));
+    })();
+  </script>
+</body>
+</html>

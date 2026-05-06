@@ -18,6 +18,7 @@ class Config:
     api_base_url: str
     main_landing_url: str
     resume_landing_url: str
+    eplua_landing_url: str
     timeout_seconds: int
     health_path: str
     poll_attempts: int
@@ -206,6 +207,10 @@ def run() -> None:
         resume_landing_url=os.getenv(
             "POST_DEPLOY_TEST_RESUME_LANDING_URL",
             "https://resume.api-mp3-player.ru",
+        ).rstrip("/"),
+        eplua_landing_url=os.getenv(
+            "POST_DEPLOY_TEST_EPLUA_LANDING_URL",
+            "https://api-mp3-player.ru/eplua/",
         ).rstrip("/"),
         timeout_seconds=int(os.getenv("POST_DEPLOY_TEST_TIMEOUT_SECONDS", "20")),
         health_path=os.getenv("POST_DEPLOY_TEST_HEALTH_PATH", "/health").strip() or "/health",
@@ -451,6 +456,11 @@ def run() -> None:
     status, _, _ = http_request("GET", cfg.resume_landing_url, timeout=cfg.timeout_seconds)
     ensure_status(status, 200, f"GET {cfg.resume_landing_url}")
     log_ok("resume-лендинг доступен")
+
+    log_step("проверка EpLua-лендинга")
+    status, _, _ = http_request("GET", cfg.eplua_landing_url, timeout=cfg.timeout_seconds)
+    ensure_status(status, 200, f"GET {cfg.eplua_landing_url}")
+    log_ok("EpLua-лендинг доступен")
 
     print("POST_DEPLOY_TESTS_PASSED")
 
